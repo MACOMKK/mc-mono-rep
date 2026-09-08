@@ -316,6 +316,14 @@ export const financeiroApi = {
     async remover(id) {
       await invokeServicos({ action: 'remover_anexo', id });
     },
+    async atualizarAssinaturasNecessarias(id, assinaturasNecessarias) {
+      const result = await invokeServicos({
+        action: 'atualizar_anexo_assinaturas',
+        id,
+        assinaturas_necessarias: assinaturasNecessarias === 2 ? 2 : 1,
+      });
+      return result.row || null;
+    },
     async assinar({ id, storagePath, nomeArquivo, tamanhoBytes, posicao }) {
       const result = await invokeServicos({
         action: 'assinar_anexo',

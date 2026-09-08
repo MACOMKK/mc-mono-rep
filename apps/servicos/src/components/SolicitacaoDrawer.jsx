@@ -148,6 +148,7 @@ const EVENTO_META = {
   anexo_adicionado: { label: 'Anexo incluído', icon: Paperclip, className: 'text-muted-foreground bg-muted' },
   anexo_removido: { label: 'Anexo removido', icon: Trash2, className: 'text-destructive bg-destructive/20' },
   anexo_assinado: { label: 'Anexo assinado', icon: UserCheck, className: 'text-emerald-600 bg-emerald-500/20' },
+  anexo_assinaturas_alteradas: { label: 'Assinatura do anexo alterada', icon: UserCheck, className: 'text-amber-600 bg-amber-500/20' },
   notificacao_enviada: { label: 'Notificação enviada', icon: Bell, className: 'text-muted-foreground bg-muted' },
   pendencia_aberta: { label: 'Pendência sinalizada', icon: Lock, className: 'text-destructive bg-destructive/20' },
   pendencia_liberada: { label: 'Pendência liberada', icon: Unlock, className: 'text-emerald-600 bg-emerald-500/20' },
@@ -207,8 +208,12 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const podeAdicionarAnexo = Boolean(user?.isFinanceiro) || isDonoSolicitacao;
   const dentroDaJanelaRemocao = solicitacao?.status === 'pendente' || solicitacao?.pendencia_bloqueio === true;
   const podeRemoverAnexo = (Boolean(user?.isFinanceiro) || isDonoSolicitacao) && dentroDaJanelaRemocao;
+  // Sem trava de status: igual a assinar_anexo (que tambem funciona em qualquer fase), corrigir o
+  // esquecimento de marcar "exigir 2 assinaturas" precisa valer mesmo depois de aprovada/paga.
+  const podeEditarAssinaturasAnexo = Boolean(user?.isFinanceiro) || isDonoSolicitacao;
   const podeBaixarTodosAnexos = Boolean(user?.isPagador) || isAprovadorDestino || isDonoSolicitacao;
-  const podeAssinarAnexo = Boolean(user?.signatureUrl) && (isDonoSolicitacao || isAprovadorDestino);
+  const podeAssinarAnexo =
+    Boolean(user?.signatureUrl) && (isDonoSolicitacao || isAprovadorDestino || Boolean(user?.isPagador));
 
   const solicitacaoId = solicitacao?.id;
 
@@ -346,6 +351,39 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   function handleRemoverAnexo() {
     if (!removerTarget) return;
     removerAnexoMutation.mutate(removerTarget.id);
+  }
+
+  const atualizarAssinaturasAnexoMutation = useMutation({
+    mutationFn: ({ id, assinaturasNecessarias }) =>
+      financeiroApi.anexos.atualizarAssinaturasNecessarias(id, assinaturasNecessarias),
+    onSuccess: () => {
+      loadAnexos();
+      loadHistorico();
+    },
+    onError: (error) => {
+      toast({ title: 'Não foi possível alterar a exigência de assinatura', description: getFriendlyErrorMessage(error) });
+    },
+  });
+
+  const [reduzirAssinaturasTarget, setReduzirAssinaturasTarget] = useState(null);
+
+  function handleToggleExigirDuasAssinaturas(anexo, checked) {
+    // Marcar (1->2) e direto -- nunca reduz uma exigencia ja feita. Desmarcar (2->1) pede
+    // confirmacao porque, se o anexo ja tiver 1 assinatura, o badge passa a mostrar "Assinado" na
+    // hora, mesmo que a segunda assinatura esperada nunca tenha sido coletada.
+    if (checked) {
+      atualizarAssinaturasAnexoMutation.mutate({ id: anexo.id, assinaturasNecessarias: 2 });
+    } else {
+      setReduzirAssinaturasTarget(anexo);
+    }
+  }
+
+  function handleConfirmarReduzirAssinaturas() {
+    if (!reduzirAssinaturasTarget) return;
+    atualizarAssinaturasAnexoMutation.mutate(
+      { id: reduzirAssinaturasTarget.id, assinaturasNecessarias: 1 },
+      { onSuccess: () => setReduzirAssinaturasTarget(null) },
+    );
   }
 
   // Flag "solicitacao de teste" + exclusao definitiva, so pra admin (Camada 1) e so na propria
@@ -537,8 +575,16 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
     return (anexo.assinaturas || []).some((assinatura) => String(assinatura.colaborador_id) === String(user?.id));
   }
 
+  function anexoAindaPrecisaDeAssinatura(anexo) {
+    return (anexo.assinaturas || []).length < (anexo.assinaturas_necessarias || 1);
+  }
+
   const anexosElegiveisParaAssinar = anexos.filter(
-    (anexo) => anexo.url && getPreviewType(anexo) === 'pdf' && !anexoJaAssinadoPeloUsuario(anexo),
+    (anexo) =>
+      anexo.url &&
+      getPreviewType(anexo) === 'pdf' &&
+      !anexoJaAssinadoPeloUsuario(anexo) &&
+      anexoAindaPrecisaDeAssinatura(anexo),
   );
 
   async function handleAbrirAssinarTodosAnexos() {
@@ -987,6 +1033,20 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                                       : `Assinado (${anexo.assinaturas.length}/${anexo.assinaturas_necessarias || 1})`}
                                   </Badge>
                                 )}
+                                {podeEditarAssinaturasAnexo && (
+                                  <label
+                                    htmlFor={`anexo-duas-assinaturas-${anexo.id}`}
+                                    className="flex shrink-0 cursor-pointer items-center gap-1 text-xs text-muted-foreground"
+                                  >
+                                    <Checkbox
+                                      id={`anexo-duas-assinaturas-${anexo.id}`}
+                                      checked={anexo.assinaturas_necessarias === 2}
+                                      disabled={atualizarAssinaturasAnexoMutation.isPending}
+                                      onCheckedChange={(checked) => handleToggleExigirDuasAssinaturas(anexo, checked === true)}
+                                    />
+                                    2 assinaturas
+                                  </label>
+                                )}
                               </span>
                               <span className="flex shrink-0 items-center gap-1">
                                 {anexo.url && (
@@ -1010,7 +1070,11 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                                     {baixandoAnexoId === anexo.id ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
                                   </button>
                                 )}
-                                {podeAssinarAnexo && anexo.url && getPreviewType(anexo) === 'pdf' && !anexoJaAssinadoPeloUsuario(anexo) && (
+                                {podeAssinarAnexo &&
+                                  anexo.url &&
+                                  getPreviewType(anexo) === 'pdf' &&
+                                  !anexoJaAssinadoPeloUsuario(anexo) &&
+                                  anexoAindaPrecisaDeAssinatura(anexo) && (
                                   <button
                                     type="button"
                                     onClick={() => handleAbrirAssinaturaAnexo(anexo)}
@@ -1049,6 +1113,17 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                   description={`Tem certeza que deseja remover "${removerTarget?.nome_arquivo || ''}"? Essa ação não pode ser desfeita.`}
                   confirmLabel="Remover"
                   loadingLabel="Removendo..."
+                />
+
+                <ConfirmDeleteDialog
+                  open={Boolean(reduzirAssinaturasTarget)}
+                  onOpenChange={(open) => !open && setReduzirAssinaturasTarget(null)}
+                  onConfirm={handleConfirmarReduzirAssinaturas}
+                  isLoading={atualizarAssinaturasAnexoMutation.isPending}
+                  title="Reduzir para 1 assinatura"
+                  description={`Isso reduz a exigência de "${reduzirAssinaturasTarget?.nome_arquivo || ''}" para 1 assinatura. Se já houver uma assinatura registrada, o anexo passará a aparecer como "Assinado" mesmo sem a segunda assinatura esperada.`}
+                  confirmLabel="Reduzir"
+                  loadingLabel="Salvando..."
                 />
 
                 <Dialog open={Boolean(previewAnexo)} onOpenChange={(open) => !open && setPreviewAnexo(null)}>

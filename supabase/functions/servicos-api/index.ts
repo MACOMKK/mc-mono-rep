@@ -2864,6 +2864,55 @@ Deno.serve(async (request) => {
       return json({ ok: true });
     }
 
+    if (action === 'atualizar_anexo_assinaturas') {
+      const id = String(body.id || '');
+      if (!id) return json({ error: 'ID obrigatorio.' }, 400);
+      const assinaturasNecessarias = body.assinaturas_necessarias === 2 ? 2 : 1;
+
+      const rows = await sql.unsafe(
+        `
+          select an.*, sp.solicitante_id
+          from ${SERVICOS_SCHEMA}.anexos_solicitacao an
+          join ${SERVICOS_SCHEMA}.solicitacoes_pagamento sp on sp.id = an.solicitacao_id
+          where an.id = $1
+          limit 1;
+        `,
+        [id],
+      );
+      const anexo = rows[0];
+      if (!anexo) return json({ error: 'Anexo nao encontrado.' }, 404);
+      // Diferente de remover_anexo, essa acao nao trava por status da solicitacao: assinar_anexo
+      // tambem nao tem essa trava (da pra assinar mesmo depois de aprovada/paga), entao corrigir o
+      // esquecimento de marcar "exigir 2 assinaturas" precisa funcionar em qualquer fase.
+      const podeComoFinanceiro = isFinanceiro(moduleRole);
+      const podeComoDono = String(anexo.solicitante_id) === String(collaborator!.id);
+      if (!podeComoFinanceiro && !podeComoDono) {
+        throw Object.assign(
+          new Error('Somente o solicitante ou o financeiro podem alterar a exigência de assinatura deste anexo.'),
+          { status: 403 },
+        );
+      }
+
+      const updatedRows = await sql.unsafe(
+        `
+          update ${SERVICOS_SCHEMA}.anexos_solicitacao
+          set assinaturas_necessarias = $1
+          where id = $2
+          returning *;
+        `,
+        [assinaturasNecessarias, id],
+      );
+
+      await insertHistorico(
+        String(anexo.solicitacao_id),
+        'anexo_assinaturas_alteradas',
+        collaborator!.id as string,
+        `${String(anexo.nome_arquivo)} (agora exige ${assinaturasNecessarias === 2 ? '2 assinaturas' : '1 assinatura'})`,
+      );
+
+      return json({ row: updatedRows[0] || null });
+    }
+
     if (action === 'assinar_anexo') {
       const parsedAssinatura = assinarAnexoBodySchema.safeParse(body);
       if (!parsedAssinatura.success) {
@@ -2900,20 +2949,26 @@ Deno.serve(async (request) => {
           ? 'solicitante'
           : String(anexo.aprovador_destino_id) === colaboradorId
             ? 'aprovador'
-            : null;
+            : isPagador(moduleRole)
+              ? 'financeiro'
+              : null;
       if (!papel) {
         throw Object.assign(
-          new Error('Somente o solicitante ou o aprovador responsavel podem assinar este anexo.'),
+          new Error('Somente o solicitante, o aprovador responsavel ou o financeiro podem assinar este anexo.'),
           { status: 403 },
         );
       }
 
-      const jaAssinouRows = await sql.unsafe(
-        `select 1 from ${SERVICOS_SCHEMA}.assinaturas_anexo where anexo_id = $1 and colaborador_id = $2 limit 1;`,
-        [id, colaboradorId],
+      const assinaturasExistentes = await sql.unsafe(
+        `select colaborador_id from ${SERVICOS_SCHEMA}.assinaturas_anexo where anexo_id = $1;`,
+        [id],
       );
-      if (jaAssinouRows[0]) {
+      if (assinaturasExistentes.some((row: Record<string, unknown>) => String(row.colaborador_id) === colaboradorId)) {
         throw Object.assign(new Error('Voce ja assinou este anexo.'), { status: 409 });
+      }
+      const assinaturasNecessarias = Number(anexo.assinaturas_necessarias) || 1;
+      if (assinaturasExistentes.length >= assinaturasNecessarias) {
+        throw Object.assign(new Error('Este anexo ja atingiu o numero de assinaturas exigido.'), { status: 409 });
       }
 
       const storagePathAnterior = String(anexo.storage_path);
@@ -2946,7 +3001,7 @@ Deno.serve(async (request) => {
         String(anexo.solicitacao_id),
         'anexo_assinado',
         colaboradorId,
-        `${nomeArquivo} (assinado como ${papel === 'solicitante' ? 'solicitante' : 'aprovador'})`,
+        `${nomeArquivo} (assinado como ${papel})`,
       );
 
       const assinaturasRows = await sql.unsafe(
