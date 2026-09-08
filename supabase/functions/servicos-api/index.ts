@@ -24,6 +24,8 @@ import {
   reenviarSolicitacaoBodySchema,
   deletarSolicitacaoBodySchema,
   marcarTesteBodySchema,
+  atualizarVencimentoBodySchema,
+  atualizarVencimentoParcelaBodySchema,
   setStatusBodySchema,
 } from '../_shared/validation.ts';
 
@@ -746,6 +748,16 @@ async function insertHistorico(solicitacaoId: string, evento: string, autorId: s
     `insert into ${SERVICOS_SCHEMA}.historico_solicitacao (solicitacao_id, evento, autor_id, observacao) values ($1, $2, $3, $4);`,
     [solicitacaoId, evento, autorId, observacao],
   );
+}
+
+// Formata uma data (ISO ou com horario) como DD/MM/AAAA, so pra observacoes de historico
+// legiveis -- o formato pt-BR "de verdade" (com lib de datas) fica no frontend.
+function formatDateLabel(value: unknown): string {
+  const iso = String(value || '').slice(0, 10);
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return iso || '-';
+  const [, ano, mes, dia] = match;
+  return `${dia}/${mes}/${ano}`;
 }
 
 async function insertNotificacao(
@@ -2272,6 +2284,61 @@ Deno.serve(async (request) => {
       return json({ row });
     }
 
+    if (action === 'atualizar_vencimento') {
+      const parsedVencimento = atualizarVencimentoBodySchema.safeParse(body);
+      if (!parsedVencimento.success) {
+        const issue = parsedVencimento.error.issues[0];
+        return json({ error: `Campo invalido: ${issue?.path?.join('.') || 'payload'}.` }, 400);
+      }
+
+      const id = String(parsedVencimento.data.id || '');
+      if (!id) return json({ error: 'ID obrigatorio.' }, 400);
+
+      const novaDataBruta = String(parsedVencimento.data.data_vencimento || '').trim();
+      if (!novaDataBruta) return json({ error: 'Data de vencimento obrigatoria.' }, 400);
+      if (Number.isNaN(Date.parse(novaDataBruta))) {
+        throw Object.assign(new Error('Data de vencimento invalida.'), { status: 400 });
+      }
+
+      const existing = await ensureRowAccess(id, moduleRole, collaborator);
+
+      // Acao estreita e proposital: diferente de 'update' (que so aceita pendente/pendencia
+      // aberta, mas edita qualquer campo), aqui o solicitante pode alterar SO o vencimento
+      // enquanto a solicitacao ainda nao foi paga/reprovada/cancelada -- inclui 'aprovado', que
+      // 'update' propositalmente nao inclui (abriria edicao de todos os campos).
+      if (String(existing.solicitante_id) !== String(collaborator!.id)) {
+        throw Object.assign(new Error('Somente o solicitante pode alterar o vencimento desta solicitacao.'), { status: 403 });
+      }
+      const statusPermiteAlterarVencimento =
+        existing.status === 'pendente' || existing.status === 'aprovado' || existing.pendencia_bloqueio === true;
+      if (!statusPermiteAlterarVencimento) {
+        throw Object.assign(
+          new Error('Vencimento nao pode mais ser alterado (solicitacao paga, reprovada ou cancelada).'),
+          { status: 400 },
+        );
+      }
+
+      const novaData = proximaDataUtil(novaDataBruta);
+      if (novaData === existing.data_vencimento) {
+        return json({ row: existing });
+      }
+
+      const rows = await sql.unsafe(
+        `update ${SERVICOS_SCHEMA}.solicitacoes_pagamento set data_vencimento = $2 where id = $1 returning *;`,
+        [id, novaData],
+      );
+      const row = rows[0] || existing;
+
+      await insertHistorico(
+        id,
+        'vencimento_alterado',
+        collaborator!.id as string,
+        `Vencimento alterado de ${formatDateLabel(existing.data_vencimento)} para ${formatDateLabel(novaData)}.`,
+      );
+
+      return json({ row });
+    }
+
     if (action === 'cancelar_solicitacao') {
       const id = String(body.id || '');
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
@@ -3167,6 +3234,63 @@ Deno.serve(async (request) => {
       );
 
       return json({ row: rowsCancelarParcela[0] || null });
+    }
+
+    if (action === 'atualizar_vencimento_parcela') {
+      const parsedVencimentoParcela = atualizarVencimentoParcelaBodySchema.safeParse(body);
+      if (!parsedVencimentoParcela.success) {
+        const issue = parsedVencimentoParcela.error.issues[0];
+        return json({ error: `Campo invalido: ${issue?.path?.join('.') || 'payload'}.` }, 400);
+      }
+
+      const idParcela = String(parsedVencimentoParcela.data.id || '');
+      if (!idParcela) return json({ error: 'ID obrigatorio.' }, 400);
+
+      const novaDataBrutaParcela = String(parsedVencimentoParcela.data.data_vencimento || '').trim();
+      if (!novaDataBrutaParcela) return json({ error: 'Data de vencimento obrigatoria.' }, 400);
+      if (Number.isNaN(Date.parse(novaDataBrutaParcela))) {
+        throw Object.assign(new Error('Data de vencimento invalida.'), { status: 400 });
+      }
+
+      // ensureParcelaAccess so garante VISIBILIDADE (dono, aprovador destino ou financeiro
+      // tambem passam); a alteracao de vencimento aqui e restrita a quem solicitou, entao a
+      // posse e checada a parte, igual a 'update'/'atualizar_vencimento'.
+      const parcela = await ensureParcelaAccess(idParcela, moduleRole, collaborator);
+      if (String(parcela.solicitante_id) !== String(collaborator!.id)) {
+        throw Object.assign(new Error('Somente o solicitante pode alterar o vencimento desta parcela.'), { status: 403 });
+      }
+
+      const statusSolicitacaoPermite =
+        parcela.solicitacao_status === 'pendente' || parcela.solicitacao_status === 'aprovado' || parcela.pendencia_bloqueio === true;
+      if (!statusSolicitacaoPermite) {
+        throw Object.assign(
+          new Error('Vencimento nao pode mais ser alterado (solicitacao paga, reprovada ou cancelada).'),
+          { status: 400 },
+        );
+      }
+      if (parcela.status !== 'pendente') {
+        throw Object.assign(new Error('Esta parcela ja foi paga ou cancelada; o vencimento nao pode mais ser alterado.'), { status: 400 });
+      }
+
+      const novaDataParcela = proximaDataUtil(novaDataBrutaParcela);
+      if (novaDataParcela === parcela.data_vencimento) {
+        return json({ row: parcela });
+      }
+
+      const rowsParcela = await sql.unsafe(
+        `update ${SERVICOS_SCHEMA}.parcelas_pagamento set data_vencimento = $2 where id = $1 returning *;`,
+        [idParcela, novaDataParcela],
+      );
+      const parcelaAtualizada = rowsParcela[0] || parcela;
+
+      await insertHistorico(
+        String(parcela.solicitacao_id),
+        'parcela_vencimento_alterado',
+        collaborator!.id as string,
+        `Vencimento da parcela ${parcela.numero} alterado de ${formatDateLabel(parcela.data_vencimento)} para ${formatDateLabel(novaDataParcela)}.`,
+      );
+
+      return json({ row: parcelaAtualizada });
     }
 
     if (action === 'list_parcelas') {

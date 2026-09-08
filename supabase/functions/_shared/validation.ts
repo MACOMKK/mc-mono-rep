@@ -458,6 +458,21 @@ export const marcarTesteBodySchema = z.object({
   eh_teste: z.boolean().nullish(),
 });
 
+// servicos-api -- atualizar_vencimento/atualizar_vencimento_parcela. Schemas propositalmente
+// minimos (so `id`+`data_vencimento`): diferente de atualizarSolicitacaoBodySchema, que aceita
+// qualquer campo de solicitacaoPagamentoPayloadFieldsSchema, essas duas actions existem
+// justamente para permitir editar vencimento numa janela de status mais ampla (inclui
+// 'aprovado') sem abrir a porta para editar mais nada nessa janela.
+export const atualizarVencimentoBodySchema = z.object({
+  id: z.string().nullish(),
+  data_vencimento: z.string().nullish(),
+});
+
+export const atualizarVencimentoParcelaBodySchema = z.object({
+  id: z.string().nullish(),
+  data_vencimento: z.string().nullish(),
+});
+
 export const setStatusBodySchema = z.object({
   id: z.string().nullish(),
   status: z.string().nullish(),

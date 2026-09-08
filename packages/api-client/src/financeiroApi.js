@@ -290,6 +290,10 @@ export const financeiroApi = {
       const result = await invokeServicos({ action: 'signed_url', id });
       return result.url || null;
     },
+    async atualizarVencimento(id, dataVencimento) {
+      const result = await invokeServicos({ action: 'atualizar_vencimento', id, data_vencimento: dataVencimento });
+      return result.row || null;
+    },
   },
   anexos: {
     async list(solicitacaoId) {
@@ -351,6 +355,10 @@ export const financeiroApi = {
     },
     async cancelar(id, motivo) {
       const result = await invokeServicos({ action: 'cancelar_parcela', id, motivo });
+      return result.row || null;
+    },
+    async atualizarVencimento(id, dataVencimento) {
+      const result = await invokeServicos({ action: 'atualizar_vencimento_parcela', id, data_vencimento: dataVencimento });
       return result.row || null;
     },
   },

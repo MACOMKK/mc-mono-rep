@@ -47,6 +47,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  Input,
   Select,
   SelectContent,
   SelectItem,
@@ -79,6 +80,7 @@ import {
   STATUS_VARIANT,
   TIPO_DOCUMENTO_LABEL,
   getTiposDocumentoPorCategoria,
+  toLocalDateOnly,
 } from '@/lib/financeiroFormat';
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
 import WhatsAppShareButton from '@/components/WhatsAppShareButton';
@@ -157,6 +159,12 @@ const EVENTO_META = {
     icon: RefreshCw,
     className: 'text-amber-600 bg-amber-500/10',
   },
+  vencimento_alterado: { label: 'Vencimento alterado', icon: Calendar, className: 'text-amber-600 bg-amber-500/10' },
+  parcela_vencimento_alterado: {
+    label: 'Vencimento de parcela alterado',
+    icon: Calendar,
+    className: 'text-amber-600 bg-amber-500/10',
+  },
 };
 
 const EVENTO_META_DEFAULT = { label: null, icon: Clock, className: 'text-muted-foreground bg-muted' };
@@ -193,6 +201,10 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const [abrindoAssinarTodos, setAbrindoAssinarTodos] = useState(false);
   const [assinandoLote, setAssinandoLote] = useState(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [editandoVencimento, setEditandoVencimento] = useState(false);
+  const [rascunhoVencimento, setRascunhoVencimento] = useState('');
+  const [parcelaEditandoId, setParcelaEditandoId] = useState(null);
+  const [rascunhoVencimentoParcela, setRascunhoVencimentoParcela] = useState('');
 
   const tiposDocumentoOpcoes = getTiposDocumentoPorCategoria(novaCategoria);
 
@@ -208,6 +220,15 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const podeAdicionarAnexo = Boolean(user?.isFinanceiro) || isDonoSolicitacao;
   const dentroDaJanelaRemocao = solicitacao?.status === 'pendente' || solicitacao?.pendencia_bloqueio === true;
   const podeRemoverAnexo = (Boolean(user?.isFinanceiro) || isDonoSolicitacao) && dentroDaJanelaRemocao;
+  // Janela mais ampla que dentroDaJanelaRemocao: aqui inclui 'aprovado' de proposito (ver
+  // atualizar_vencimento/atualizar_vencimento_parcela na servicos-api) -- so nao vale mais
+  // depois de pago/reprovado/cancelado.
+  const dentroDaJanelaVencimento =
+    solicitacao?.status === 'pendente' || solicitacao?.status === 'aprovado' || solicitacao?.pendencia_bloqueio === true;
+  // Quando ha parcelamento, o vencimento exibido (vencimento_efetivo) vem da proxima parcela
+  // pendente, nao de solicitacao.data_vencimento -- editar o campo da solicitacao-mae nao teria
+  // efeito visivel nesse caso, entao o controle so aparece pra solicitacao sem parcelas.
+  const podeEditarVencimento = isDonoSolicitacao && dentroDaJanelaVencimento && Number(solicitacao?.parcelas_total || 0) === 0;
   // Sem trava de status: igual a assinar_anexo (que tambem funciona em qualquer fase), corrigir o
   // esquecimento de marcar "exigir 2 assinaturas" precisa valer mesmo depois de aprovada/paga.
   const podeEditarAssinaturasAnexo = Boolean(user?.isFinanceiro) || isDonoSolicitacao;
@@ -399,6 +420,37 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
     },
     onError: (error) => {
       toast({ title: 'Não foi possível atualizar a solicitação', description: getFriendlyErrorMessage(error) });
+    },
+  });
+
+  const atualizarVencimentoMutation = useMutation({
+    mutationFn: (dataVencimento) => financeiroApi.solicitacoes.atualizarVencimento(solicitacaoId, dataVencimento),
+    onSuccess: () => {
+      // `solicitacao` vem via prop, derivada de `rows.find(...)` nas paginas-pai (MinhasSolicitacoes/
+      // Aprovacoes/Pagamentos) -- invalidar a mesma chave-prefixo que as demais mutations de status
+      // ja usam basta pra refletir o novo vencimento sem precisar de callback subindo pro pai.
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacoes'] });
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'historico', solicitacaoId] });
+      setEditandoVencimento(false);
+      toast({ title: 'Vencimento atualizado' });
+    },
+    onError: (error) => {
+      toast({ title: 'Não foi possível atualizar o vencimento', description: getFriendlyErrorMessage(error) });
+    },
+  });
+
+  const atualizarVencimentoParcelaMutation = useMutation({
+    mutationFn: ({ id, dataVencimento }) => financeiroApi.parcelas.atualizarVencimento(id, dataVencimento),
+    onSuccess: (row) => {
+      queryClient.setQueryData(['servicos', 'parcelas', solicitacaoId], (old) =>
+        (old || []).map((item) => (item.id === row.id ? row : item)),
+      );
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'historico', solicitacaoId] });
+      setParcelaEditandoId(null);
+      toast({ title: 'Vencimento da parcela atualizado' });
+    },
+    onError: (error) => {
+      toast({ title: 'Não foi possível atualizar o vencimento da parcela', description: getFriendlyErrorMessage(error) });
     },
   });
 
@@ -780,7 +832,26 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                     <CampoDetalhe icon={UserCheck} label="Aprovador responsável" value={solicitacao.aprovador_destino_nome} />
                     <CampoDetalhe icon={Wallet} label="Valor" value={formatValor(solicitacao.valor)} />
                     <CampoDetalhe icon={Tag} label="Categoria" value={solicitacao.categoria} />
-                    <CampoDetalhe icon={Calendar} label="Vencimento" value={formatDataVencimento(solicitacao.vencimento_efetivo)} />
+                    <CampoDetalhe
+                      icon={Calendar}
+                      label="Vencimento"
+                      value={formatDataVencimento(solicitacao.vencimento_efetivo)}
+                      trailing={
+                        podeEditarVencimento && !editandoVencimento && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRascunhoVencimento(toLocalDateOnly(solicitacao.data_vencimento) || '');
+                              setEditandoVencimento(true);
+                            }}
+                            className="shrink-0 text-muted-foreground hover:text-foreground"
+                            title="Alterar vencimento"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )
+                      }
+                    />
                     <CampoDetalhe
                       icon={CreditCard}
                       label="Forma de pagamento"
@@ -791,6 +862,26 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                     <CampoDetalhe icon={Building2} label="Departamento" value={solicitacao.departamento_nome} />
                     <CampoDetalhe icon={Clock} label="Criado em" value={formatData(solicitacao.criado_em)} />
                   </div>
+                  {editandoVencimento && (
+                    <div className="flex items-center gap-2 rounded-md border border-border p-2">
+                      <Input
+                        type="date"
+                        value={rascunhoVencimento}
+                        onChange={(event) => setRascunhoVencimento(event.target.value)}
+                        className="h-9 flex-1"
+                      />
+                      <Button
+                        size="sm"
+                        disabled={!rascunhoVencimento || atualizarVencimentoMutation.isPending}
+                        onClick={() => atualizarVencimentoMutation.mutate(rascunhoVencimento)}
+                      >
+                        Salvar
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditandoVencimento(false)}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  )}
                   {Number(solicitacao.parcelas_total || 0) > 0 && Number(solicitacao.valor_pago || 0) > 0 && (
                     <div className="grid grid-cols-2 gap-4 border-t border-border pt-3">
                       <CampoDetalhe icon={Wallet} label="Valor pago" value={formatValor(solicitacao.valor_pago)} />
@@ -1216,24 +1307,70 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                   <div className="space-y-3 rounded-md border border-border p-3">
                     <SectionLabel>Plano de pagamento</SectionLabel>
                     <div className="space-y-2">
-                      {parcelas.map((parcela) => (
-                        <div
-                          key={parcela.id}
-                          className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${
-                            parcela.status === 'pago' ? 'border-emerald-500/30' : 'border-border'
-                          }`}
-                        >
-                          <div>
-                            <p className="font-medium">
-                              Parcela {parcela.numero} — {formatValor(parcela.valor)}
-                            </p>
-                            <p className="text-muted-foreground">Vencimento: {formatDataVencimento(parcela.data_vencimento)}</p>
+                      {parcelas.map((parcela) => {
+                        const podeEditarVencimentoParcela =
+                          isDonoSolicitacao && dentroDaJanelaVencimento && parcela.status === 'pendente';
+                        const editandoEstaParcela = parcelaEditandoId === parcela.id;
+                        return (
+                          <div
+                            key={parcela.id}
+                            className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${
+                              parcela.status === 'pago' ? 'border-emerald-500/30' : 'border-border'
+                            }`}
+                          >
+                            <div className="flex-1">
+                              <p className="font-medium">
+                                Parcela {parcela.numero} — {formatValor(parcela.valor)}
+                              </p>
+                              {editandoEstaParcela ? (
+                                <div className="mt-1 flex items-center gap-2">
+                                  <Input
+                                    type="date"
+                                    value={rascunhoVencimentoParcela}
+                                    onChange={(event) => setRascunhoVencimentoParcela(event.target.value)}
+                                    className="h-8 w-auto"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    disabled={!rascunhoVencimentoParcela || atualizarVencimentoParcelaMutation.isPending}
+                                    onClick={() =>
+                                      atualizarVencimentoParcelaMutation.mutate({
+                                        id: parcela.id,
+                                        dataVencimento: rascunhoVencimentoParcela,
+                                      })
+                                    }
+                                  >
+                                    Salvar
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => setParcelaEditandoId(null)}>
+                                    Cancelar
+                                  </Button>
+                                </div>
+                              ) : (
+                                <p className="flex items-center gap-1 text-muted-foreground">
+                                  Vencimento: {formatDataVencimento(parcela.data_vencimento)}
+                                  {podeEditarVencimentoParcela && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRascunhoVencimentoParcela(toLocalDateOnly(parcela.data_vencimento) || '');
+                                        setParcelaEditandoId(parcela.id);
+                                      }}
+                                      className="text-muted-foreground hover:text-foreground"
+                                      title="Alterar vencimento da parcela"
+                                    >
+                                      <Pencil className="h-3 w-3" />
+                                    </button>
+                                  )}
+                                </p>
+                              )}
+                            </div>
+                            <Badge variant={parcela.status === 'pago' ? 'default' : 'secondary'}>
+                              {PARCELA_STATUS_LABEL[parcela.status] || parcela.status}
+                            </Badge>
                           </div>
-                          <Badge variant={parcela.status === 'pago' ? 'default' : 'secondary'}>
-                            {PARCELA_STATUS_LABEL[parcela.status] || parcela.status}
-                          </Badge>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
