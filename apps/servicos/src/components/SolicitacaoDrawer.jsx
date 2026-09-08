@@ -175,6 +175,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const [novaCategoria, setNovaCategoria] = useState('');
   const [numeroCopiado, setNumeroCopiado] = useState(false);
   const [novoTipoDocumento, setNovoTipoDocumento] = useState('');
+  const precisaClassificarAnexo = !novaCategoria || !novoTipoDocumento;
   const [novoSigiloso, setNovoSigiloso] = useState(false);
   const [novoExigirDuasAssinaturas, setNovoExigirDuasAssinaturas] = useState(false);
   const [removerTarget, setRemoverTarget] = useState(null);
@@ -306,7 +307,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
       return;
     }
     if (!novaCategoria || !novoTipoDocumento) {
-      toast({ title: 'Classifique o anexo', description: 'Selecione a categoria e o tipo de documento antes de anexar o arquivo.' });
+      toast({ title: 'Classifique o anexo', description: "Escolha a categoria e o tipo de documento acima antes de clicar em 'Selecionar arquivo'." });
       return;
     }
 
@@ -844,6 +845,11 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                 {podeAdicionarAnexo && (
                   <div className="space-y-2 rounded-md border border-dashed border-input p-3">
                     <SectionLabel>Incluir anexo (correção pós-análise)</SectionLabel>
+                    {precisaClassificarAnexo && (
+                      <p className="text-xs text-muted-foreground">
+                        Selecione a categoria e o tipo de documento para poder anexar o arquivo.
+                      </p>
+                    )}
                     <div className="flex flex-wrap items-center gap-2">
                       <Select value={novaCategoria} onValueChange={setNovaCategoria}>
                         <SelectTrigger className="h-8 w-48">
@@ -871,12 +877,20 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                       </Select>
                       <label
                         htmlFor="anexo-drawer-upload"
-                        className="flex h-8 cursor-pointer items-center gap-2 rounded-md border border-input px-3 text-xs text-muted-foreground hover:bg-accent"
+                        className={`flex h-8 items-center gap-2 rounded-md border border-input px-3 text-xs text-muted-foreground ${
+                          precisaClassificarAnexo ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-accent'
+                        }`}
                       >
                         <Paperclip className="h-3 w-3" />
                         Selecionar arquivo
                       </label>
-                      <input id="anexo-drawer-upload" type="file" className="hidden" onChange={handleUploadAnexo} />
+                      <input
+                        id="anexo-drawer-upload"
+                        type="file"
+                        className="hidden"
+                        disabled={precisaClassificarAnexo}
+                        onChange={handleUploadAnexo}
+                      />
                       <label htmlFor="anexo-drawer-sigiloso" className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
                         <Checkbox
                           id="anexo-drawer-sigiloso"

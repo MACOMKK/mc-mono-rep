@@ -114,7 +114,7 @@ feature parando de funcionar) e o quão fácil é reverter se der errado.
 | #   | Ação                                                     | Risco                 | Reversível?                                                             | Precisa de deploy/migration?                       | Status                    |
 | --- | -------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------- | -------------------------------------------------- | ------------------------- |
 | A   | RLS: `(select auth.<função>())` nas 19 policies          | 🟢 Baixo              | Sim, imediato (re-executar `CREATE POLICY` antigo)                      | Migration SQL simples                              | ✅ **FEITO (2026-09-05)** |
-| B   | RLS: consolidar 67 policies duplicadas                   | 🟡 Baixo-médio        | Sim, mas exige atenção                                                  | Migration SQL, requer teste de acesso por role     | ⏳ Pendente               |
+| B   | RLS: consolidar 67 policies duplicadas                   | 🟡 Baixo-médio        | Sim, mas exige atenção                                                  | Migration SQL, requer teste de acesso por role     | ✅ **FEITO (2026-09-08)** |
 | C   | Espaçar `processa-fila-email` de 1 min → 2–5 min         | 🟢 Baixo              | Sim, imediato (`cron.alter_job`)                                        | Migration SQL simples                              | ✅ **FEITO (2026-09-05)** |
 | D   | Chamado no suporte Supabase sobre `pg_net`               | ⚪ Nenhum             | N/A                                                                     | Nenhuma (não mexe em nada nosso)                   | ⏳ Pendente               |
 | E   | Desabilitar Realtime em tabelas de baixíssimo uso        | 🟡 Médio              | Sim, mas quebra silenciosamente até perceber                            | Migration SQL (`ALTER PUBLICATION ... DROP TABLE`) | ⏳ Pendente               |
@@ -243,14 +243,46 @@ já que `ALTER POLICY` não muda o comando), deixando a `_select` como única do
 confirmar, por tabela, que a função de "editar" realmente implica a de "ver" (senão um usuário que
 só edita mas não deveria ver perderia acesso de leitura ao consolidar).
 
-*Tier 3 — casos especiais, lógica genuinamente distinta (7 casos), tratar um a um:*
-- `gestao_intranet.comentarios_avisos` (INSERT e SELECT): 3 policies com regras diferentes
-  (`_insert` exige `can_view_module` + autor; `_update_delete` é `FOR ALL` admin-ou-autor;
-  `_select` é só `can_view_module`). Fusão requer `OR` cuidadoso, não é drop simples.
-- `gestao_servicos.parcelas_pagamento` (INSERT e SELECT) e `gestao_servicos.solicitacoes_pagamento`
-  (UPDATE): regras de negócio financeiro (financeiro vs. pagador vs. solicitante vs. aprovador)
-  genuinamente diferentes entre as policies duplicadas — precisa entender o fluxo de aprovação do
-  módulo Financeiro antes de fundir.
+*Tier 3 — casos especiais, lógica genuinamente distinta (3 tabelas), tratados um a um:* ✅ **FEITO
+(2026-09-08)** — análise completa e migrations aplicadas para as 3 tabelas, ver plano detalhado em
+`C:\Users\kevin.soares\.claude\plans\ancient-crunching-flamingo.md` (prova booleana de cada fusão,
+tabela-resumo de risco/blast radius).
+
+- `gestao_intranet.comentarios_avisos` (SELECT/INSERT/UPDATE/DELETE): 3 policies com regras
+  diferentes (`_insert` exigia `can_view_module` + autor; `_update_delete` era `FOR ALL`
+  admin-ou-autor; `_select` era só `can_view_module`). Único dos 3 casos com blast radius real
+  (Realtime da intranet) — nas demais rotas o CRUD passa pela Edge Function `intranet-api`
+  (conexão direta via `DATABASE_URL`, sem `FORCE ROW LEVEL SECURITY`), que não é gatekeepada por
+  RLS. SELECT virou union dos 3 termos (`can_view_module OR is_admin OR dono`); INSERT se
+  simplifica matematicamente por lei de absorção para `dono OR is_admin` (o termo
+  `can_view_module` já era redundante mesmo antes da fusão); UPDATE/DELETE só separados do antigo
+  `FOR ALL`, sem mudança de condição. Migration
+  `20260908100000_narrow_manage_policies_tier3_comentarios_avisos.sql`. Verificado via
+  `pg_policies` (4 policies, 1 por comando, zero duplicidade) e via teste real de Realtime na
+  intranet.
+- `gestao_servicos.solicitacoes_pagamento` (UPDATE): `_update_solicitante` (dono + status
+  `pendente`) e `_update_aprovador` (financeiro ou aprovador-destino) são populações disjuntas por
+  design — fusão trivial em `OR` literal das duas condições existentes, sem alterar nenhuma delas.
+  Achado à parte, deliberadamente fora do escopo desta migration de performance:
+  `_update_solicitante` (e o INSERT desta tabela) ainda usam a checagem antiga
+  `servicos_has_access()` em vez do padrão atual (`servicos_module_role`/`servicos_is_pagador`) —
+  registrado como débito técnico, decisão de corrigir fica para o usuário depois (mudaria
+  semântica de permissão de verdade, não é neutro como esta fusão). Migration
+  `20260908110000_narrow_manage_policies_tier3_solicitacoes_pagamento.sql`.
+- `gestao_servicos.parcelas_pagamento` (SELECT/INSERT/UPDATE/DELETE): SELECT seguiu o padrão
+  mecânico do Tier 2 (condição de `_write_financeiro` é subconjunto estrito de
+  `servicos_can_access_solicitacao`); INSERT exigiu fusão genuína em `OR` (dono+pendente ×
+  financeiro/pagador são populações disjuntas por design); UPDATE/DELETE só narrowing mecânico.
+  Confirmado que a tabela não está na publicação Realtime (`pg_publication_tables`) — zero blast
+  radius hoje, RLS é só defesa em profundidade (a Edge Function `servicos-api` também conecta
+  direto via `DATABASE_URL`, bypassando RLS). Migration
+  `20260908120000_narrow_manage_policies_tier3_parcelas_pagamento.sql`. Testado com simulação de
+  papel real (`SET ROLE`/JWT dentro de `begin...rollback`, sem escrita nenhuma) para financeiro,
+  contas a pagar, dono e colaborador sem relação — todos os 4 resultados bateram com a regra de
+  negócio esperada.
+
+Todas as 3 verificadas via `pg_policies` pré/pós-aplicação: cada tabela ficou com exatamente 1
+policy por comando, zero `multiple_permissive_policies` remanescente.
 - `public.sistemas` (SELECT): `sistemas_read_authenticated` e `sistemas_select_authenticated` são
   **duplicata exata** (`qual: true` nas duas) — resíduo de migração, sem risco (tabela já é
   catálogo público pra todo autenticado). Drop de uma das duas. — ✅ **FEITO (2026-09-05)**, migração
@@ -272,10 +304,11 @@ só edita mas não deveria ver perderia acesso de leitura ao consolidar).
   `acessos_admin_manage` e `acessos_read_self_or_admin`). Rollback documentado no comentário da
   migração caso algum consumidor não mapeado apareça.
 
-**Ordem de execução sugerida dentro do item B:** Tier 1 (drop simples, 7) → `sistemas` (drop
-duplicata exata) → `acessos_usuario_sistema` (drop policy sem uso, achado de segurança) → Tier 2
-(23, requer `DROP`+`CREATE` por tabela, o maior volume) → Tier 3 restante (comentarios_avisos,
-parcelas_pagamento, solicitacoes_pagamento — requer entender regra de negócio antes de mexer).
+**Ordem de execução:** Tier 1 (drop simples, 7) → `sistemas` (drop duplicata exata) →
+`acessos_usuario_sistema` (drop policy sem uso, achado de segurança) → Tier 2 (23, requer
+`DROP`+`CREATE` por tabela, o maior volume) → Tier 3 (comentarios_avisos, solicitacoes_pagamento,
+parcelas_pagamento — regra de negócio genuína, uma migration por tabela). **Item B concluído por
+completo em 2026-09-08.**
 
 **C. Espaçar `processa-fila-email` de 1 min para 2–5 min** — 🟢 **Risco baixo** — ✅ **FEITO (2026-09-05)**
 
@@ -371,7 +404,9 @@ mexer agora**
 2. **A** — corrigir as 19 policies de RLS, uma tabela por vez, com teste de acesso.
 3. ~~**C** — espaçar o `processa-fila-email` para 2–5 min~~ ✅ **FEITO (2026-09-05)** — schedule
    alterado de `* * * * *` para `*/5 * * * *`; observar a fila por 1–2 dias antes de seguir.
-4. **B** — consolidar as 67 policies duplicadas, tabela por tabela, com teste de casos de borda.
+4. ~~**B** — consolidar as 67 policies duplicadas, tabela por tabela, com teste de casos de
+   borda.~~ ✅ **FEITO (2026-09-08)** — Tier 1, Tier 2 (lotes 1-3) e Tier 3 (3 casos de lógica
+   genuína) todos aplicados e verificados via `pg_policies`.
 5. **E** — avaliar remoção de tabelas do Realtime, só depois de confirmar (via grep no código)
    que nenhum listener ativo depende delas.
 6. **G** — upgrade de compute, só se o alerta persistir depois dos itens acima.
