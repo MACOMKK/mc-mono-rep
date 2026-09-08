@@ -1,0 +1,22 @@
+-- Corrige multiple_permissive_policies (advisor de performance) e reduz superficie de
+-- exposicao em public.acessos_usuario_sistema.
+--
+-- A tabela tinha 3 policies FOR SELECT/ALL para authenticated:
+--   - acessos_admin_manage (ALL): admin da intranet.
+--   - acessos_read_self_or_admin (SELECT): dono do registro ou admin.
+--   - acessos_usuario_sistema_select_authenticated (SELECT, qual: true): libera leitura da
+--     tabela INTEIRA para qualquer usuario autenticado, anulando a restricao self-or-admin.
+--
+-- Essa terceira policy foi criada em 20260826170000_enable_rls_sistemas_acessos_usuario_sistema.sql
+-- como "leitura inalterada" (o foco daquela migracao era so fechar insert/update/delete). Levantamento
+-- em 2026-09-05 confirmou: nenhum app do monorepo le essa tabela via client Supabase direto (tudo
+-- passa por Edge Function com DATABASE_URL/service_role, que ignora RLS de qualquer forma) - a policy
+-- esta sem uso real hoje. Drop reduz a exposicao sem afetar nenhum consumidor.
+-- Ver SUPABASE_PERFORMANCE_INVESTIGACAO.md, item B.
+--
+-- Rollback (recriar a policy exatamente como estava, caso identifique algum problema):
+--
+-- create policy "acessos_usuario_sistema_select_authenticated" on public.acessos_usuario_sistema
+--   for select to authenticated using (true);
+
+drop policy acessos_usuario_sistema_select_authenticated on public.acessos_usuario_sistema;
