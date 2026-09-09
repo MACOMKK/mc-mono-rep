@@ -13,6 +13,7 @@ import {
   Download,
   Eye,
   FileStack,
+  FileText,
   Hash,
   Landmark,
   Lock,
@@ -1061,61 +1062,70 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                     Object.entries(anexosPorTipo).map(([tipoAnexo, items]) => (
                       <div key={tipoAnexo} className="space-y-2">
                         <SectionLabel>{TIPO_ANEXO_LABEL[tipoAnexo] || tipoAnexo}</SectionLabel>
-                        <ul className="space-y-1">
+                        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           {items.map((anexo) => (
-                            <li
-                              key={anexo.id}
-                              className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
-                            >
-                              <span className="flex min-w-0 items-center gap-2">
-                                <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                <span className="truncate">{anexo.nome_arquivo}</span>
-                                {anexo.sigiloso && (
-                                  <Badge variant="outline" className="shrink-0 gap-1">
-                                    <Lock className="h-3 w-3" />
-                                    Sigiloso
-                                  </Badge>
-                                )}
-                                {(anexo.assinaturas || []).length > 0 && (
-                                  <Badge
-                                    variant="outline"
-                                    title={anexo.assinaturas
-                                      .map((assinatura) => `${assinatura.nome} (${assinatura.papel}) em ${formatDataHora(assinatura.assinado_em)}`)
-                                      .join('\n')}
-                                    className={`shrink-0 gap-1 ${
-                                      anexo.assinaturas.length >= (anexo.assinaturas_necessarias || 1)
-                                        ? 'border-emerald-500/40 text-emerald-600'
-                                        : 'border-amber-500/40 text-amber-600'
-                                    }`}
-                                  >
-                                    <UserCheck className="h-3 w-3" />
-                                    {anexo.assinaturas.length >= (anexo.assinaturas_necessarias || 1)
-                                      ? 'Assinado'
-                                      : `Assinado (${anexo.assinaturas.length}/${anexo.assinaturas_necessarias || 1})`}
-                                  </Badge>
-                                )}
-                                {podeEditarAssinaturasAnexo && (
-                                  <label
-                                    htmlFor={`anexo-duas-assinaturas-${anexo.id}`}
-                                    className="flex shrink-0 cursor-pointer items-center gap-1 text-xs text-muted-foreground"
-                                  >
-                                    <Checkbox
-                                      id={`anexo-duas-assinaturas-${anexo.id}`}
-                                      checked={anexo.assinaturas_necessarias === 2}
-                                      disabled={atualizarAssinaturasAnexoMutation.isPending}
-                                      onCheckedChange={(checked) => handleToggleExigirDuasAssinaturas(anexo, checked === true)}
-                                    />
-                                    2 assinaturas
-                                  </label>
-                                )}
-                              </span>
-                              <span className="flex shrink-0 items-center gap-1">
+                            <li key={anexo.id} className="space-y-3 rounded-lg border border-border p-3 text-sm">
+                              <div className="flex items-start gap-3">
+                                <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+                                  {getPreviewType(anexo) === 'image' && anexo.url ? (
+                                    <img src={anexo.url} alt="" className="h-full w-full object-cover" />
+                                  ) : getPreviewType(anexo) === 'pdf' ? (
+                                    <FileText className="h-6 w-6 text-muted-foreground" />
+                                  ) : (
+                                    <Paperclip className="h-6 w-6 text-muted-foreground" />
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1 space-y-1.5">
+                                  <p className="break-words font-medium leading-snug">{anexo.nome_arquivo}</p>
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {anexo.sigiloso && (
+                                      <Badge variant="outline" className="shrink-0 gap-1">
+                                        <Lock className="h-3 w-3" />
+                                        Sigiloso
+                                      </Badge>
+                                    )}
+                                    {(anexo.assinaturas || []).length > 0 && (
+                                      <Badge
+                                        variant="outline"
+                                        title={anexo.assinaturas
+                                          .map((assinatura) => `${assinatura.nome} (${assinatura.papel}) em ${formatDataHora(assinatura.assinado_em)}`)
+                                          .join('\n')}
+                                        className={`shrink-0 gap-1 ${
+                                          anexo.assinaturas.length >= (anexo.assinaturas_necessarias || 1)
+                                            ? 'border-emerald-500/40 text-emerald-600'
+                                            : 'border-amber-500/40 text-amber-600'
+                                        }`}
+                                      >
+                                        <UserCheck className="h-3 w-3" />
+                                        {anexo.assinaturas.length >= (anexo.assinaturas_necessarias || 1)
+                                          ? 'Assinado'
+                                          : `Assinado (${anexo.assinaturas.length}/${anexo.assinaturas_necessarias || 1})`}
+                                      </Badge>
+                                    )}
+                                    {podeEditarAssinaturasAnexo && (
+                                      <label
+                                        htmlFor={`anexo-duas-assinaturas-${anexo.id}`}
+                                        className="flex shrink-0 cursor-pointer items-center gap-1 text-xs text-muted-foreground"
+                                      >
+                                        <Checkbox
+                                          id={`anexo-duas-assinaturas-${anexo.id}`}
+                                          checked={anexo.assinaturas_necessarias === 2}
+                                          disabled={atualizarAssinaturasAnexoMutation.isPending}
+                                          onCheckedChange={(checked) => handleToggleExigirDuasAssinaturas(anexo, checked === true)}
+                                        />
+                                        2 assinaturas
+                                      </label>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-end gap-1 border-t border-border pt-2">
                                 {anexo.url && (
                                   <button
                                     type="button"
                                     onClick={() => setPreviewAnexo(anexo)}
                                     title="Visualizar"
-                                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                    className="rounded p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
                                   >
                                     <Eye className="h-4 w-4" />
                                   </button>
@@ -1126,7 +1136,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                                     onClick={() => handleBaixarAnexo(anexo)}
                                     disabled={baixandoAnexoId === anexo.id}
                                     title="Baixar"
-                                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                                    className="rounded p-2 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                                   >
                                     {baixandoAnexoId === anexo.id ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
                                   </button>
@@ -1141,7 +1151,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                                     onClick={() => handleAbrirAssinaturaAnexo(anexo)}
                                     disabled={abrindoAssinaturaAnexoId === anexo.id}
                                     title="Assinar"
-                                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                                    className="rounded p-2 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                                   >
                                     {abrindoAssinaturaAnexoId === anexo.id ? <Spinner size="sm" /> : <UserCheck className="h-4 w-4" />}
                                   </button>
@@ -1151,12 +1161,12 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                                     type="button"
                                     onClick={() => setRemoverTarget(anexo)}
                                     title="Remover"
-                                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive"
+                                    className="rounded p-2 text-muted-foreground hover:bg-accent hover:text-destructive"
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </button>
                                 )}
-                              </span>
+                              </div>
                             </li>
                           ))}
                         </ul>
