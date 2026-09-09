@@ -682,13 +682,6 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
     }
   }
 
-  const anexosPorTipo = anexos.reduce((acc, anexo) => {
-    const key = anexo.tipo_anexo || 'outros';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(anexo);
-    return acc;
-  }, {});
-
   return (
     <Sheet open={Boolean(solicitacao)} onOpenChange={onOpenChange}>
       <SheetContent className="flex w-full flex-col overflow-hidden sm:max-w-xl">
@@ -1059,12 +1052,9 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                   ) : anexos.length === 0 && anexosPendentes.length === 0 ? (
                     <p className="text-sm text-muted-foreground">Nenhum anexo enviado.</p>
                   ) : (
-                    Object.entries(anexosPorTipo).map(([tipoAnexo, items]) => (
-                      <div key={tipoAnexo} className="space-y-2">
-                        <SectionLabel>{TIPO_ANEXO_LABEL[tipoAnexo] || tipoAnexo}</SectionLabel>
-                        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          {items.map((anexo) => (
-                            <li key={anexo.id} className="space-y-3 rounded-lg border border-border p-3 text-sm">
+                    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {anexos.map((anexo) => (
+                            <li key={anexo.id} className="space-y-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
                               <div className="flex items-start gap-3">
                                 <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                                   {getPreviewType(anexo) === 'image' && anexo.url ? (
@@ -1076,6 +1066,9 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                                   )}
                                 </div>
                                 <div className="min-w-0 flex-1 space-y-1.5">
+                                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                    {TIPO_ANEXO_LABEL[anexo.tipo_anexo] || anexo.tipo_anexo || 'Outros'}
+                                  </p>
                                   <p className="break-words font-medium leading-snug">{anexo.nome_arquivo}</p>
                                   <div className="flex flex-wrap items-center gap-1.5">
                                     {anexo.sigiloso && (
@@ -1168,10 +1161,8 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                                 )}
                               </div>
                             </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))
+                      ))}
+                    </ul>
                   )}
                 </div>
 
