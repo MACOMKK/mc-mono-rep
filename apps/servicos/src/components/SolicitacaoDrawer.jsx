@@ -961,16 +961,18 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                 </div>
 
                 {podeAdicionarAnexo && (
-                  <div className="space-y-2 rounded-md border border-dashed border-input p-3">
-                    <SectionLabel>Incluir anexo (correção pós-análise)</SectionLabel>
-                    {precisaClassificarAnexo && (
-                      <p className="text-xs text-muted-foreground">
-                        Selecione o tipo de anexo para poder anexar o arquivo.
-                      </p>
-                    )}
-                    <div className="flex flex-wrap items-center gap-2">
+                  <div className="space-y-3 rounded-md border border-dashed border-input p-3">
+                    <div className="space-y-1">
+                      <SectionLabel>Incluir anexo (correção pós-análise)</SectionLabel>
+                      {precisaClassificarAnexo && (
+                        <p className="text-xs text-muted-foreground">
+                          Selecione o tipo de anexo para poder anexar o arquivo.
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <Select value={novoTipoAnexo} onValueChange={setNovoTipoAnexo}>
-                        <SelectTrigger className="h-8 w-48">
+                        <SelectTrigger className="h-8 w-full sm:w-48">
                           <SelectValue placeholder="Tipo de anexo" />
                         </SelectTrigger>
                         <SelectContent>
@@ -983,7 +985,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                       </Select>
                       <label
                         htmlFor="anexo-drawer-upload"
-                        className={`flex h-8 items-center gap-2 rounded-md border border-input px-3 text-xs text-muted-foreground ${
+                        className={`flex h-8 items-center justify-center gap-2 rounded-md border border-input px-3 text-xs text-muted-foreground sm:justify-start ${
                           precisaClassificarAnexo ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-accent'
                         }`}
                       >
@@ -997,6 +999,8 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                         disabled={precisaClassificarAnexo}
                         onChange={handleUploadAnexo}
                       />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/60 pt-2">
                       <label htmlFor="anexo-drawer-sigiloso" className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
                         <Checkbox
                           id="anexo-drawer-sigiloso"
