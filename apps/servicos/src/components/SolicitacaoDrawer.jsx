@@ -899,66 +899,65 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
               </TabsContent>
 
               <TabsContent value="anexos" className="space-y-4">
-                <div className="flex items-center justify-end gap-2">
-                  {((podeBaixarTodosAnexos && anexos.length > 0) ||
-                    (podeAssinarAnexo && anexosElegiveisParaAssinar.length > 0)) && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      {podeBaixarTodosAnexos && anexos.length > 0 && (
-                        <>
-                          {anexos.some((anexo) => anexo.url && getPreviewType(anexo) === 'pdf') && (
-                            <>
-                              {user?.signatureUrl && (
-                                <label
-                                  htmlFor="incluir-assinatura-pdf"
-                                  className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
-                                >
-                                  <Checkbox
-                                    id="incluir-assinatura-pdf"
-                                    checked={incluirAssinatura}
-                                    onCheckedChange={(checked) => setIncluirAssinatura(checked === true)}
-                                  />
-                                  Incluir minha assinatura
-                                </label>
-                              )}
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                disabled={gerandoPdfUnico}
-                                onClick={handleGerarPdfUnico}
-                              >
-                                {gerandoPdfUnico ? <Spinner size="sm" /> : <FileStack className="h-4 w-4" />}
-                                Juntar PDFs
-                              </Button>
-                            </>
-                          )}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={baixandoTodos}
-                            onClick={handleBaixarTodosAnexos}
-                          >
-                            {baixandoTodos ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
-                            Baixar todos
-                          </Button>
-                        </>
-                      )}
-                      {podeAssinarAnexo && anexosElegiveisParaAssinar.length > 0 && (
+                {((podeBaixarTodosAnexos && anexos.length > 0) ||
+                  (podeAssinarAnexo && anexosElegiveisParaAssinar.length > 0)) && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-muted/20 p-2">
+                    {podeBaixarTodosAnexos && anexos.length > 0 && (
+                      <>
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          disabled={abrindoAssinarTodos || Boolean(assinandoLote)}
-                          onClick={handleAbrirAssinarTodosAnexos}
+                          disabled={baixandoTodos}
+                          onClick={handleBaixarTodosAnexos}
                         >
-                          {abrindoAssinarTodos || assinandoLote ? <Spinner size="sm" /> : <UserCheck className="h-4 w-4" />}
-                          {assinandoLote ? `Assinando ${assinandoLote.atual}/${assinandoLote.total}...` : 'Assinar todos'}
+                          {baixandoTodos ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
+                          Baixar todos
                         </Button>
+                        {anexos.some((anexo) => anexo.url && getPreviewType(anexo) === 'pdf') && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={gerandoPdfUnico}
+                            onClick={handleGerarPdfUnico}
+                          >
+                            {gerandoPdfUnico ? <Spinner size="sm" /> : <FileStack className="h-4 w-4" />}
+                            Juntar PDFs
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    {podeAssinarAnexo && anexosElegiveisParaAssinar.length > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={abrindoAssinarTodos || Boolean(assinandoLote)}
+                        onClick={handleAbrirAssinarTodosAnexos}
+                      >
+                        {abrindoAssinarTodos || assinandoLote ? <Spinner size="sm" /> : <UserCheck className="h-4 w-4" />}
+                        {assinandoLote ? `Assinando ${assinandoLote.atual}/${assinandoLote.total}...` : 'Assinar todos'}
+                      </Button>
+                    )}
+                    {podeBaixarTodosAnexos &&
+                      anexos.length > 0 &&
+                      anexos.some((anexo) => anexo.url && getPreviewType(anexo) === 'pdf') &&
+                      user?.signatureUrl && (
+                        <label
+                          htmlFor="incluir-assinatura-pdf"
+                          className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
+                        >
+                          <Checkbox
+                            id="incluir-assinatura-pdf"
+                            checked={incluirAssinatura}
+                            onCheckedChange={(checked) => setIncluirAssinatura(checked === true)}
+                          />
+                          Incluir minha assinatura
+                        </label>
                       )}
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {podeAdicionarAnexo && (
                   <div className="space-y-3 rounded-md border border-dashed border-input p-3">
