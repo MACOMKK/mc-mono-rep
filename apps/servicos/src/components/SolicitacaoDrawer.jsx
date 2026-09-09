@@ -1008,7 +1008,11 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                         />
                         Sigiloso
                       </label>
-                      <label htmlFor="anexo-drawer-duas-assinaturas" className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                      <label
+                        htmlFor="anexo-drawer-duas-assinaturas"
+                        className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
+                        title="Marque quando o documento precisa ser assinado em duas vias (pelo solicitante e pelo aprovador destino)"
+                      >
                         <Checkbox
                           id="anexo-drawer-duas-assinaturas"
                           checked={novoExigirDuasAssinaturas}
