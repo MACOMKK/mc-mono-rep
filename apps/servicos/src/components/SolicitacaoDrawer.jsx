@@ -1062,7 +1062,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                     Object.entries(anexosPorTipo).map(([tipoAnexo, items]) => (
                       <div key={tipoAnexo} className="space-y-2">
                         <SectionLabel>{TIPO_ANEXO_LABEL[tipoAnexo] || tipoAnexo}</SectionLabel>
-                        <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           {items.map((anexo) => (
                             <li key={anexo.id} className="space-y-3 rounded-lg border border-border p-3 text-sm">
                               <div className="flex items-start gap-3">
