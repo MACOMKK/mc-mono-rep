@@ -1054,7 +1054,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                   ) : (
                     <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {anexos.map((anexo) => (
-                            <li key={anexo.id} className="space-y-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+                            <li key={anexo.id} className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm shadow-sm">
                               <div className="flex items-start gap-3">
                                 <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
                                   {getPreviewType(anexo) === 'image' && anexo.url ? (
