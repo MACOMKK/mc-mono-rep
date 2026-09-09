@@ -68,7 +68,7 @@ export default function LeadForm({
     nome: '',
     telefone: '',
     email: '',
-    origem: 'site',
+    origem_id: '',
     status: 'novo',
     modelo_interesse: '',
     veiculo_interesse: {
@@ -128,6 +128,16 @@ export default function LeadForm({
     [categoriasVeiculo, data.veiculo_interesse?.categoria_veiculo_id],
   );
 
+  const { data: origensLead = [] } = useQuery({
+    queryKey: ['crm-origens-lead'],
+    queryFn: () => crmDataClient.entities.OrigemLead.list('nome'),
+    enabled: open,
+  });
+  const origensSelecionaveis = useMemo(
+    () => origensLead.filter((origem) => origem.ativo || origem.id === data.origem_id),
+    [origensLead, data.origem_id],
+  );
+
   const currentStepKey = steps[currentStep]?.key;
   const isLastStep = currentStep === steps.length - 1;
   const responsaveisDaUnidade = responsaveis.filter((item) => !data.unidade_id || item.unidade_id === data.unidade_id);
@@ -138,6 +148,12 @@ export default function LeadForm({
     const matched = unidades.find((item) => companyFromUnit(item.nome) === expectedCompany) || unidades[0];
     setData((current) => ({ ...current, unidade_id: matched.id, empresa: companyFromUnit(matched.nome) }));
   }, [data.empresa, data.unidade_id, unidades]);
+
+  useEffect(() => {
+    if (data.origem_id || origensLead.length === 0) return;
+    const matched = origensLead.find((item) => item.nome.toLowerCase() === 'site') || origensLead[0];
+    setData((current) => ({ ...current, origem_id: matched.id }));
+  }, [data.origem_id, origensLead]);
 
   useEffect(() => {
     setCurrentStep(0);
@@ -270,14 +286,14 @@ export default function LeadForm({
             {currentStepKey === 'comercial' ? (
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Origem">
-                  <Select value={data.origem} onValueChange={(value) => set('origem', value)}>
+                  <Select value={data.origem_id} onValueChange={(value) => set('origem_id', value)}>
                     <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent className="rounded-none">
-                      <SelectItem value="telefone">Telefone</SelectItem>
-                      <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                      <SelectItem value="site">Site</SelectItem>
-                      <SelectItem value="showroom">Showroom</SelectItem>
-                      <SelectItem value="indicacao">Indicacao</SelectItem>
+                      {origensSelecionaveis.map((origem) => (
+                        <SelectItem key={origem.id} value={origem.id}>
+                          {origem.nome}{!origem.ativo ? ' (inativa)' : ''}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </Field>

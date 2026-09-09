@@ -16,6 +16,7 @@ const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const Login = lazy(() => import('@/pages/Login'));
 const ConfiguracaoDistribuicao = lazy(() => import('@/pages/ConfiguracaoDistribuicao'));
 const CategoriasVeiculo = lazy(() => import('@/pages/CategoriasVeiculo'));
+const OrigensLead = lazy(() => import('@/pages/OrigensLead'));
 const Atendimento = lazy(() => import('@/pages/Atendimento'));
 
 const getFromPath = (search) => {
@@ -82,6 +83,7 @@ const CrmRoutes = () => {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/configuracoes/distribuicao" element={<ConfiguracaoDistribuicao />} />
           <Route path="/configuracoes/categorias-veiculo" element={<CategoriasVeiculo />} />
+          <Route path="/configuracoes/origens-lead" element={<OrigensLead />} />
         </Route>
         <Route path="*" element={<PageNotFound />} />
       </Routes>

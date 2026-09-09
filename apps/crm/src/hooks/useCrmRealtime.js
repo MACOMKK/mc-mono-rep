@@ -9,6 +9,7 @@ const REALTIME_TABLES = [
   'historico_atendimentos',
   'veiculos_interesse',
   'categorias_veiculo',
+  'origens_lead',
   'configuracoes_distribuicao',
   'vendedores_distribuicao',
   'conversas_atendimento',
@@ -37,6 +38,9 @@ const TABLE_CACHE_CONFIG = {
   },
   categorias_veiculo: {
     queryKeys: [['crm-categorias-veiculo']],
+  },
+  origens_lead: {
+    queryKeys: [['crm-origens-lead']],
   },
   configuracoes_distribuicao: {
     queryKeys: [['crm-distribuicao']],
@@ -103,7 +107,7 @@ function mapLeadRow(row = {}) {
     telefone_normalizado: row.telefone_normalizado || normalizePhone(row.telefone),
     email: row.email || '',
     email_normalizado: row.email_normalizado || '',
-    origem: row.origem || 'site',
+    origem_id: row.origem_id || '',
     status: row.status || 'novo',
     modelo_interesse: row.modelo_interesse || '',
     empresa: row.empresa || 'Macom Ananindeua',

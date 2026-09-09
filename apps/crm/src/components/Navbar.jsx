@@ -189,7 +189,11 @@ export default function Navbar({ realtime }) {
             { label: 'Funil', icon: SlidersHorizontal, comingSoon: true },
             { label: 'Etapas do Funil', icon: SlidersHorizontal, comingSoon: true },
             { label: 'Tipos de Atividade', icon: SlidersHorizontal, comingSoon: true },
-            { label: 'Origens', icon: SlidersHorizontal, comingSoon: true },
+            {
+              label: 'Origens',
+              icon: SlidersHorizontal,
+              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/origens-lead' : undefined,
+            },
             { label: 'Mídias', icon: SlidersHorizontal, comingSoon: true },
             { label: 'Modelos de Interesse', icon: SlidersHorizontal, comingSoon: true },
             { label: 'Motivos Insucesso', icon: SlidersHorizontal, comingSoon: true },

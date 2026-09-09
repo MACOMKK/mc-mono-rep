@@ -897,7 +897,9 @@ export default function Pagamentos() {
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-2">
                       <span>{formatDataVencimento(row.vencimento_efetivo)}</span>
-                      <Badge variant={vencimentoInfo.variant}>{vencimentoInfo.label}</Badge>
+                      {row.status !== 'pago' && (
+                        <Badge variant={vencimentoInfo.variant}>{vencimentoInfo.label}</Badge>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>{FORMA_PAGAMENTO_LABEL[row.forma_pagamento] || '-'}</TableCell>
@@ -1004,7 +1006,9 @@ export default function Pagamentos() {
                         Auto-aprovado
                       </Badge>
                     )}
-                    <Badge variant={vencimentoInfo.variant}>{vencimentoInfo.label}</Badge>
+                    {row.status !== 'pago' && (
+                      <Badge variant={vencimentoInfo.variant}>{vencimentoInfo.label}</Badge>
+                    )}
                   </>
                 }
                 actions={

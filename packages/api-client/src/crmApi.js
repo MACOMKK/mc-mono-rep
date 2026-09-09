@@ -195,4 +195,5 @@ export const crmApi = {
   historico_atendimentos: buildEntity('historico_atendimentos'),
   veiculos_interesse: buildEntity('veiculos_interesse'),
   categorias_veiculo: buildEntity('categorias_veiculo'),
+  origens_lead: buildEntity('origens_lead'),
 };

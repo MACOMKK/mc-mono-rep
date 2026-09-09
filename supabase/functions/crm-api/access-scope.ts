@@ -1,6 +1,6 @@
 export const CRM_SCHEMA = 'gestao_crm';
 
-export type EntityName = 'clientes' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo';
+export type EntityName = 'clientes' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead';
 
 export function getAccessLevel(access: Record<string, unknown> | null) {
   return String(access?.nivel_acesso || '');
@@ -74,6 +74,7 @@ export function buildAccessScope(
           values: [unitId],
         };
       case 'categorias_veiculo':
+      case 'origens_lead':
         return { clause: '', values: [] as unknown[] };
       default:
         throw unimplementedScopeError(entity);
@@ -129,6 +130,7 @@ export function buildAccessScope(
         values: [collaboratorId],
       };
     case 'categorias_veiculo':
+    case 'origens_lead':
       return { clause: '', values: [] as unknown[] };
     default:
       throw unimplementedScopeError(entity);

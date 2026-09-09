@@ -26,11 +26,12 @@ Gestão comercial automotiva: leads, clientes, atendimentos e distribuição par
 | Tabela | Campos-chave |
 |---|---|
 | `clientes` | `status_relacionamento` (lead/cliente/pos_venda) |
-| `leads` | `origem` (telefone/whatsapp/site/showroom/indicacao), `status` (triagem/novo/tentativa_contato/em_contato/qualificado/proposta/convertido/perdido/descartado), SLA, responsável |
+| `leads` | `origem_id` referencia `origens_lead` (FK), `status` (novo/tentativa_contato/em_contato/qualificado/proposta/convertido/perdido), SLA, responsável |
 | `atendimentos` | `tipo` (venda/pos_venda/agendamento/retorno), `temperatura` (frio/morno/quente) |
 | `historico_atendimentos` | auditoria de mudanças |
 | `veiculos_interesse` | veículos associados a um lead; `categoria_veiculo_id` referencia `categorias_veiculo` (FK), pois a concessionária pode vender motos e/ou carros |
 | `categorias_veiculo` | catálogo de categorias de veículo (`nome`, `ativo`) — cadastro livre via tela de configuração (admin/gestor), sem lista fixa no schema |
+| `origens_lead` | catálogo de origens de lead (`nome`, `ativo`) — mesmo padrão de `categorias_veiculo`; substituiu o antigo `leads.origem` (texto com `check` fixo) em `20260909110000_add_crm_origens_lead.sql` |
 | `configuracoes_distribuicao` / `vendedores_distribuicao` | regras de distribuição automática de leads |
 | `conversas_atendimento` / `mensagens_atendimento` | chat de atendimento via WhatsApp + IA (módulo "Atendimento", em construção) |
 
@@ -56,22 +57,11 @@ plural já é redirect para `/atividades`, não confundir), client de API dedica
 `crm-api`, já que os dados são gravados pela `whatsapp-api`), e deploy/configuração real dos
 secrets no painel da Meta.
 
-## Pré-Lead (triagem)
-
-Contatos podem entrar em `leads` com `status = 'triagem'` (pré-lead) antes de virarem lead
-oficial. Enquanto em triagem, o lead **não** participa da distribuição automática de vendedor
-nem do SLA de primeiro contato — essas regras só disparam na transição `triagem → status ativo`
-("promoção", `promovido_em`). `status = 'descartado'` é o terminal para pré-leads sem potencial
-de compra (exige `motivo_descarte`, mesmo padrão de `motivo_perda`). Atividades (`atendimentos`)
-não podem ser criadas para um lead ainda em `triagem`. Ver `gestao_crm.prepare_lead_phase1()` e
-`apps/crm/src/pages/Leads.jsx` (aba "Pré-Leads", com sub-visões "Em Triagem" e "Descartados" —
-esta última só para consulta, sem ações de qualificar/descartar).
-
 ## Realtime
 
 `useCrmRealtime.js` escuta INSERT/UPDATE/DELETE em `gestao_crm` (leads, clientes, atendimentos,
-historico_atendimentos, veiculos_interesse, categorias_veiculo, configuracoes_distribuicao, vendedores_distribuicao,
-conversas_atendimento, mensagens_atendimento)
+historico_atendimentos, veiculos_interesse, categorias_veiculo, origens_lead, configuracoes_distribuicao,
+vendedores_distribuicao, conversas_atendimento, mensagens_atendimento)
 e sincroniza o cache do React Query. Estados possíveis: `connecting`, `active`, `syncing`, `error`, `disabled`.
 Ao adicionar uma nova tabela ao schema `gestao_crm` que precise refletir em tempo real na UI,
 lembrar de registrá-la aqui também.

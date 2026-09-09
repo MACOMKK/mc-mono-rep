@@ -41,14 +41,13 @@ const ENTITY_CONFIG = {
       'telefone_normalizado',
       'email',
       'email_normalizado',
-      'origem',
+      'origem_id',
       'status',
       'modelo_interesse',
       'empresa',
       'convertido_em',
       'perdido_em',
       'motivo_perda',
-      'motivo_descarte',
       'responsavel_id',
       'unidade_id',
       'primeiro_contato_em',
@@ -114,6 +113,12 @@ const ENTITY_CONFIG = {
   },
   categorias_veiculo: {
     table: 'categorias_veiculo',
+    orderBy: 'nome',
+    orderDirection: 'asc',
+    allowedFields: ['nome', 'ativo'],
+  },
+  origens_lead: {
+    table: 'origens_lead',
     orderBy: 'nome',
     orderDirection: 'asc',
     allowedFields: ['nome', 'ativo'],
@@ -192,10 +197,6 @@ function mapDatabaseError(error: unknown) {
     return 'Ja existe um lead ativo para este cliente.';
   }
 
-  if (message.includes('idx_crm_leads_cliente_triagem_unique')) {
-    return 'Ja existe um pre-lead em triagem para este cliente.';
-  }
-
   if (message.includes('idx_crm_atendimentos_lead_aberto_unique')) {
     return 'Este lead ja possui uma atividade planejada.';
   }
@@ -216,16 +217,16 @@ function mapDatabaseError(error: unknown) {
     return 'Ja existe uma categoria com este nome.';
   }
 
+  if (message.includes('origens_lead_nome_key')) {
+    return 'Ja existe uma origem com este nome.';
+  }
+
+  if (message.includes('null value in column "origem_id"')) {
+    return 'Selecione a origem do lead.';
+  }
+
   if (message.includes('Motivo da perda e obrigatorio')) {
     return 'Informe o motivo da perda para encerrar este lead.';
-  }
-
-  if (message.includes('Motivo do descarte e obrigatorio')) {
-    return 'Informe o motivo do descarte para encerrar este pre-lead.';
-  }
-
-  if (message.includes('Promova o pre-lead antes de registrar atividades')) {
-    return 'Promova o pre-lead a lead antes de registrar atividades.';
   }
 
   if (message.includes('Informe o resultado para concluir')) {
@@ -388,7 +389,7 @@ function buildSearchFilter(entity: EntityName, search: string, startIndex: numbe
     pushText('l.nome');
     pushText('l.email');
     pushText('l.modelo_interesse');
-    pushText('l.origem');
+    pushText('o.nome');
     pushText('r.nome');
     values.push(normalizedTerm);
     parts.push(`exists (
@@ -466,9 +467,9 @@ function buildAdvancedFilters(entity: EntityName, filters: Record<string, unknow
       values.push(filters.empresa);
       clauses.push(`(l."empresa" = $${startIndex + values.length - 1} or c."empresa" = $${startIndex + values.length - 1})`);
     }
-    if (filters.origem) {
-      values.push(filters.origem);
-      clauses.push(`l."origem" = $${startIndex + values.length - 1}`);
+    if (filters.origem_id) {
+      values.push(filters.origem_id);
+      clauses.push(`l."origem_id" = $${startIndex + values.length - 1}`);
     }
     if (filters.responsavel_id) {
       values.push(filters.responsavel_id);
@@ -557,10 +558,12 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
           'unidade_id', r.unidade_id
         )
         end as responsavel,
+        o.nome as origem_nome,
         vi_principal.veiculo_interesse
       from ${CRM_SCHEMA}.leads l
       left join public.colaboradores r on r.id = l.responsavel_id
       left join ${CRM_SCHEMA}.configuracoes_distribuicao cd on cd.unidade_id = l.unidade_id
+      left join ${CRM_SCHEMA}.origens_lead o on o.id = l.origem_id
       left join lateral (
         select row_to_json(vi) as veiculo_interesse
         from ${CRM_SCHEMA}.veiculos_interesse vi
@@ -588,11 +591,13 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
           'email', r.email,
           'unidade_id', r.unidade_id
         )
-      end as responsavel
+      end as responsavel,
+      lo.nome as lead_origem_nome
     from ${CRM_SCHEMA}.atendimentos a
     left join ${CRM_SCHEMA}.leads l on l.id = a.lead_id
     left join ${CRM_SCHEMA}.clientes c on c.id = a.cliente_id
     left join public.colaboradores r on r.id = l.responsavel_id
+    left join ${CRM_SCHEMA}.origens_lead lo on lo.id = l.origem_id
   `;
 }
 
@@ -1202,7 +1207,7 @@ Deno.serve(async (request) => {
       const directFilters = { ...filters };
       if (entity === 'atendimentos') {
         delete directFilters.empresa;
-        delete directFilters.origem;
+        delete directFilters.origem_id;
         delete directFilters.responsavel_id;
       }
       const filterParts = buildSqlFilters(directFilters, 1, baseAlias(entity) || undefined);

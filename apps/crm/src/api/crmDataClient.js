@@ -88,10 +88,6 @@ function toError(error, fallbackMessage) {
     return new Error('Ja existe um lead ativo para este cliente.');
   }
 
-  if (normalized.includes('idx_crm_leads_cliente_triagem_unique')) {
-    return new Error('Ja existe um pre-lead em triagem para este cliente.');
-  }
-
   if (normalized.includes('idx_crm_atendimentos_lead_aberto_unique')) {
     return new Error('Este lead ja possui uma atividade planejada.');
   }
@@ -171,7 +167,8 @@ function mapLeadRow(row = {}) {
     telefone_normalizado: row.telefone_normalizado || normalizePhone(row.telefone),
     email: row.email || '',
     email_normalizado: row.email_normalizado || normalizeEmail(row.email),
-    origem: row.origem || 'site',
+    origem_id: row.origem_id || '',
+    origem: row.origem_nome || '',
     status: row.status || 'novo',
     modelo_interesse: vehicleLabel || row.modelo_interesse || '',
     veiculo_interesse: vehicle.id ? vehicle : null,
@@ -179,8 +176,6 @@ function mapLeadRow(row = {}) {
     convertido_em: row.convertido_em || null,
     perdido_em: row.perdido_em || null,
     motivo_perda: row.motivo_perda || '',
-    motivo_descarte: row.motivo_descarte || '',
-    promovido_em: row.promovido_em || null,
     responsavel_id: row.responsavel_id || '',
     responsavel: row.responsavel || null,
     responsavel_nome: row.responsavel?.nome || '',
@@ -238,6 +233,15 @@ function mapCategoriaVeiculoRow(row = {}) {
   };
 }
 
+function mapOrigemLeadRow(row = {}) {
+  return {
+    id: row.id,
+    nome: row.nome || '',
+    ativo: row.ativo !== false,
+    ...mapBaseDates(row),
+  };
+}
+
 function mapEventoRow(row = {}) {
   const lead = row.lead || row.leads || {};
   const cliente = row.cliente || row.clientes || {};
@@ -266,7 +270,8 @@ function mapEventoRow(row = {}) {
     status: normalizedStatus,
     tipo_evento: row.tipo_atendimento || row.tipo_evento || 'ligacao',
     temperatura: row.temperatura || 'morno',
-    origem: lead.origem || row.origem || '',
+    origem_id: lead.origem_id || row.origem_id || '',
+    origem: lead.origem_nome || row.lead_origem_nome || '',
     empresa: lead.empresa || cliente.empresa || row.empresa || 'Macom Ananindeua',
     modelo_interesse: lead.modelo_interesse || row.modelo_interesse || '',
     responsavel_id: lead.responsavel_id || row.responsavel_id || '',
@@ -323,8 +328,8 @@ function mapLeadPayload(data = {}, clienteId) {
     throw new Error('Informe o motivo da perda para encerrar este lead.');
   }
 
-  if (data.status === 'descartado' && !String(data.motivo_descarte || '').trim()) {
-    throw new Error('Informe o motivo do descarte para encerrar este pre-lead.');
+  if (!data.origem_id) {
+    throw new Error('Selecione a origem do lead.');
   }
 
   return {
@@ -334,7 +339,7 @@ function mapLeadPayload(data = {}, clienteId) {
     telefone_normalizado: phone,
     email: email || null,
     email_normalizado: normalizeEmail(email) || null,
-    origem: data.origem || 'site',
+    origem_id: data.origem_id,
     status: data.status || 'novo',
     modelo_interesse: data.modelo_interesse || formatVehicleLabel(data.veiculo_interesse) || null,
     empresa: normalizeEmpresa(data.empresa),
@@ -345,7 +350,6 @@ function mapLeadPayload(data = {}, clienteId) {
       ? (data.perdido_em || new Date().toISOString())
       : (data.perdido_em || null),
     motivo_perda: data.status === 'perdido' ? String(data.motivo_perda).trim() : null,
-    motivo_descarte: data.status === 'descartado' ? String(data.motivo_descarte).trim() : null,
     responsavel_id: data.responsavel_id || null,
     unidade_id: data.unidade_id || null,
     previsao_fechamento: data.previsao_fechamento || null,
@@ -709,13 +713,6 @@ const LeadRepository = {
     return lead;
   },
 
-  async promote(id, data = {}) {
-    return this.update(id, { ...data, status: data.status || 'novo' });
-  },
-
-  async discard(id, motivoDescarte) {
-    return this.update(id, { status: 'descartado', motivo_descarte: motivoDescarte });
-  },
 };
 
 const VeiculoInteresseRepository = {
@@ -743,6 +740,20 @@ const CategoriaVeiculoRepository = {
   async update(id, data) {
     const row = await crmApi.categorias_veiculo.update(id, { nome: data.nome, ativo: data.ativo !== false });
     return mapCategoriaVeiculoRow(row);
+  },
+};
+
+const OrigemLeadRepository = {
+  ...createListRepository('OrigemLead', crmApi.origens_lead, mapOrigemLeadRow),
+
+  async create(data) {
+    const row = await crmApi.origens_lead.create({ nome: data.nome, ativo: data.ativo !== false });
+    return mapOrigemLeadRow(row);
+  },
+
+  async update(id, data) {
+    const row = await crmApi.origens_lead.update(id, { nome: data.nome, ativo: data.ativo !== false });
+    return mapOrigemLeadRow(row);
   },
 };
 
@@ -867,5 +878,6 @@ export const crmDataClient = {
     Distribuicao: DistribuicaoRepository,
     VeiculoInteresse: VeiculoInteresseRepository,
     CategoriaVeiculo: CategoriaVeiculoRepository,
+    OrigemLead: OrigemLeadRepository,
   },
 };
