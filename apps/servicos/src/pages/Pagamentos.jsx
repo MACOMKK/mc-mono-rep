@@ -367,7 +367,7 @@ export default function Pagamentos() {
 
     Promise.allSettled(
       files.map((file) =>
-        uploadAnexo({ file, solicitacaoId, categoria: 'comprovante_pagamento', parcelaId }),
+        uploadAnexo({ file, solicitacaoId, tipoAnexo: 'comprovante_pagamento', parcelaId }),
       ),
     ).then((results) => {
       queryClient.invalidateQueries({ queryKey: ['servicos', 'anexos', solicitacaoId] });

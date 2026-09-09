@@ -12,14 +12,13 @@ export function isAllowedAnexoMimeType(file) {
 export async function uploadAnexo({
   file,
   solicitacaoId,
-  categoria,
-  tipoDocumento = 'outros',
+  tipoAnexo = 'outros',
   parcelaId = null,
   sigiloso = false,
   assinaturasNecessarias = 1,
 }) {
   const extension = file.name.split('.').pop();
-  const path = `${solicitacaoId}/${categoria}/${crypto.randomUUID()}.${extension}`;
+  const path = `${solicitacaoId}/${tipoAnexo}/${crypto.randomUUID()}.${extension}`;
   const { error: uploadError } = await supabase.storage
     .from(financeiroApi.storage.bucket)
     .upload(path, file, { upsert: false });
@@ -28,8 +27,7 @@ export async function uploadAnexo({
   return financeiroApi.anexos.registrar({
     solicitacaoId,
     parcelaId,
-    categoria,
-    tipoDocumento,
+    tipoAnexo,
     nomeArquivo: file.name,
     tipoMime: file.type || 'application/octet-stream',
     tamanhoBytes: file.size,

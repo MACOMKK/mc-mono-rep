@@ -363,16 +363,14 @@ const posicaoAssinaturaSchema = z.object({
   heightFrac: z.number(),
 });
 
-// servicos-api -- registrar_anexo/criar_parcelas/registrar_pagamento_parcela. Enums de anexo
-// (categoria/tipo_documento e a combinacao entre eles) continuam validados no handler contra
-// ANEXO_CATEGORIAS/ANEXO_TIPOS_DOCUMENTO_POR_CATEGORIA -- o schema so garante tipo string.
+// servicos-api -- registrar_anexo/criar_parcelas/registrar_pagamento_parcela. Enum de anexo
+// (tipo_anexo) continua validado no handler contra ANEXO_TIPOS -- o schema so garante tipo string.
 // `assinatura` e opcional: usado quando o arquivo enviado (ex. PDF unico) ja foi carimbado no
 // client antes do upload, pra tambem gravar o evento de assinatura (assinaturas_anexo) no mesmo
 // request que cria o anexo.
 export const registrarAnexoBodySchema = z.object({
   solicitacao_id: z.string().nullish(),
-  categoria: z.string().nullish(),
-  tipo_documento: z.string().nullish(),
+  tipo_anexo: z.string().nullish(),
   nome_arquivo: z.string().nullish(),
   tipo_mime: z.string().nullish(),
   storage_path: z.string().nullish(),

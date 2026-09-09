@@ -9,14 +9,13 @@ import { isAllowedAnexoMimeType, MAX_ANEXO_SIZE, uploadAnexo } from '@/lib/anexo
 import { getFriendlyErrorMessage } from '@/lib/errorMessage';
 import { proximaDataUtil } from '@/lib/diasUteis';
 import {
-  ANEXO_CATEGORIA_OPCOES,
+  TIPOS_ANEXO,
   FORMA_PAGAMENTO_LABEL,
   FORNECEDOR_FORM_VAZIO,
   formatCep,
   formatDocumento,
   formatTelefone,
-  getTiposDocumentoPorCategoria,
-  inferirClassificacaoAnexo,
+  inferirTipoAnexo,
   onlyLetters,
 } from '@/lib/financeiroFormat';
 import {
@@ -95,8 +94,8 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
     if (anexosParaEnviar.length === 0) return;
 
     Promise.allSettled(
-      anexosParaEnviar.map(({ file, categoria, tipoDocumento, sigiloso, assinaturasNecessarias }) =>
-        uploadAnexo({ file, solicitacaoId, categoria, tipoDocumento, sigiloso, assinaturasNecessarias }),
+      anexosParaEnviar.map(({ file, tipoAnexo, sigiloso, assinaturasNecessarias }) =>
+        uploadAnexo({ file, solicitacaoId, tipoAnexo, sigiloso, assinaturasNecessarias }),
       ),
     ).then((results) => {
       queryClient.invalidateQueries({ queryKey: ['servicos', 'anexos', solicitacaoId] });
@@ -416,16 +415,12 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
     }
     setAnexos((current) => [
       ...current,
-      ...files.map((file) => {
-        const classificacao = inferirClassificacaoAnexo(file.name);
-        return {
-          file,
-          categoria: classificacao?.categoria || '',
-          tipoDocumento: classificacao?.tipoDocumento || '',
-          sigiloso: false,
-          assinaturasNecessarias: 1,
-        };
-      }),
+      ...files.map((file) => ({
+        file,
+        tipoAnexo: inferirTipoAnexo(file.name) || '',
+        sigiloso: false,
+        assinaturasNecessarias: 1,
+      })),
     ]);
     event.target.value = '';
   };
@@ -434,21 +429,8 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
     setAnexos((current) => current.filter((_, i) => i !== index));
   };
 
-  const setAnexoCategoria = (index) => (value) => {
-    setAnexos((current) =>
-      current.map((item, i) => {
-        if (i !== index) return item;
-        const tiposValidos = getTiposDocumentoPorCategoria(value);
-        const tipoDocumento = tiposValidos.some((tipo) => tipo.value === item.tipoDocumento)
-          ? item.tipoDocumento
-          : '';
-        return { ...item, categoria: value, tipoDocumento };
-      }),
-    );
-  };
-
-  const setAnexoTipoDocumento = (index) => (value) => {
-    setAnexos((current) => current.map((item, i) => (i === index ? { ...item, tipoDocumento: value } : item)));
+  const setAnexoTipo = (index) => (value) => {
+    setAnexos((current) => current.map((item, i) => (i === index ? { ...item, tipoAnexo: value } : item)));
   };
 
   const setAnexoSigiloso = (index) => (checked) => {
@@ -472,8 +454,8 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
       return;
     }
 
-    if (anexos.some((item) => !item.categoria || !item.tipoDocumento)) {
-      toast({ title: 'Classifique os anexos', description: 'Selecione a categoria e o tipo de documento de cada anexo antes de enviar.' });
+    if (anexos.some((item) => !item.tipoAnexo)) {
+      toast({ title: 'Classifique os anexos', description: 'Selecione o tipo de cada anexo antes de enviar.' });
       return;
     }
 
@@ -896,7 +878,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
             <input id="anexos" type="file" multiple className="hidden" onChange={handleFileChange} />
             {anexos.length > 0 && (
               <ul className="space-y-2">
-                {anexos.map(({ file, categoria, tipoDocumento, sigiloso, assinaturasNecessarias }, index) => (
+                {anexos.map(({ file, tipoAnexo, sigiloso, assinaturasNecessarias }, index) => (
                   <li key={`${file.name}-${index}`} className="space-y-2 rounded-md bg-muted px-3 py-2 text-sm">
                     <div className="flex items-center gap-2">
                       <span className="flex-1 truncate">{file.name}</span>
@@ -905,24 +887,12 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
                       </button>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Select value={categoria} onValueChange={setAnexoCategoria(index)}>
+                      <Select value={tipoAnexo} onValueChange={setAnexoTipo(index)}>
                         <SelectTrigger className="h-8 w-48">
-                          <SelectValue placeholder="Categoria" />
+                          <SelectValue placeholder="Tipo de anexo" />
                         </SelectTrigger>
                         <SelectContent>
-                          {ANEXO_CATEGORIA_OPCOES.map((item) => (
-                            <SelectItem key={item.value} value={item.value}>
-                              {item.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select value={tipoDocumento} onValueChange={setAnexoTipoDocumento(index)}>
-                        <SelectTrigger className="h-8 w-40">
-                          <SelectValue placeholder="Tipo de documento" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {getTiposDocumentoPorCategoria(categoria).map((item) => (
+                          {TIPOS_ANEXO.map((item) => (
                             <SelectItem key={item.value} value={item.value}>
                               {item.label}
                             </SelectItem>

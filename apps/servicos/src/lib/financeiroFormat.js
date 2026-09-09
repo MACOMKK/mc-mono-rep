@@ -35,63 +35,41 @@ export const FORMA_PAGAMENTO_LABEL = {
   outros: 'Outros',
 };
 
-export const ANEXO_CATEGORIA_LABEL = {
-  comprovante_solicitacao: 'Comprovante da solicitacao',
-  nf_boleto: 'NF / Boleto',
-  pdf_unificado: 'PDF unificado',
-  rh: 'RH',
-  comprovante_pagamento: 'Comprovante de pagamento',
-};
-
-export const ANEXO_CATEGORIA_OPCOES = Object.entries(ANEXO_CATEGORIA_LABEL).map(([value, label]) => ({ value, label }));
-
-export const TIPOS_DOCUMENTO = [
-  { value: 'orcamento', label: 'Orcamento' },
+// Unifica os antigos eixos `categoria` (etapa do fluxo) + `tipo_documento` (natureza do arquivo)
+// num unico campo -- ver 20260908130000_add_servicos_anexo_tipo_unificado.sql. Mantem
+// consistencia com supabase/functions/servicos-api/index.ts (ANEXO_TIPOS).
+export const TIPOS_ANEXO = [
+  { value: 'orcamento', label: 'Orçamento' },
   { value: 'nota_fiscal', label: 'Nota fiscal' },
   { value: 'boleto', label: 'Boleto' },
   { value: 'recibo', label: 'Recibo' },
   { value: 'comprovante_pix', label: 'Comprovante Pix' },
+  { value: 'comprovante_pagamento', label: 'Comprovante de pagamento' },
+  { value: 'documento_rh', label: 'Documento RH' },
+  { value: 'pdf_unificado', label: 'PDF único (assinado)' },
   { value: 'outros', label: 'Outros' },
 ];
 
-export const TIPO_DOCUMENTO_LABEL = Object.fromEntries(
-  TIPOS_DOCUMENTO.map((item) => [item.value, item.label]),
+export const TIPO_ANEXO_LABEL = Object.fromEntries(
+  TIPOS_ANEXO.map((item) => [item.value, item.label]),
 );
 
-// Tipos de documento aceitos por categoria de anexo - mantem os dados consistentes
-// para relatorios futuros por tipo de documento.
-export const TIPOS_DOCUMENTO_POR_CATEGORIA = {
-  comprovante_solicitacao: ['orcamento', 'recibo', 'comprovante_pix', 'outros'],
-  nf_boleto: ['nota_fiscal', 'boleto'],
-  pdf_unificado: ['outros'],
-  rh: ['recibo', 'outros'],
-  comprovante_pagamento: ['comprovante_pix', 'boleto', 'recibo', 'outros'],
-};
-
-export function getTiposDocumentoPorCategoria(categoria) {
-  const permitidos = TIPOS_DOCUMENTO_POR_CATEGORIA[categoria];
-  if (!permitidos) return TIPOS_DOCUMENTO;
-  return TIPOS_DOCUMENTO.filter((item) => permitidos.includes(item.value));
-}
-
-// Heuristica por nome de arquivo para pre-selecionar categoria/tipo de documento do anexo --
-// so ajuda a acertar o caso comum (usuario nomeia o arquivo com base no que ele e), o
-// select continua livre para o usuario corrigir. Ordem importa: regras mais especificas
-// (boleto, nota fiscal) antes das mais genericas (comprovante), pra "boleto_nf_123.pdf" nao
-// cair em "comprovante" por engano.
+// Heuristica por nome de arquivo para pre-selecionar o tipo do anexo -- so ajuda a acertar o
+// caso comum (usuario nomeia o arquivo com base no que ele e), o select continua livre para o
+// usuario corrigir. Ordem importa: regras mais especificas (boleto, nota fiscal) antes das mais
+// genericas (comprovante), pra "boleto_nf_123.pdf" nao cair em "comprovante" por engano.
 const REGRAS_CLASSIFICACAO_ANEXO = [
-  { termos: ['boleto'], categoria: 'nf_boleto', tipoDocumento: 'boleto' },
-  { termos: ['nfe', 'nf-e', 'nota_fiscal', 'notafiscal', 'nota fiscal', 'danfe'], categoria: 'nf_boleto', tipoDocumento: 'nota_fiscal' },
-  { termos: ['pix'], categoria: 'comprovante_solicitacao', tipoDocumento: 'comprovante_pix' },
-  { termos: ['orcamento', 'orçamento', 'cotacao', 'cotação'], categoria: 'comprovante_solicitacao', tipoDocumento: 'orcamento' },
-  { termos: ['recibo'], categoria: 'comprovante_solicitacao', tipoDocumento: 'recibo' },
+  { termos: ['boleto'], tipoAnexo: 'boleto' },
+  { termos: ['nfe', 'nf-e', 'nota_fiscal', 'notafiscal', 'nota fiscal', 'danfe'], tipoAnexo: 'nota_fiscal' },
+  { termos: ['pix'], tipoAnexo: 'comprovante_pix' },
+  { termos: ['orcamento', 'orçamento', 'cotacao', 'cotação'], tipoAnexo: 'orcamento' },
+  { termos: ['recibo'], tipoAnexo: 'recibo' },
 ];
 
-export function inferirClassificacaoAnexo(nomeArquivo) {
+export function inferirTipoAnexo(nomeArquivo) {
   const nome = (nomeArquivo || '').toLowerCase();
   const regra = REGRAS_CLASSIFICACAO_ANEXO.find(({ termos }) => termos.some((termo) => nome.includes(termo)));
-  if (!regra) return null;
-  return { categoria: regra.categoria, tipoDocumento: regra.tipoDocumento };
+  return regra ? regra.tipoAnexo : null;
 }
 
 // Solicitacao com plano de parcelas onde algumas ja foram pagas mas nao todas -- status da

@@ -17,7 +17,7 @@ export async function signAnexo({ anexo, signatureUrl, signerName, posicao, empr
 
   const pdfBytes = await pdfDoc.save();
   const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-  const path = `${anexo.solicitacao_id}/${anexo.categoria}/${crypto.randomUUID()}.pdf`;
+  const path = `${anexo.solicitacao_id}/${anexo.tipo_anexo}/${crypto.randomUUID()}.pdf`;
 
   const { error: uploadError } = await supabase.storage
     .from(financeiroApi.storage.bucket)
@@ -34,7 +34,7 @@ export async function signAnexo({ anexo, signatureUrl, signerName, posicao, empr
 }
 
 // Sobe o PDF unico (ja mesclado e carimbado com a assinatura em handleConfirmarPosicaoAssinatura)
-// como anexo novo (categoria pdf_unificado) e registra o evento de assinatura no mesmo request
+// como anexo novo (tipo_anexo pdf_unificado) e registra o evento de assinatura no mesmo request
 // (`assinatura` em registrar_anexo) -- antes o PDF unico so era baixado, sem deixar nenhum
 // rastro na solicitacao; agora fica arquivado e auditavel como qualquer anexo assinado.
 export async function persistPdfUnicoAssinado({ solicitacaoId, pdfDoc, numero, posicao }) {
@@ -49,8 +49,7 @@ export async function persistPdfUnicoAssinado({ solicitacaoId, pdfDoc, numero, p
 
   return financeiroApi.anexos.registrar({
     solicitacaoId,
-    categoria: 'pdf_unificado',
-    tipoDocumento: 'outros',
+    tipoAnexo: 'pdf_unificado',
     nomeArquivo: `anexos-assinado-${numero || solicitacaoId}.pdf`,
     tipoMime: 'application/pdf',
     tamanhoBytes: blob.size,

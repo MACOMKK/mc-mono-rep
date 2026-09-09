@@ -90,22 +90,20 @@ const FORMAS_PAGAMENTO = [
   'deposito_bancario',
   'outros',
 ];
-const ANEXO_CATEGORIAS = [
-  'comprovante_solicitacao',
-  'nf_boleto',
-  'pdf_unificado',
-  'rh',
+// Unifica os antigos `categoria` (etapa do fluxo) + `tipo_documento` (natureza do arquivo) num
+// unico campo -- ver 20260908130000_add_servicos_anexo_tipo_unificado.sql. Mantem consistencia
+// com apps/servicos/src/lib/financeiroFormat.js (TIPOS_ANEXO).
+const ANEXO_TIPOS = [
+  'orcamento',
+  'nota_fiscal',
+  'boleto',
+  'recibo',
+  'comprovante_pix',
   'comprovante_pagamento',
+  'documento_rh',
+  'pdf_unificado',
+  'outros',
 ] as const;
-const ANEXO_TIPOS_DOCUMENTO = ['orcamento', 'nota_fiscal', 'boleto', 'recibo', 'comprovante_pix', 'outros'] as const;
-// Mantem consistencia com apps/servicos/src/lib/financeiroFormat.js (TIPOS_DOCUMENTO_POR_CATEGORIA).
-const ANEXO_TIPOS_DOCUMENTO_POR_CATEGORIA: Record<(typeof ANEXO_CATEGORIAS)[number], readonly string[]> = {
-  comprovante_solicitacao: ['orcamento', 'recibo', 'comprovante_pix', 'outros'],
-  nf_boleto: ['nota_fiscal', 'boleto'],
-  pdf_unificado: ['outros'],
-  rh: ['recibo', 'outros'],
-  comprovante_pagamento: ['comprovante_pix', 'boleto', 'recibo', 'outros'],
-};
 const ORDER_BY_COLUMNS: Record<string, string> = {
   criado_em: 'sp.criado_em desc',
   data_vencimento: 'vencimento_efetivo asc nulls last',
@@ -752,8 +750,24 @@ async function insertHistorico(solicitacaoId: string, evento: string, autorId: s
 
 // Formata uma data (ISO ou com horario) como DD/MM/AAAA, so pra observacoes de historico
 // legiveis -- o formato pt-BR "de verdade" (com lib de datas) fica no frontend.
+// postgres.js devolve coluna `date` como objeto Date (nao string) -- String(date) vira
+// "Fri Sep 18 2026 ...", entao precisa passar por toISOString() antes de qualquer slice/match.
+function toIsoDateOnly(value: unknown): string {
+  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value || '').slice(0, 10);
+}
+
+// Compara valor novo (vindo do payload) com o valor atual da linha no banco, normalizando Date
+// (coluna `date`/`timestamp` do postgres.js) e null/undefined, pra so contar como "alterado" o
+// que de fato mudou -- usado no historico da action `update` pra nao listar campos que o form
+// reenviou sem mudanca.
+function normalizeCompareValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return toIsoDateOnly(value);
+  return String(value).trim();
+}
+
 function formatDateLabel(value: unknown): string {
-  const iso = String(value || '').slice(0, 10);
+  const iso = toIsoDateOnly(value);
   const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return iso || '-';
   const [, ano, mes, dia] = match;
@@ -2258,10 +2272,15 @@ Deno.serve(async (request) => {
         );
         row = rows[0] || existing;
 
-        const camposAlterados = fields
-          .map((field) => UPDATE_FIELD_LABELS[field as (typeof CREATE_FIELDS)[number]] || field)
-          .join(', ');
-        await insertHistorico(id, 'editada', collaborator!.id as string, `Campos alterados: ${camposAlterados}`);
+        const camposRealmenteAlterados = fields.filter(
+          (field) => normalizeCompareValue(payload[field]) !== normalizeCompareValue((existing as Record<string, unknown>)[field]),
+        );
+        if (camposRealmenteAlterados.length) {
+          const camposAlterados = camposRealmenteAlterados
+            .map((field) => UPDATE_FIELD_LABELS[field as (typeof CREATE_FIELDS)[number]] || field)
+            .join(', ');
+          await insertHistorico(id, 'editada', collaborator!.id as string, `Campos alterados: ${camposAlterados}`);
+        }
       }
 
       if (parcelasPropostas !== null) {
@@ -2319,7 +2338,7 @@ Deno.serve(async (request) => {
       }
 
       const novaData = proximaDataUtil(novaDataBruta);
-      if (novaData === existing.data_vencimento) {
+      if (novaData === toIsoDateOnly(existing.data_vencimento)) {
         return json({ row: existing });
       }
 
@@ -2814,8 +2833,7 @@ Deno.serve(async (request) => {
       const anexoBody = parsedAnexo.data;
 
       const solicitacaoId = String(anexoBody.solicitacao_id || '');
-      const categoria = String(anexoBody.categoria || '');
-      const tipoDocumento = String(anexoBody.tipo_documento || '');
+      const tipoAnexo = String(anexoBody.tipo_anexo || '');
       const nomeArquivo = String(anexoBody.nome_arquivo || '');
       const tipoMime = String(anexoBody.tipo_mime || '');
       const storagePath = String(anexoBody.storage_path || '');
@@ -2824,14 +2842,8 @@ Deno.serve(async (request) => {
       const assinaturasNecessarias = anexoBody.assinaturas_necessarias === 2 ? 2 : 1;
 
       if (!solicitacaoId) return json({ error: 'solicitacao_id obrigatorio.' }, 400);
-      if (!ANEXO_CATEGORIAS.includes(categoria as (typeof ANEXO_CATEGORIAS)[number])) {
-        return json({ error: 'Categoria de anexo invalida.' }, 400);
-      }
-      if (!ANEXO_TIPOS_DOCUMENTO.includes(tipoDocumento as (typeof ANEXO_TIPOS_DOCUMENTO)[number])) {
-        return json({ error: 'Tipo de documento invalido.' }, 400);
-      }
-      if (!ANEXO_TIPOS_DOCUMENTO_POR_CATEGORIA[categoria as (typeof ANEXO_CATEGORIAS)[number]].includes(tipoDocumento)) {
-        return json({ error: 'Tipo de documento nao permitido para esta categoria.' }, 400);
+      if (!ANEXO_TIPOS.includes(tipoAnexo as (typeof ANEXO_TIPOS)[number])) {
+        return json({ error: 'Tipo de anexo invalido.' }, 400);
       }
       if (!nomeArquivo || !tipoMime || !storagePath) {
         return json({ error: 'Dados do anexo incompletos.' }, 400);
@@ -2860,11 +2872,11 @@ Deno.serve(async (request) => {
       const rows = await sql.unsafe(
         `
           insert into ${SERVICOS_SCHEMA}.anexos_solicitacao
-            (solicitacao_id, parcela_id, categoria, tipo_documento, nome_arquivo, tipo_mime, tamanho_bytes, storage_path, criado_por, sigiloso, assinaturas_necessarias)
-          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            (solicitacao_id, parcela_id, tipo_anexo, nome_arquivo, tipo_mime, tamanho_bytes, storage_path, criado_por, sigiloso, assinaturas_necessarias)
+          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
           returning *;
         `,
-        [solicitacaoId, parcelaId, categoria, tipoDocumento, nomeArquivo, tipoMime, Number(anexoBody.tamanho_bytes) || 0, storagePath, collaborator!.id, sigiloso, assinaturasNecessarias],
+        [solicitacaoId, parcelaId, tipoAnexo, nomeArquivo, tipoMime, Number(anexoBody.tamanho_bytes) || 0, storagePath, collaborator!.id, sigiloso, assinaturasNecessarias],
       );
       const anexoCriado = rows[0] || null;
 
@@ -3273,7 +3285,7 @@ Deno.serve(async (request) => {
       }
 
       const novaDataParcela = proximaDataUtil(novaDataBrutaParcela);
-      if (novaDataParcela === parcela.data_vencimento) {
+      if (novaDataParcela === toIsoDateOnly(parcela.data_vencimento)) {
         return json({ row: parcela });
       }
 

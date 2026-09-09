@@ -72,14 +72,12 @@ import {
   formatDataHora,
   formatDataVencimento,
   formatValor,
-  ANEXO_CATEGORIA_LABEL,
-  ANEXO_CATEGORIA_OPCOES,
   FORMA_PAGAMENTO_LABEL,
   isBloqueadaPorPendencia,
   STATUS_LABEL,
   STATUS_VARIANT,
-  TIPO_DOCUMENTO_LABEL,
-  getTiposDocumentoPorCategoria,
+  TIPO_ANEXO_LABEL,
+  TIPOS_ANEXO,
   toLocalDateOnly,
 } from '@/lib/financeiroFormat';
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
@@ -181,10 +179,9 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const [novaCategoria, setNovaCategoria] = useState('');
+  const [novoTipoAnexo, setNovoTipoAnexo] = useState('');
   const [numeroCopiado, setNumeroCopiado] = useState(false);
-  const [novoTipoDocumento, setNovoTipoDocumento] = useState('');
-  const precisaClassificarAnexo = !novaCategoria || !novoTipoDocumento;
+  const precisaClassificarAnexo = !novoTipoAnexo;
   const [novoSigiloso, setNovoSigiloso] = useState(false);
   const [novoExigirDuasAssinaturas, setNovoExigirDuasAssinaturas] = useState(false);
   const [removerTarget, setRemoverTarget] = useState(null);
@@ -205,15 +202,6 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const [rascunhoVencimento, setRascunhoVencimento] = useState('');
   const [parcelaEditandoId, setParcelaEditandoId] = useState(null);
   const [rascunhoVencimentoParcela, setRascunhoVencimentoParcela] = useState('');
-
-  const tiposDocumentoOpcoes = getTiposDocumentoPorCategoria(novaCategoria);
-
-  useEffect(() => {
-    if (!novaCategoria) return;
-    if (!tiposDocumentoOpcoes.some((item) => item.value === novoTipoDocumento)) {
-      setNovoTipoDocumento('');
-    }
-  }, [novaCategoria]);
 
   const isDonoSolicitacao = Boolean(user?.id) && String(solicitacao?.solicitante_id) === String(user?.id);
   const isAprovadorDestino = Boolean(user?.id) && String(solicitacao?.aprovador_destino_id) === String(user?.id);
@@ -304,8 +292,8 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   }
 
   const uploadAnexoMutation = useMutation({
-    mutationFn: ({ file, categoria, tipoDocumento, sigiloso, assinaturasNecessarias }) =>
-      uploadAnexo({ file, solicitacaoId, categoria, tipoDocumento, sigiloso, assinaturasNecessarias }),
+    mutationFn: ({ file, tipoAnexo, sigiloso, assinaturasNecessarias }) =>
+      uploadAnexo({ file, solicitacaoId, tipoAnexo, sigiloso, assinaturasNecessarias }),
     onSuccess: (row, variables) => {
       setAnexosPendentes((current) => current.filter((item) => item.tempId !== variables.tempId));
       queryClient.setQueryData(['servicos', 'anexos', solicitacaoId], (old) => [...(old || []), row]);
@@ -332,20 +320,19 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
       toast({ title: 'Tipo de arquivo não suportado', description: `"${file.name}" deve ser PDF, JPEG, PNG ou WebP.` });
       return;
     }
-    if (!novaCategoria || !novoTipoDocumento) {
-      toast({ title: 'Classifique o anexo', description: "Escolha a categoria e o tipo de documento acima antes de clicar em 'Selecionar arquivo'." });
+    if (!novoTipoAnexo) {
+      toast({ title: 'Classifique o anexo', description: "Escolha o tipo de anexo acima antes de clicar em 'Selecionar arquivo'." });
       return;
     }
 
     const tempId = crypto.randomUUID();
     setAnexosPendentes((current) => [
       ...current,
-      { tempId, nomeArquivo: file.name, categoria: novaCategoria, erro: false },
+      { tempId, nomeArquivo: file.name, tipoAnexo: novoTipoAnexo, erro: false },
     ]);
     uploadAnexoMutation.mutate({
       file,
-      categoria: novaCategoria,
-      tipoDocumento: novoTipoDocumento,
+      tipoAnexo: novoTipoAnexo,
       sigiloso: novoSigiloso,
       assinaturasNecessarias: novoExigirDuasAssinaturas ? 2 : 1,
       tempId,
@@ -694,8 +681,8 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
     }
   }
 
-  const anexosPorCategoria = anexos.reduce((acc, anexo) => {
-    const key = anexo.categoria || 'outros';
+  const anexosPorTipo = anexos.reduce((acc, anexo) => {
+    const key = anexo.tipo_anexo || 'outros';
     if (!acc[key]) acc[key] = [];
     acc[key].push(anexo);
     return acc;
@@ -984,28 +971,16 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                     <SectionLabel>Incluir anexo (correção pós-análise)</SectionLabel>
                     {precisaClassificarAnexo && (
                       <p className="text-xs text-muted-foreground">
-                        Selecione a categoria e o tipo de documento para poder anexar o arquivo.
+                        Selecione o tipo de anexo para poder anexar o arquivo.
                       </p>
                     )}
                     <div className="flex flex-wrap items-center gap-2">
-                      <Select value={novaCategoria} onValueChange={setNovaCategoria}>
+                      <Select value={novoTipoAnexo} onValueChange={setNovoTipoAnexo}>
                         <SelectTrigger className="h-8 w-48">
-                          <SelectValue placeholder="Categoria" />
+                          <SelectValue placeholder="Tipo de anexo" />
                         </SelectTrigger>
                         <SelectContent>
-                          {ANEXO_CATEGORIA_OPCOES.map((item) => (
-                            <SelectItem key={item.value} value={item.value}>
-                              {item.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select value={novoTipoDocumento} onValueChange={setNovoTipoDocumento}>
-                        <SelectTrigger className="h-8 w-40">
-                          <SelectValue placeholder="Tipo de documento" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {tiposDocumentoOpcoes.map((item) => (
+                          {TIPOS_ANEXO.map((item) => (
                             <SelectItem key={item.value} value={item.value}>
                               {item.label}
                             </SelectItem>
@@ -1083,9 +1058,9 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                   ) : anexos.length === 0 && anexosPendentes.length === 0 ? (
                     <p className="text-sm text-muted-foreground">Nenhum anexo enviado.</p>
                   ) : (
-                    Object.entries(anexosPorCategoria).map(([categoria, items]) => (
-                      <div key={categoria} className="space-y-2">
-                        <SectionLabel>{ANEXO_CATEGORIA_LABEL[categoria] || categoria}</SectionLabel>
+                    Object.entries(anexosPorTipo).map(([tipoAnexo, items]) => (
+                      <div key={tipoAnexo} className="space-y-2">
+                        <SectionLabel>{TIPO_ANEXO_LABEL[tipoAnexo] || tipoAnexo}</SectionLabel>
                         <ul className="space-y-1">
                           {items.map((anexo) => (
                             <li
@@ -1095,11 +1070,6 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                               <span className="flex min-w-0 items-center gap-2">
                                 <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
                                 <span className="truncate">{anexo.nome_arquivo}</span>
-                                {anexo.tipo_documento && (
-                                  <Badge variant="outline" className="shrink-0">
-                                    {TIPO_DOCUMENTO_LABEL[anexo.tipo_documento] || anexo.tipo_documento}
-                                  </Badge>
-                                )}
                                 {anexo.sigiloso && (
                                   <Badge variant="outline" className="shrink-0 gap-1">
                                     <Lock className="h-3 w-3" />

@@ -300,13 +300,12 @@ export const financeiroApi = {
       const result = await invokeServicos({ action: 'list_anexos', solicitacao_id: solicitacaoId });
       return result.rows || [];
     },
-    async registrar({ solicitacaoId, parcelaId, categoria, tipoDocumento, nomeArquivo, tipoMime, tamanhoBytes, storagePath, sigiloso, assinaturasNecessarias, posicaoAssinatura }) {
+    async registrar({ solicitacaoId, parcelaId, tipoAnexo, nomeArquivo, tipoMime, tamanhoBytes, storagePath, sigiloso, assinaturasNecessarias, posicaoAssinatura }) {
       const result = await invokeServicos({
         action: 'registrar_anexo',
         solicitacao_id: solicitacaoId,
         parcela_id: parcelaId || null,
-        categoria,
-        tipo_documento: tipoDocumento,
+        tipo_anexo: tipoAnexo,
         nome_arquivo: nomeArquivo,
         tipo_mime: tipoMime,
         tamanho_bytes: tamanhoBytes,
