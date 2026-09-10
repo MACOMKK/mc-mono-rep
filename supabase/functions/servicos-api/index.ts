@@ -2923,6 +2923,21 @@ Deno.serve(async (request) => {
         posicaoAssinatura ? `${nomeArquivo} (assinado como ${papelAssinatura})` : nomeArquivo,
       );
 
+      // Solicitante anexando algo enquanto a pendencia esta aberta tambem conta como correcao
+      // (ex.: pendencia era "falta o comprovante") -- mesmo sinal usado na action `update` pra
+      // dados. So dispara quando quem anexa e o dono da solicitacao, nao o financeiro/pagador.
+      if (solicitacaoRow.pendencia_bloqueio === true && String(solicitacaoRow.solicitante_id) === String(collaborator!.id)) {
+        const pendenciaRows = await sql.unsafe(
+          `update ${SERVICOS_SCHEMA}.solicitacoes_pagamento set pendencia_atualizada_em = now() where id = $1 returning *;`,
+          [solicitacaoId],
+        );
+        const solicitacaoAtualizada = pendenciaRows[0];
+        if (solicitacaoAtualizada) {
+          await insertHistorico(solicitacaoId, 'pendencia_atualizada_pelo_solicitante', collaborator!.id as string);
+          await notifySolicitantePendenciaAtualizada(solicitacaoAtualizada, collaborator!.id as string);
+        }
+      }
+
       return json({ row: anexoCriado });
     }
 
