@@ -456,12 +456,14 @@ export default function Aprovacoes() {
                           <X className="h-4 w-4" />
                         </Button>
                         <Button
+                          size="icon"
+                          title="Aprovar"
+                          aria-label="Aprovar"
                           disabled={decisaoMutation.isPending}
                           onClick={() => handleDecision(row.id, 'aprovado')}
                           className="bg-emerald-600 text-white hover:bg-emerald-600/90"
                         >
-                          <Check className="mr-1 h-4 w-4" />
-                          Aprovar
+                          <Check className="h-4 w-4" />
                         </Button>
                       </div>
                     </TableCell>
