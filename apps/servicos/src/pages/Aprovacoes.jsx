@@ -6,6 +6,14 @@ import { Check, X } from 'lucide-react';
 import { financeiroApi } from '@macom/api-client/financeiroApi';
 import { supabase } from '@macom/api-client/supabaseClient';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   Label,
   Select,
@@ -64,6 +72,7 @@ export default function Aprovacoes() {
   const { data: empresas = [] } = useEmpresas();
   const [observacoes, setObservacoes] = useState({});
   const [selectedId, setSelectedId] = useState(null);
+  const [confirmarSemAnexo, setConfirmarSemAnexo] = useState(null);
   const [busca, setBusca] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState(CATEGORIA_FILTRO_TODAS);
   const [solicitanteFiltro, setSolicitanteFiltro] = useState(SOLICITANTE_FILTRO_TODOS);
@@ -217,7 +226,8 @@ export default function Aprovacoes() {
   const pendentesKey = ['servicos', 'solicitacoes', 'pendentes'];
 
   const decisaoMutation = useMutation({
-    mutationFn: ({ id, status, observacao }) => financeiroApi.solicitacoes.setStatus(id, status, observacao || null),
+    mutationFn: ({ id, status, observacao, confirmarSemAnexo: confirmar }) =>
+      financeiroApi.solicitacoes.setStatus(id, status, observacao || null, confirmar),
     onMutate: ({ id }) => {
       const previous = queryClient.getQueryData(pendentesKey);
       // Remove otimisticamente da lista de pendentes (a decisao tira a solicitacao dessa fila) —
@@ -229,10 +239,19 @@ export default function Aprovacoes() {
       queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacoes'] });
       toast({ title: status === 'aprovado' ? 'Solicitação aprovada' : 'Solicitação reprovada' });
     },
-    onError: (error, _variables, context) => {
+    onError: (error, variables, context) => {
       // Reverte a lista — como `selected` e derivado da lista, o drawer reabre sozinho na mesma
       // solicitacao, com a observacao digitada intacta (esta em outro state, nao foi tocada).
       if (context?.previous) queryClient.setQueryData(pendentesKey, context.previous);
+
+      // 409 no set_status (aprovar) sinaliza que falta anexo e o backend quer confirmacao
+      // explicita antes de deixar aprovar mesmo assim -- ver plano/comentario em
+      // supabase/functions/servicos-api/index.ts (action set_status).
+      if (error?.status === 409 && variables.status === 'aprovado' && !variables.confirmarSemAnexo) {
+        setConfirmarSemAnexo({ id: variables.id, observacao: variables.observacao });
+        return;
+      }
+
       toast({
         title: 'Não foi possível processar a solicitação',
         description: `${error.message} Revise e tente novamente.`,
@@ -240,8 +259,20 @@ export default function Aprovacoes() {
     },
   });
 
-  function handleDecision(id, status) {
-    decisaoMutation.mutate({ id, status, observacao: observacoes[id] });
+  function handleDecision(id, status, confirmarSemAnexoFlag = false) {
+    decisaoMutation.mutate({ id, status, observacao: observacoes[id], confirmarSemAnexo: confirmarSemAnexoFlag });
+  }
+
+  // Checa `anexos_total` (ja vem na listagem, sem ida extra ao servidor) antes de aprovar --
+  // deixa o aviso instantaneo no clique, em vez de esperar o 409 do backend pra so entao
+  // mostrar o modal. O backend continua validando de novo (rede de seguranca contra dado
+  // desatualizado na tela), so nao bloqueia mais sozinho sem essa confirmacao.
+  function handleAprovar(row) {
+    if (Number(row.anexos_total || 0) === 0) {
+      setConfirmarSemAnexo({ id: row.id, observacao: observacoes[row.id] });
+      return;
+    }
+    handleDecision(row.id, 'aprovado');
   }
 
   const activeFilterCount = [
@@ -460,7 +491,7 @@ export default function Aprovacoes() {
                           title="Aprovar"
                           aria-label="Aprovar"
                           disabled={decisaoMutation.isPending}
-                          onClick={() => handleDecision(row.id, 'aprovado')}
+                          onClick={() => handleAprovar(row)}
                           className="bg-emerald-600 text-white hover:bg-emerald-600/90"
                         >
                           <Check className="h-4 w-4" />
@@ -498,7 +529,7 @@ export default function Aprovacoes() {
                       title="Aprovar"
                       aria-label="Aprovar"
                       disabled={decisaoMutation.isPending}
-                      onClick={() => handleDecision(row.id, 'aprovado')}
+                      onClick={() => handleAprovar(row)}
                       className="bg-emerald-600 text-white hover:bg-emerald-600/90"
                     >
                       <Check className="h-4 w-4" />
@@ -542,7 +573,7 @@ export default function Aprovacoes() {
                 </Button>
                 <Button
                   disabled={decisaoMutation.isPending}
-                  onClick={() => handleDecision(selected.id, 'aprovado')}
+                  onClick={() => handleAprovar(selected)}
                   className="bg-emerald-600 text-white hover:bg-emerald-600/90"
                 >
                   <Check className="mr-1 h-4 w-4" />
@@ -553,6 +584,30 @@ export default function Aprovacoes() {
           )
         }
       />
+
+      <AlertDialog open={Boolean(confirmarSemAnexo)} onOpenChange={(open) => !open && setConfirmarSemAnexo(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Aprovar sem anexo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta solicitação não tem nenhum anexo enviado. Tem certeza que deseja aprovar mesmo assim?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={decisaoMutation.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={decisaoMutation.isPending}
+              onClick={() => {
+                const pendente = confirmarSemAnexo;
+                setConfirmarSemAnexo(null);
+                if (pendente) handleDecision(pendente.id, 'aprovado', true);
+              }}
+            >
+              Aprovar mesmo assim
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

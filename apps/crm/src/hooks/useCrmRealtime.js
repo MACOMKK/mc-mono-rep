@@ -3,21 +3,22 @@ import { useQueryClient } from '@tanstack/react-query';
 import { isSupabaseConfigured, supabase } from '@macom/api-client/supabaseClient';
 
 const REALTIME_TABLES = [
-  'leads',
-  'clientes',
-  'atendimentos',
-  'historico_atendimentos',
-  'veiculos_interesse',
-  'categorias_veiculo',
-  'origens_lead',
-  'marcas_veiculo',
-  'modelos_veiculo',
-  'versoes_veiculo',
-  'veiculos_estoque',
-  'configuracoes_distribuicao',
-  'vendedores_distribuicao',
-  'conversas_atendimento',
-  'mensagens_atendimento',
+  { schema: 'gestao_crm', table: 'leads' },
+  { schema: 'gestao_crm', table: 'clientes' },
+  { schema: 'gestao_crm', table: 'atendimentos' },
+  { schema: 'gestao_crm', table: 'historico_atendimentos' },
+  { schema: 'gestao_crm', table: 'veiculos_interesse' },
+  { schema: 'gestao_crm', table: 'categorias_veiculo' },
+  { schema: 'gestao_crm', table: 'origens_lead' },
+  { schema: 'gestao_crm', table: 'marcas_veiculo' },
+  { schema: 'gestao_crm', table: 'modelos_veiculo' },
+  { schema: 'gestao_crm', table: 'versoes_veiculo' },
+  { schema: 'gestao_crm', table: 'veiculos_estoque' },
+  { schema: 'public', table: 'veiculos' },
+  { schema: 'gestao_crm', table: 'configuracoes_distribuicao' },
+  { schema: 'gestao_crm', table: 'vendedores_distribuicao' },
+  { schema: 'gestao_crm', table: 'conversas_atendimento' },
+  { schema: 'gestao_crm', table: 'mensagens_atendimento' },
 ];
 
 const TABLE_CACHE_CONFIG = {
@@ -56,6 +57,9 @@ const TABLE_CACHE_CONFIG = {
     queryKeys: [['crm-versoes-veiculo']],
   },
   veiculos_estoque: {
+    queryKeys: [['crm-veiculos-estoque']],
+  },
+  veiculos: {
     queryKeys: [['crm-veiculos-estoque']],
   },
   configuracoes_distribuicao: {
@@ -303,10 +307,10 @@ export function useCrmRealtime(enabled = true) {
 
     const channel = supabase.channel('crm-realtime');
 
-    REALTIME_TABLES.forEach((table) => {
+    REALTIME_TABLES.forEach(({ schema, table }) => {
       channel.on(
         'postgres_changes',
-        { event: '*', schema: 'gestao_crm', table },
+        { event: '*', schema, table },
         (payload) => {
           setStatus('syncing');
           handleRealtimeChange(queryClient, payload);

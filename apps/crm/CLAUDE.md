@@ -35,13 +35,30 @@ Gestão comercial automotiva: leads, clientes, atendimentos e distribuição par
 | `modelos_veiculo` | catálogo de modelos (`nome`, `ativo`, `marca_id` FK, `categoria_veiculo_id` FK, `ano_inicio`/`ano_fim` opcionais) — é o modelo que amarra marca a um segmento (ex.: Honda Civic = Carro, Honda CG = Moto); `ano_fim` nulo = ainda em produção. É uma faixa aproximada (não por versão) — deliberadamente mais simples que um catálogo estilo FIPE/Linx com código por versão+ano, adotado só se surgir necessidade real de integração de preço/seguro |
 | `versoes_veiculo` | catálogo de versões (`nome`, `ativo`, `modelo_id` FK) — amarra a versão ao modelo (ex.: Civic LX, Civic Touring), mesmo padrão de cadastro livre dos demais catálogos |
 | `origens_lead` | catálogo de origens de lead (`nome`, `ativo`) — mesmo padrão de `categorias_veiculo`; substituiu o antigo `leads.origem` (texto com `check` fixo) em `20260909110000_add_crm_origens_lead.sql` |
-| `veiculos_estoque` | veículo físico em estoque (não é "interesse do lead") — `chassi` (unique, obrigatório), `placa`, `cor`, `km`, `condicao` (novo/seminovo/usado), `status` (disponivel/reservado/vendido), `preco`; reaproveita `modelo_id`/`versao_id` (FK `modelos_veiculo`/`versoes_veiculo`) com `modelo_outro`/`versao_outro` como fallback (colunas existem, sem input de texto na UI — mesmo padrão dos demais catálogos). Sem coluna própria de `ano`: o ano já vem do `modelo_id` escolhido (`ano_inicio`/`ano_fim` de `modelos_veiculo`), evitaria duplicar/discordar do dado. Tela `Estoque.jsx` (rota `/estoque`, saiu do `comingSoon` do Navbar): leitura liberada para qualquer usuário com acesso ao CRM (`crm_has_access()`), criação/edição restrita a admin/gestor (`ensureCanConfigure`) — diferente dos catálogos de configuração, mas assim mesmo porque é dado operacional (inventário), não parametrização do sistema. Ainda não tem workflow de reserva/venda (vínculo com lead, baixa automática do estoque na conversão) — próximo passo natural quando o módulo Estoque virar prioridade, fora do escopo desta rodada |
+| `veiculos_estoque` | **extensão comercial** de um `public.veiculos` (ver abaixo) — não é dono do dado físico do carro. Campos próprios: `veiculo_id` (FK `public.veiculos`, unique — 1:1), `condicao` (novo/seminovo/usado), `status` (disponivel/reservado/vendido), `preco`, `observacoes`. Tela `Estoque.jsx` (rota `/estoque`, saiu do `comingSoon` do Navbar): leitura liberada para qualquer usuário com acesso ao CRM (`crm_has_access()`), criação/edição restrita a admin/gestor (`ensureCanConfigure`) — diferente dos catálogos de configuração, mas assim mesmo porque é dado operacional (inventário), não parametrização do sistema. Create/update passam pela action composta `save_veiculo_estoque_full` (`crm-api`, mesmo padrão de `save_lead_full`), que grava em `public.veiculos` e `gestao_crm.veiculos_estoque` na mesma transação; `list`/`get` fazem join (`row_to_json(v) as veiculo`) e o `crmDataClient` remonta os campos como um objeto plano. Ainda não tem workflow de reserva/venda (vínculo com lead, baixa automática do estoque na conversão) — próximo passo natural quando o módulo Estoque virar prioridade, fora do escopo desta rodada |
+
+`public.veiculos` (schema **`public`**, fora de `gestao_crm` — decisão deliberada) é o veículo
+físico central: `chassi` (unique, obrigatório), `placa`, `cor`, `km`, `modelo_id`/`versao_id` (FK
+`gestao_crm.modelos_veiculo`/`versoes_veiculo`) com `modelo_outro`/`versao_outro` como fallback. Sem
+coluna própria de `ano`: já vem do `modelo_id` escolhido (`ano_inicio`/`ano_fim` de
+`modelos_veiculo`). Motivo de ficar em `public` (mesmo espírito de `public.colaboradores`, entidade
+global usada por todos os apps): chassi/placa/cor/km descrevem a unidade física, não um conceito
+exclusivo de venda — o módulo Oficina do app `servicos` (ainda não implementado) vai precisar
+identificar o mesmo carro (abrir OS, registrar km em revisão), e duplicar esses campos por app
+faria km/cor divergirem e impediria cruzar histórico do mesmo veículo entre CRM e Oficina. O
+catálogo de Marca/Modelo/Versão **não** foi movido para `public` junto — continua em `gestao_crm`
+por ser configuração do CRM; se `servicos` precisar dele no futuro, resolve-se via API, não por FK
+cruzada, para não alastrar escopo. **Trade-off aceito conscientemente:** compartilhar
+`public.veiculos` acopla `crm` a qualquer app que também vier a escrever nele — se o `crm` for
+desacoplado do monorepo algum dia, essa tabela deixa de ser "só copiar o schema `gestao_crm`" e
+exige decidir quem fica dono dela e como o outro app sincroniza; aceitável hoje porque não há
+separação no horizonte.
 
 Todos os catálogos acima (`categorias_veiculo`, `marcas_veiculo`, `modelos_veiculo`, `versoes_veiculo`,
 `origens_lead`) são **globais** hoje (sem `empresa_id`) — decisão consciente enquanto o app roda para
 uma única empresa. Se o produto virar multiempresa, todos precisam ganhar `empresa_id` juntos (FK + RLS
 por empresa + `unique (empresa_id, nome)` no lugar de `unique (nome)`/`unique (modelo_id, nome)`).
-`veiculos_estoque` entra na mesma decisão se isso acontecer.
+`veiculos_estoque`/`public.veiculos` entram na mesma decisão se isso acontecer.
 | `configuracoes_distribuicao` / `vendedores_distribuicao` | regras de distribuição automática de leads |
 | `conversas_atendimento` / `mensagens_atendimento` | chat de atendimento via WhatsApp + IA (módulo "Atendimento", em construção) |
 
@@ -84,10 +101,11 @@ secrets no painel da Meta.
 `useCrmRealtime.js` escuta INSERT/UPDATE/DELETE em `gestao_crm` (leads, clientes, atendimentos,
 historico_atendimentos, veiculos_interesse, categorias_veiculo, origens_lead, marcas_veiculo,
 modelos_veiculo, versoes_veiculo, veiculos_estoque, configuracoes_distribuicao, vendedores_distribuicao,
-conversas_atendimento, mensagens_atendimento)
-e sincroniza o cache do React Query. Estados possíveis: `connecting`, `active`, `syncing`, `error`, `disabled`.
-Ao adicionar uma nova tabela ao schema `gestao_crm` que precise refletir em tempo real na UI,
-lembrar de registrá-la aqui também.
+conversas_atendimento, mensagens_atendimento) **e também em `public.veiculos`** — `REALTIME_TABLES`
+guarda `{schema, table}` por entrada (não só o nome) justamente por causa disso — e sincroniza o
+cache do React Query. Estados possíveis: `connecting`, `active`, `syncing`, `error`, `disabled`.
+Ao adicionar uma nova tabela (`gestao_crm` ou outro schema) que precise refletir em tempo real na
+UI, lembrar de registrá-la aqui também.
 
 ## Stripe
 

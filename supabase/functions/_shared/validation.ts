@@ -475,6 +475,7 @@ export const setStatusBodySchema = z.object({
   id: z.string().nullish(),
   status: z.string().nullish(),
   observacao_analise: z.string().nullish(),
+  confirmar_sem_anexo: z.boolean().nullish(),
 });
 
 export const entitySchemas = {

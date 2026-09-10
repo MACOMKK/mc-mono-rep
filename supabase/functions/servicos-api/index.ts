@@ -1772,7 +1772,8 @@ Deno.serve(async (request) => {
             coalesce(
               case when pp.parcelas_total > 0 then pp.vencimento_parcela end,
               sp.data_vencimento
-            ) as vencimento_efetivo
+            ) as vencimento_efetivo,
+            coalesce(an.anexos_total, 0) as anexos_total
           from ${SERVICOS_SCHEMA}.solicitacoes_pagamento sp
           join public.colaboradores c on c.id = sp.solicitante_id
           left join public.colaboradores ac on ac.id = sp.aprovador_destino_id
@@ -1780,6 +1781,13 @@ Deno.serve(async (request) => {
           left join public.empresas e on e.id = sp.empresa_id
           left join public.unidades u on u.id = sp.unidade_id
           left join public.departamentos d on d.id = sp.departamento_id
+          left join lateral (
+            -- usado pra sinalizar no frontend, sem ida extra ao servidor, quando falta anexo
+            -- antes de aprovar (ver validacao espelhada em set_status/confirmar_sem_anexo).
+            select count(*) as anexos_total
+            from ${SERVICOS_SCHEMA}.anexos_solicitacao
+            where solicitacao_id = sp.id
+          ) an on true
           left join lateral (
             select
               count(*) as parcelas_total,
@@ -2640,6 +2648,23 @@ Deno.serve(async (request) => {
           }
           if (existing.status !== 'pendente') {
             throw Object.assign(new Error('Somente solicitacoes pendentes podem ser aprovadas ou reprovadas.'), { status: 400 });
+          }
+          // Rede de seguranca contra solicitacao ficar orfa de anexo: o anexo e enviado em
+          // background pelo frontend, separado do create (ver registrar_anexo) -- se esse
+          // upload falhar silenciosamente, ninguem percebe. Nao bloqueia a aprovacao de vez
+          // (o aprovador pode ter um motivo legitimo pra aprovar mesmo sem anexo) -- so exige
+          // confirmacao explicita do frontend (`confirmar_sem_anexo`) antes de deixar passar.
+          if (status === 'aprovado' && !parsedSetStatus.data.confirmar_sem_anexo) {
+            const anexosCount = await sql.unsafe(
+              `select count(*)::int as total from ${SERVICOS_SCHEMA}.anexos_solicitacao where solicitacao_id = $1;`,
+              [id],
+            );
+            if (Number(anexosCount[0]?.total || 0) === 0) {
+              throw Object.assign(
+                new Error('Esta solicitacao nao tem nenhum anexo. Confirme se deseja aprovar mesmo assim.'),
+                { status: 409 },
+              );
+            }
           }
         }
 

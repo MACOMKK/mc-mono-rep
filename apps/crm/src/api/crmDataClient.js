@@ -283,16 +283,18 @@ function mapVersaoVeiculoRow(row = {}) {
 }
 
 function mapVeiculoEstoqueRow(row = {}) {
+  const veiculo = row.veiculo || {};
   return {
     id: row.id,
-    modelo_id: row.modelo_id || '',
-    versao_id: row.versao_id || null,
-    modelo_outro: row.modelo_outro || '',
-    versao_outro: row.versao_outro || '',
-    chassi: row.chassi || '',
-    placa: row.placa || '',
-    cor: row.cor || '',
-    km: row.km ?? null,
+    veiculo_id: row.veiculo_id || veiculo.id || '',
+    modelo_id: veiculo.modelo_id || '',
+    versao_id: veiculo.versao_id || null,
+    modelo_outro: veiculo.modelo_outro || '',
+    versao_outro: veiculo.versao_outro || '',
+    chassi: veiculo.chassi || '',
+    placa: veiculo.placa || '',
+    cor: veiculo.cor || '',
+    km: veiculo.km ?? null,
     condicao: row.condicao || 'novo',
     status: row.status || 'disponivel',
     preco: row.preco ?? null,
@@ -905,39 +907,49 @@ const VeiculoEstoqueRepository = {
   ...createListRepository('VeiculoEstoque', crmApi.veiculos_estoque, mapVeiculoEstoqueRow),
 
   async create(data) {
-    const row = await crmApi.veiculos_estoque.create({
-      modelo_id: data.modelo_id || null,
-      versao_id: data.versao_id || null,
-      modelo_outro: data.modelo_outro || null,
-      versao_outro: data.versao_outro || null,
-      chassi: data.chassi,
-      placa: data.placa || null,
-      cor: data.cor || null,
-      km: data.km || null,
-      condicao: data.condicao || 'novo',
-      status: data.status || 'disponivel',
-      preco: data.preco || null,
-      observacoes: data.observacoes || null,
+    const result = await crmApi.veiculos_estoque.saveFull({
+      estoqueId: null,
+      veiculoPayload: {
+        modelo_id: data.modelo_id || null,
+        versao_id: data.versao_id || null,
+        modelo_outro: data.modelo_outro || null,
+        versao_outro: data.versao_outro || null,
+        chassi: data.chassi,
+        placa: data.placa || null,
+        cor: data.cor || null,
+        km: data.km || null,
+      },
+      estoquePayload: {
+        condicao: data.condicao || 'novo',
+        status: data.status || 'disponivel',
+        preco: data.preco || null,
+        observacoes: data.observacoes || null,
+      },
     });
-    return mapVeiculoEstoqueRow(row);
+    return mapVeiculoEstoqueRow({ ...result.estoque, veiculo: result.veiculo });
   },
 
   async update(id, data) {
-    const row = await crmApi.veiculos_estoque.update(id, {
-      modelo_id: data.modelo_id || null,
-      versao_id: data.versao_id || null,
-      modelo_outro: data.modelo_outro || null,
-      versao_outro: data.versao_outro || null,
-      chassi: data.chassi,
-      placa: data.placa || null,
-      cor: data.cor || null,
-      km: data.km || null,
-      condicao: data.condicao || 'novo',
-      status: data.status || 'disponivel',
-      preco: data.preco || null,
-      observacoes: data.observacoes || null,
+    const result = await crmApi.veiculos_estoque.saveFull({
+      estoqueId: id,
+      veiculoPayload: {
+        modelo_id: data.modelo_id || null,
+        versao_id: data.versao_id || null,
+        modelo_outro: data.modelo_outro || null,
+        versao_outro: data.versao_outro || null,
+        chassi: data.chassi,
+        placa: data.placa || null,
+        cor: data.cor || null,
+        km: data.km || null,
+      },
+      estoquePayload: {
+        condicao: data.condicao || 'novo',
+        status: data.status || 'disponivel',
+        preco: data.preco || null,
+        observacoes: data.observacoes || null,
+      },
     });
-    return mapVeiculoEstoqueRow(row);
+    return mapVeiculoEstoqueRow({ ...result.estoque, veiculo: result.veiculo });
   },
 };
 

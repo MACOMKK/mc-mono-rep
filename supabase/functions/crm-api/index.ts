@@ -152,20 +152,7 @@ const ENTITY_CONFIG = {
     table: 'veiculos_estoque',
     orderBy: 'criado_em',
     orderDirection: 'desc',
-    allowedFields: [
-      'modelo_id',
-      'versao_id',
-      'modelo_outro',
-      'versao_outro',
-      'chassi',
-      'placa',
-      'cor',
-      'km',
-      'condicao',
-      'status',
-      'preco',
-      'observacoes',
-    ],
+    allowedFields: ['condicao', 'status', 'preco', 'observacoes'],
   },
 } as const;
 
@@ -281,8 +268,8 @@ function mapDatabaseError(error: unknown) {
     return 'Ja existe uma versao com este nome para este modelo.';
   }
 
-  if (message.includes('veiculos_estoque_chassi_key')) {
-    return 'Ja existe um veiculo em estoque com este chassi.';
+  if (message.includes('veiculos_chassi_key')) {
+    return 'Ja existe um veiculo com este chassi.';
   }
 
   if (message.includes('null value in column "categoria_veiculo_id"')) {
@@ -348,6 +335,27 @@ function sanitizePayload(entity: EntityName, payload: Record<string, unknown> = 
     }
   }
 
+  return sanitized;
+}
+
+const VEICULO_ALLOWED_FIELDS = [
+  'modelo_id',
+  'versao_id',
+  'modelo_outro',
+  'versao_outro',
+  'chassi',
+  'placa',
+  'cor',
+  'km',
+] as const;
+
+function sanitizeVeiculoPayload(payload: Record<string, unknown> = {}) {
+  const sanitized: Record<string, unknown> = {};
+  for (const field of VEICULO_ALLOWED_FIELDS) {
+    if (field in payload) {
+      sanitized[field] = payload[field];
+    }
+  }
   return sanitized;
 }
 
@@ -496,11 +504,11 @@ function buildSearchFilter(entity: EntityName, search: string, startIndex: numbe
     pushText('tipo');
     pushText('status');
   } else if (entity === 'veiculos_estoque') {
-    pushText('chassi');
-    pushText('placa');
-    pushText('cor');
-    pushText('modelo_outro');
-    pushText('versao_outro');
+    pushText('v.chassi');
+    pushText('v.placa');
+    pushText('v.cor');
+    pushText('v.modelo_outro');
+    pushText('v.versao_outro');
   }
 
   return {
@@ -648,6 +656,14 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
     `;
   }
 
+  if (entity === 'veiculos_estoque') {
+    return `
+      select ${countExpr}ve.*, row_to_json(v) as veiculo
+      from ${CRM_SCHEMA}.veiculos_estoque ve
+      join public.veiculos v on v.id = ve.veiculo_id
+    `;
+  }
+
   if (entity !== 'atendimentos') {
     return `select ${countExpr}* from ${CRM_SCHEMA}.${ENTITY_CONFIG[entity].table}`;
   }
@@ -678,6 +694,7 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
 function baseAlias(entity: EntityName) {
   if (entity === 'atendimentos') return 'a';
   if (entity === 'leads') return 'l';
+  if (entity === 'veiculos_estoque') return 've';
   return '';
 }
 
@@ -1240,6 +1257,52 @@ Deno.serve(async (request) => {
         }
 
         return { evento: eventoRow };
+      });
+
+      return json(result);
+    }
+
+    if (action === 'save_veiculo_estoque_full') {
+      ensureCanConfigure(access);
+
+      const estoqueId = typeof body.estoqueId === 'string' && body.estoqueId ? body.estoqueId : '';
+      const veiculoPayloadRaw = sanitizeVeiculoPayload(body.veiculoPayload || {});
+      const estoquePayloadRaw = sanitizePayload('veiculos_estoque', body.estoquePayload || {});
+
+      const result = await sql.begin(async (transaction) => {
+        let veiculoRow;
+        if (estoqueId) {
+          const existing = await transaction.unsafe(
+            `select veiculo_id from ${CRM_SCHEMA}.veiculos_estoque where id = $1 limit 1;`,
+            [estoqueId],
+          );
+          const veiculoId = existing[0]?.veiculo_id;
+          if (!veiculoId) {
+            throw Object.assign(new Error('Veiculo em estoque nao encontrado.'), { status: 404 });
+          }
+          const updateQuery = buildUpdateQuery('public', 'veiculos', veiculoId, veiculoPayloadRaw);
+          const rows = await transaction.unsafe(updateQuery.text, updateQuery.values);
+          veiculoRow = rows[0];
+        } else {
+          const insertQuery = buildInsertQuery('public', 'veiculos', veiculoPayloadRaw);
+          const rows = await transaction.unsafe(insertQuery.text, insertQuery.values);
+          veiculoRow = rows[0];
+        }
+
+        let estoqueRow;
+        if (estoqueId) {
+          const updateQuery = buildUpdateQuery(CRM_SCHEMA, 'veiculos_estoque', estoqueId, estoquePayloadRaw);
+          const rows = await transaction.unsafe(updateQuery.text, updateQuery.values);
+          estoqueRow = rows[0];
+        } else {
+          const insertPayload = { ...estoquePayloadRaw, veiculo_id: veiculoRow.id };
+          if (collaborator?.id) insertPayload.criado_por = collaborator.id;
+          const insertQuery = buildInsertQuery(CRM_SCHEMA, 'veiculos_estoque', insertPayload);
+          const rows = await transaction.unsafe(insertQuery.text, insertQuery.values);
+          estoqueRow = rows[0];
+        }
+
+        return { estoque: estoqueRow, veiculo: veiculoRow };
       });
 
       return json(result);

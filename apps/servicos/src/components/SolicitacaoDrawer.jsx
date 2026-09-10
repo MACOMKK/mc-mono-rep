@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   Banknote,
   Bell,
   Building2,
@@ -299,6 +300,10 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
       setAnexosPendentes((current) => current.filter((item) => item.tempId !== variables.tempId));
       queryClient.setQueryData(['servicos', 'anexos', solicitacaoId], (old) => [...(old || []), row]);
       loadHistorico();
+      // As listagens de solicitacoes (Aprovacoes/Pagamentos/MinhasSolicitacoes) trazem
+      // `anexos_total` pra avisar sem anexo direto no clique de aprovar -- sem essa
+      // invalidacao, esse numero ficaria desatualizado ate a proxima navegacao/refetch.
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacoes'] });
       toast({ title: 'Anexo incluído' });
     },
     onError: (error, variables) => {
@@ -351,6 +356,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
       setRemoverTarget(null);
       loadAnexos();
       loadHistorico();
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacoes'] });
     },
     onError: (error) => {
       toast({ title: 'Não foi possível remover o anexo', description: getFriendlyErrorMessage(error) });
@@ -724,6 +730,18 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
         </SheetHeader>
 
         <div className="-mx-6 flex-1 space-y-4 overflow-y-auto px-6">
+        {solicitacao &&
+          !anexosLoading &&
+          anexos.length === 0 &&
+          (solicitacao.status === 'pendente' || solicitacao.status === 'aprovado') && (
+            <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Esta solicitação ainda não tem nenhum anexo — o envio pode ter falhado. Adicione um
+                arquivo na aba Anexos antes que ela seja {solicitacao.status === 'aprovado' ? 'paga' : 'aprovada'}.
+              </span>
+            </div>
+          )}
         {solicitacao && isDonoSolicitacao && user?.system_access_level === 'admin' && (
           <div className="mt-4 flex items-center justify-between gap-2 rounded-md border border-dashed border-muted-foreground/40 p-3">
             <label

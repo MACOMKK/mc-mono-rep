@@ -199,5 +199,10 @@ export const crmApi = {
   marcas_veiculo: buildEntity('marcas_veiculo'),
   modelos_veiculo: buildEntity('modelos_veiculo'),
   versoes_veiculo: buildEntity('versoes_veiculo'),
-  veiculos_estoque: buildEntity('veiculos_estoque'),
+  veiculos_estoque: {
+    ...buildEntity('veiculos_estoque'),
+    async saveFull(payload) {
+      return invokeCrm({ action: 'save_veiculo_estoque_full', ...payload });
+    },
+  },
 };
