@@ -98,6 +98,10 @@ const ENTITY_CONFIG = {
       'lead_id',
       'marca',
       'modelo',
+      'marca_id',
+      'modelo_id',
+      'marca_outro',
+      'modelo_outro',
       'versao',
       'ano',
       'categoria_veiculo_id',
@@ -107,6 +111,7 @@ const ENTITY_CONFIG = {
       'cor_preferida',
       'combustivel',
       'cambio',
+      'atributos',
       'principal',
       'observacoes',
     ],
@@ -115,13 +120,25 @@ const ENTITY_CONFIG = {
     table: 'categorias_veiculo',
     orderBy: 'nome',
     orderDirection: 'asc',
-    allowedFields: ['nome', 'ativo'],
+    allowedFields: ['nome', 'ativo', 'campos_extra'],
   },
   origens_lead: {
     table: 'origens_lead',
     orderBy: 'nome',
     orderDirection: 'asc',
     allowedFields: ['nome', 'ativo'],
+  },
+  marcas_veiculo: {
+    table: 'marcas_veiculo',
+    orderBy: 'nome',
+    orderDirection: 'asc',
+    allowedFields: ['nome', 'ativo'],
+  },
+  modelos_veiculo: {
+    table: 'modelos_veiculo',
+    orderBy: 'nome',
+    orderDirection: 'asc',
+    allowedFields: ['marca_id', 'categoria_veiculo_id', 'nome', 'ativo'],
   },
 } as const;
 
@@ -219,6 +236,18 @@ function mapDatabaseError(error: unknown) {
 
   if (message.includes('origens_lead_nome_key')) {
     return 'Ja existe uma origem com este nome.';
+  }
+
+  if (message.includes('marcas_veiculo_nome_key')) {
+    return 'Ja existe uma marca com este nome.';
+  }
+
+  if (message.includes('modelos_veiculo_marca_id_categoria_veiculo_id_nome_key')) {
+    return 'Ja existe um modelo com este nome para esta marca e segmento.';
+  }
+
+  if (message.includes('null value in column "categoria_veiculo_id"')) {
+    return 'Selecione o segmento (categoria) do veiculo.';
   }
 
   if (message.includes('null value in column "origem_id"')) {
@@ -1178,7 +1207,10 @@ Deno.serve(async (request) => {
       return json({ error: 'Entidade invalida.' }, 400);
     }
 
-    if (entity === 'categorias_veiculo' && ['create', 'update', 'delete'].includes(action)) {
+    if (
+      ['categorias_veiculo', 'marcas_veiculo', 'modelos_veiculo'].includes(entity)
+      && ['create', 'update', 'delete'].includes(action)
+    ) {
       ensureCanConfigure(access);
     }
 
@@ -1262,7 +1294,8 @@ Deno.serve(async (request) => {
       const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator);
       if (!Object.keys(payload).length) return json({ error: 'Payload vazio.' }, 400);
       validateContactFields(entity, payload);
-      if (collaborator?.id && entity !== 'categorias_veiculo') payload.criado_por = collaborator.id;
+      const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo'];
+      if (collaborator?.id && !entitiesWithoutCriadoPor.includes(entity)) payload.criado_por = collaborator.id;
       if (entity === 'atendimentos' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
       }

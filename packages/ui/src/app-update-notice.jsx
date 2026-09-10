@@ -32,7 +32,7 @@ export function AppUpdateNoticeDialog({ notice, onAccept, accepting = false }) {
             Departamento de Tecnologia
           </p>
           <AlertDialogAction disabled={accepting} onClick={onAccept} className="w-full sm:w-auto">
-            Li e estou ciente
+            {notice.requer_atualizacao ? 'Atualizar agora' : 'Li e estou ciente'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

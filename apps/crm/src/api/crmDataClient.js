@@ -209,6 +209,10 @@ function mapVeiculoInteresseRow(row = {}) {
     lead_id: row.lead_id || '',
     marca: row.marca || '',
     modelo: row.modelo || '',
+    marca_id: row.marca_id || null,
+    modelo_id: row.modelo_id || null,
+    marca_outro: row.marca_outro || '',
+    modelo_outro: row.modelo_outro || '',
     versao: row.versao || '',
     ano: row.ano || '',
     categoria_veiculo_id: row.categoria_veiculo_id || null,
@@ -218,6 +222,7 @@ function mapVeiculoInteresseRow(row = {}) {
     cor_preferida: row.cor_preferida || '',
     combustivel: row.combustivel || '',
     cambio: row.cambio || '',
+    atributos: row.atributos || {},
     principal: row.principal !== false,
     observacoes: row.observacoes || '',
     ...mapBaseDates(row),
@@ -229,6 +234,7 @@ function mapCategoriaVeiculoRow(row = {}) {
     id: row.id,
     nome: row.nome || '',
     ativo: row.ativo !== false,
+    campos_extra: Array.isArray(row.campos_extra) ? row.campos_extra : [],
     ...mapBaseDates(row),
   };
 }
@@ -236,6 +242,26 @@ function mapCategoriaVeiculoRow(row = {}) {
 function mapOrigemLeadRow(row = {}) {
   return {
     id: row.id,
+    nome: row.nome || '',
+    ativo: row.ativo !== false,
+    ...mapBaseDates(row),
+  };
+}
+
+function mapMarcaVeiculoRow(row = {}) {
+  return {
+    id: row.id,
+    nome: row.nome || '',
+    ativo: row.ativo !== false,
+    ...mapBaseDates(row),
+  };
+}
+
+function mapModeloVeiculoRow(row = {}) {
+  return {
+    id: row.id,
+    marca_id: row.marca_id || '',
+    categoria_veiculo_id: row.categoria_veiculo_id || '',
     nome: row.nome || '',
     ativo: row.ativo !== false,
     ...mapBaseDates(row),
@@ -369,6 +395,10 @@ function mapVeiculoInteressePayload(data = {}, leadId) {
     lead_id: leadId || vehicle.lead_id,
     marca: vehicle.marca || null,
     modelo: vehicle.modelo || data.modelo_interesse || null,
+    marca_id: vehicle.marca_id || null,
+    modelo_id: vehicle.modelo_id || null,
+    marca_outro: vehicle.marca_outro || null,
+    modelo_outro: vehicle.modelo_outro || null,
     versao: vehicle.versao || null,
     ano: toNullableNumber(vehicle.ano),
     categoria_veiculo_id: vehicle.categoria_veiculo_id || null,
@@ -378,6 +408,7 @@ function mapVeiculoInteressePayload(data = {}, leadId) {
     cor_preferida: vehicle.cor_preferida || null,
     combustivel: vehicle.combustivel || null,
     cambio: vehicle.cambio || null,
+    atributos: vehicle.atributos || {},
     principal: true,
     observacoes: vehicle.observacoes || null,
   };
@@ -388,6 +419,10 @@ function hasVehicleInterest(data = {}) {
   return Boolean(
     vehicle.marca
     || vehicle.modelo
+    || vehicle.marca_id
+    || vehicle.modelo_id
+    || vehicle.marca_outro
+    || vehicle.modelo_outro
     || vehicle.versao
     || vehicle.ano
     || vehicle.categoria_veiculo_id
@@ -733,12 +768,20 @@ const CategoriaVeiculoRepository = {
   ...createListRepository('CategoriaVeiculo', crmApi.categorias_veiculo, mapCategoriaVeiculoRow),
 
   async create(data) {
-    const row = await crmApi.categorias_veiculo.create({ nome: data.nome, ativo: data.ativo !== false });
+    const row = await crmApi.categorias_veiculo.create({
+      nome: data.nome,
+      ativo: data.ativo !== false,
+      campos_extra: Array.isArray(data.campos_extra) ? data.campos_extra : [],
+    });
     return mapCategoriaVeiculoRow(row);
   },
 
   async update(id, data) {
-    const row = await crmApi.categorias_veiculo.update(id, { nome: data.nome, ativo: data.ativo !== false });
+    const row = await crmApi.categorias_veiculo.update(id, {
+      nome: data.nome,
+      ativo: data.ativo !== false,
+      campos_extra: Array.isArray(data.campos_extra) ? data.campos_extra : [],
+    });
     return mapCategoriaVeiculoRow(row);
   },
 };
@@ -754,6 +797,44 @@ const OrigemLeadRepository = {
   async update(id, data) {
     const row = await crmApi.origens_lead.update(id, { nome: data.nome, ativo: data.ativo !== false });
     return mapOrigemLeadRow(row);
+  },
+};
+
+const MarcaVeiculoRepository = {
+  ...createListRepository('MarcaVeiculo', crmApi.marcas_veiculo, mapMarcaVeiculoRow),
+
+  async create(data) {
+    const row = await crmApi.marcas_veiculo.create({ nome: data.nome, ativo: data.ativo !== false });
+    return mapMarcaVeiculoRow(row);
+  },
+
+  async update(id, data) {
+    const row = await crmApi.marcas_veiculo.update(id, { nome: data.nome, ativo: data.ativo !== false });
+    return mapMarcaVeiculoRow(row);
+  },
+};
+
+const ModeloVeiculoRepository = {
+  ...createListRepository('ModeloVeiculo', crmApi.modelos_veiculo, mapModeloVeiculoRow),
+
+  async create(data) {
+    const row = await crmApi.modelos_veiculo.create({
+      marca_id: data.marca_id,
+      categoria_veiculo_id: data.categoria_veiculo_id,
+      nome: data.nome,
+      ativo: data.ativo !== false,
+    });
+    return mapModeloVeiculoRow(row);
+  },
+
+  async update(id, data) {
+    const row = await crmApi.modelos_veiculo.update(id, {
+      marca_id: data.marca_id,
+      categoria_veiculo_id: data.categoria_veiculo_id,
+      nome: data.nome,
+      ativo: data.ativo !== false,
+    });
+    return mapModeloVeiculoRow(row);
   },
 };
 
@@ -879,5 +960,7 @@ export const crmDataClient = {
     VeiculoInteresse: VeiculoInteresseRepository,
     CategoriaVeiculo: CategoriaVeiculoRepository,
     OrigemLead: OrigemLeadRepository,
+    MarcaVeiculo: MarcaVeiculoRepository,
+    ModeloVeiculo: ModeloVeiculoRepository,
   },
 };

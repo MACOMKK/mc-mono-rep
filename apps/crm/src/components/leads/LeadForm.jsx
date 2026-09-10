@@ -74,6 +74,10 @@ export default function LeadForm({
     veiculo_interesse: {
       marca: '',
       modelo: '',
+      marca_id: null,
+      modelo_id: null,
+      marca_outro: '',
+      modelo_outro: '',
       versao: '',
       ano: '',
       categoria_veiculo_id: null,
@@ -83,6 +87,7 @@ export default function LeadForm({
       cor_preferida: '',
       combustivel: '',
       cambio: '',
+      atributos: {},
       observacoes: '',
     },
     empresa: 'Macom Ananindeua',
@@ -127,6 +132,137 @@ export default function LeadForm({
     ),
     [categoriasVeiculo, data.veiculo_interesse?.categoria_veiculo_id],
   );
+  const categoriaSelecionada = useMemo(
+    () => categoriasVeiculo.find((categoria) => categoria.id === data.veiculo_interesse?.categoria_veiculo_id) || null,
+    [categoriasVeiculo, data.veiculo_interesse?.categoria_veiculo_id],
+  );
+  const camposExtraSegmento = categoriaSelecionada?.campos_extra || [];
+
+  const { data: marcasVeiculo = [] } = useQuery({
+    queryKey: ['crm-marcas-veiculo'],
+    queryFn: () => crmDataClient.entities.MarcaVeiculo.list('nome'),
+    enabled: open,
+  });
+
+  const { data: modelosVeiculo = [] } = useQuery({
+    queryKey: ['crm-modelos-veiculo'],
+    queryFn: () => crmDataClient.entities.ModeloVeiculo.list('nome'),
+    enabled: open,
+  });
+
+  const marcasIdsComModeloNoSegmento = useMemo(() => {
+    const categoriaId = data.veiculo_interesse?.categoria_veiculo_id;
+    if (!categoriaId) return null;
+    return new Set(
+      modelosVeiculo
+        .filter((modelo) => modelo.categoria_veiculo_id === categoriaId)
+        .map((modelo) => modelo.marca_id),
+    );
+  }, [modelosVeiculo, data.veiculo_interesse?.categoria_veiculo_id]);
+
+  const marcasSelecionaveis = useMemo(
+    () => marcasVeiculo.filter((marca) => (
+      (marca.ativo || marca.id === data.veiculo_interesse?.marca_id)
+      && (!marcasIdsComModeloNoSegmento || marcasIdsComModeloNoSegmento.has(marca.id) || marca.id === data.veiculo_interesse?.marca_id)
+    )),
+    [marcasVeiculo, marcasIdsComModeloNoSegmento, data.veiculo_interesse?.marca_id],
+  );
+
+  const modelosSelecionaveis = useMemo(
+    () => modelosVeiculo.filter((modelo) => (
+      modelo.marca_id === data.veiculo_interesse?.marca_id
+      && modelo.categoria_veiculo_id === data.veiculo_interesse?.categoria_veiculo_id
+      && (modelo.ativo || modelo.id === data.veiculo_interesse?.modelo_id)
+    )),
+    [modelosVeiculo, data.veiculo_interesse?.marca_id, data.veiculo_interesse?.categoria_veiculo_id, data.veiculo_interesse?.modelo_id],
+  );
+
+  const setMarca = (value) => {
+    if (value === 'outra') {
+      setData((current) => ({
+        ...current,
+        veiculo_interesse: {
+          ...(current.veiculo_interesse || {}),
+          marca_id: null,
+          marca: current.veiculo_interesse?.marca_outro || '',
+          modelo_id: null,
+        },
+      }));
+      return;
+    }
+    const marca = marcasVeiculo.find((item) => item.id === value);
+    setData((current) => ({
+      ...current,
+      veiculo_interesse: {
+        ...(current.veiculo_interesse || {}),
+        marca_id: value,
+        marca_outro: '',
+        marca: marca?.nome || '',
+        modelo_id: null,
+      },
+    }));
+  };
+
+  const setMarcaOutro = (texto) => {
+    setData((current) => ({
+      ...current,
+      veiculo_interesse: {
+        ...(current.veiculo_interesse || {}),
+        marca_outro: texto,
+        marca: texto,
+      },
+    }));
+  };
+
+  const setModelo = (value) => {
+    if (value === 'outro') {
+      setData((current) => ({
+        ...current,
+        veiculo_interesse: {
+          ...(current.veiculo_interesse || {}),
+          modelo_id: null,
+          modelo: current.veiculo_interesse?.modelo_outro || '',
+        },
+      }));
+      return;
+    }
+    const modelo = modelosVeiculo.find((item) => item.id === value);
+    setData((current) => ({
+      ...current,
+      veiculo_interesse: {
+        ...(current.veiculo_interesse || {}),
+        modelo_id: value,
+        modelo_outro: '',
+        modelo: modelo?.nome || '',
+      },
+    }));
+    set('modelo_interesse', modelo?.nome || '');
+  };
+
+  const setModeloOutro = (texto) => {
+    setData((current) => ({
+      ...current,
+      veiculo_interesse: {
+        ...(current.veiculo_interesse || {}),
+        modelo_outro: texto,
+        modelo: texto,
+      },
+    }));
+    set('modelo_interesse', texto);
+  };
+
+  const setAtributo = (chave, value) => {
+    setData((current) => ({
+      ...current,
+      veiculo_interesse: {
+        ...(current.veiculo_interesse || {}),
+        atributos: {
+          ...(current.veiculo_interesse?.atributos || {}),
+          [chave]: value,
+        },
+      },
+    }));
+  };
 
   const { data: origensLead = [] } = useQuery({
     queryKey: ['crm-origens-lead'],
@@ -325,13 +461,22 @@ export default function LeadForm({
             {currentStepKey === 'veiculo' ? (
               <div className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Marca">
-                    <Input value={data.veiculo_interesse?.marca || ''} onChange={(event) => setVehicle('marca', event.target.value)} className="h-9 rounded-none text-sm" />
-                  </Field>
-                  <Field label="Categoria do veiculo">
+                  <Field label="Categoria do veiculo (segmento)">
                     <Select
                       value={data.veiculo_interesse?.categoria_veiculo_id || 'nenhuma'}
-                      onValueChange={(value) => setVehicle('categoria_veiculo_id', value === 'nenhuma' ? null : value)}
+                      onValueChange={(value) => setData((current) => ({
+                        ...current,
+                        veiculo_interesse: {
+                          ...(current.veiculo_interesse || {}),
+                          categoria_veiculo_id: value === 'nenhuma' ? null : value,
+                          marca_id: null,
+                          marca_outro: '',
+                          marca: '',
+                          modelo_id: null,
+                          modelo_outro: '',
+                          modelo: '',
+                        },
+                      }))}
                     >
                       <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
                       <SelectContent className="rounded-none">
@@ -344,15 +489,59 @@ export default function LeadForm({
                       </SelectContent>
                     </Select>
                   </Field>
+                  <Field label="Marca">
+                    <Select
+                      value={data.veiculo_interesse?.marca_id || (data.veiculo_interesse?.marca_outro ? 'outra' : '')}
+                      onValueChange={setMarca}
+                      disabled={!data.veiculo_interesse?.categoria_veiculo_id}
+                    >
+                      <SelectTrigger className="h-9 rounded-none text-sm">
+                        <SelectValue placeholder={data.veiculo_interesse?.categoria_veiculo_id ? 'Selecione a marca' : 'Selecione o segmento primeiro'} />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-none">
+                        {marcasSelecionaveis.map((marca) => (
+                          <SelectItem key={marca.id} value={marca.id}>
+                            {marca.nome}{!marca.ativo ? ' (inativa)' : ''}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="outra">Nao encontrei a marca</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {!data.veiculo_interesse?.marca_id ? (
+                      <Input
+                        placeholder="Digite a marca"
+                        value={data.veiculo_interesse?.marca_outro || ''}
+                        onChange={(event) => setMarcaOutro(event.target.value)}
+                        className="mt-2 h-9 rounded-none text-sm"
+                      />
+                    ) : null}
+                  </Field>
                   <Field label="Modelo">
-                    <Input
-                      value={data.veiculo_interesse?.modelo || data.modelo_interesse || ''}
-                      onChange={(event) => {
-                        setVehicle('modelo', event.target.value);
-                        set('modelo_interesse', event.target.value);
-                      }}
-                      className="h-9 rounded-none text-sm"
-                    />
+                    <Select
+                      value={data.veiculo_interesse?.modelo_id || (data.veiculo_interesse?.modelo_outro ? 'outro' : '')}
+                      onValueChange={setModelo}
+                      disabled={!data.veiculo_interesse?.marca_id}
+                    >
+                      <SelectTrigger className="h-9 rounded-none text-sm">
+                        <SelectValue placeholder={data.veiculo_interesse?.marca_id ? 'Selecione o modelo' : 'Selecione a marca primeiro'} />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-none">
+                        {modelosSelecionaveis.map((modelo) => (
+                          <SelectItem key={modelo.id} value={modelo.id}>
+                            {modelo.nome}{!modelo.ativo ? ' (inativo)' : ''}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="outro">Nao encontrei o modelo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {!data.veiculo_interesse?.modelo_id ? (
+                      <Input
+                        placeholder="Digite o modelo"
+                        value={data.veiculo_interesse?.modelo_outro || ''}
+                        onChange={(event) => setModeloOutro(event.target.value)}
+                        className="mt-2 h-9 rounded-none text-sm"
+                      />
+                    ) : null}
                   </Field>
                   <Field label="Ano">
                     <Input type="number" min="1900" max="2100" value={data.veiculo_interesse?.ano || ''} onChange={(event) => setVehicle('ano', event.target.value)} className="h-9 rounded-none text-sm" />
@@ -395,6 +584,34 @@ export default function LeadForm({
                     <Field label="Cambio">
                       <Input value={data.veiculo_interesse?.cambio || ''} onChange={(event) => setVehicle('cambio', event.target.value)} className="h-9 rounded-none text-sm" />
                     </Field>
+                  </div>
+                ) : null}
+                {camposExtraSegmento.length > 0 ? (
+                  <div className="grid gap-4 border-t pt-4 md:grid-cols-2">
+                    {camposExtraSegmento.map((campo) => (
+                      <Field key={campo.chave} label={campo.label || campo.chave}>
+                        {campo.tipo === 'opcao' ? (
+                          <Select
+                            value={data.veiculo_interesse?.atributos?.[campo.chave] || ''}
+                            onValueChange={(value) => setAtributo(campo.chave, value)}
+                          >
+                            <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
+                            <SelectContent className="rounded-none">
+                              {(campo.opcoes || []).map((opcao) => (
+                                <SelectItem key={opcao} value={opcao}>{opcao}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            type={campo.tipo === 'numero' ? 'number' : 'text'}
+                            value={data.veiculo_interesse?.atributos?.[campo.chave] ?? ''}
+                            onChange={(event) => setAtributo(campo.chave, event.target.value)}
+                            className="h-9 rounded-none text-sm"
+                          />
+                        )}
+                      </Field>
+                    ))}
                   </div>
                 ) : null}
                 <Field label="Observacoes do veiculo">

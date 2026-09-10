@@ -186,6 +186,16 @@ export default function Navbar({ realtime }) {
               icon: Car,
               path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/categorias-veiculo' : undefined,
             },
+            {
+              label: 'Marcas de Veiculo',
+              icon: Car,
+              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/marcas-veiculo' : undefined,
+            },
+            {
+              label: 'Modelos de Veiculo',
+              icon: Car,
+              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/modelos-veiculo' : undefined,
+            },
             { label: 'Funil', icon: SlidersHorizontal, comingSoon: true },
             { label: 'Etapas do Funil', icon: SlidersHorizontal, comingSoon: true },
             { label: 'Tipos de Atividade', icon: SlidersHorizontal, comingSoon: true },

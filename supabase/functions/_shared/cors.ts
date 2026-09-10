@@ -2,6 +2,7 @@ const ALLOWED_ORIGINS = new Set([
   'https://macom-central.vercel.app',
   'https://macom-console.vercel.app',
   'https://macom-crm.vercel.app',
+  'https://crm.mitmacom.com.br',
   'https://macom-intranet.vercel.app',
   'https://macom-relatorios.vercel.app',
   'https://macom-servicos.vercel.app',

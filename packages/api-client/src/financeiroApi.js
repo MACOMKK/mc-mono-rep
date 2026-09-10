@@ -154,7 +154,7 @@ export const financeiroApi = {
       const result = await invokeServicos({ action: 'listar_avisos' });
       return result.avisos || [];
     },
-    async salvar({ id, titulo, mensagem, obrigatorio, ativo, modoTeste, forcarInativarAnterior }) {
+    async salvar({ id, titulo, mensagem, obrigatorio, ativo, modoTeste, requerAtualizacao, forcarInativarAnterior }) {
       const result = await invokeServicos({
         action: 'salvar_aviso',
         id: id || null,
@@ -163,6 +163,7 @@ export const financeiroApi = {
         obrigatorio,
         ativo,
         modo_teste: Boolean(modoTeste),
+        requer_atualizacao: Boolean(requerAtualizacao),
         forcar_inativar_anterior: Boolean(forcarInativarAnterior),
       });
       return result.aviso || null;

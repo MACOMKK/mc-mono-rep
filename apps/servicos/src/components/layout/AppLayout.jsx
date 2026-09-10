@@ -49,7 +49,12 @@ export default function AppLayout() {
 
   function handleAceitarAviso() {
     setDispensado({ id: aviso.id, versao: aviso.versao });
-    aceitarAvisoMutation.mutate(aviso.id);
+    const requerAtualizacao = aviso.requer_atualizacao === true;
+    aceitarAvisoMutation.mutate(aviso.id, {
+      onSuccess: () => {
+        if (requerAtualizacao) window.location.reload();
+      },
+    });
   }
 
   useEffect(() => {

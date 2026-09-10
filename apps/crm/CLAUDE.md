@@ -29,11 +29,30 @@ Gestão comercial automotiva: leads, clientes, atendimentos e distribuição par
 | `leads` | `origem_id` referencia `origens_lead` (FK), `status` (novo/tentativa_contato/em_contato/qualificado/proposta/convertido/perdido), SLA, responsável |
 | `atendimentos` | `tipo` (venda/pos_venda/agendamento/retorno), `temperatura` (frio/morno/quente) |
 | `historico_atendimentos` | auditoria de mudanças |
-| `veiculos_interesse` | veículos associados a um lead; `categoria_veiculo_id` referencia `categorias_veiculo` (FK), pois a concessionária pode vender motos e/ou carros |
-| `categorias_veiculo` | catálogo de categorias de veículo (`nome`, `ativo`) — cadastro livre via tela de configuração (admin/gestor), sem lista fixa no schema |
+| `veiculos_interesse` | veículos associados a um lead (1+ por lead, flag `principal`); `categoria_veiculo_id` (FK `categorias_veiculo`, **obrigatório**) define o segmento; `marca_id`/`modelo_id` (FK `marcas_veiculo`/`modelos_veiculo`) para catálogo estruturado, com `marca_outro`/`modelo_outro` como fallback texto livre quando o veículo ainda não está cadastrado; `atributos` (jsonb) guarda os valores dos `campos_extra` do segmento (ex.: `{"cilindrada": 160}`) |
+| `categorias_veiculo` | catálogo de **segmento** de veículo (`nome`, `ativo`) — cadastro livre via tela de configuração (admin/gestor); `campos_extra` (jsonb, lista de `{chave, label, tipo, opcoes?}`) define os atributos específicos daquele segmento (ex.: Moto → cilindrada; Carro → nº de portas, câmbio), editável na própria tela `CategoriasVeiculo.jsx` |
+| `marcas_veiculo` | catálogo de marcas (`nome`, `ativo`) — independente de segmento (uma marca pode vender carro e moto) |
+| `modelos_veiculo` | catálogo de modelos (`nome`, `ativo`, `marca_id` FK, `categoria_veiculo_id` FK) — é o modelo que amarra marca a um segmento (ex.: Honda Civic = Carro, Honda CG = Moto) |
 | `origens_lead` | catálogo de origens de lead (`nome`, `ativo`) — mesmo padrão de `categorias_veiculo`; substituiu o antigo `leads.origem` (texto com `check` fixo) em `20260909110000_add_crm_origens_lead.sql` |
+
+Todos os catálogos acima (`categorias_veiculo`, `marcas_veiculo`, `modelos_veiculo`, `origens_lead`) são
+**globais** hoje (sem `empresa_id`) — decisão consciente enquanto o app roda para uma única empresa. Se
+o produto virar multiempresa, os 4 precisam ganhar `empresa_id` juntos (FK + RLS por empresa +
+`unique (empresa_id, nome)` no lugar de `unique (nome)`).
 | `configuracoes_distribuicao` / `vendedores_distribuicao` | regras de distribuição automática de leads |
 | `conversas_atendimento` / `mensagens_atendimento` | chat de atendimento via WhatsApp + IA (módulo "Atendimento", em construção) |
+
+## Agenda de Atividades
+
+`atendimentos` é a **única** fonte da Agenda de Atividades — não existe tabela `eventos`. A
+entidade lógica `Atividade` usada no frontend (`crmDataClient.entities.Atividade`) é apenas um
+alias do mesmo repositório de `Evento` (que opera sobre `atendimentos`). O modelo é
+intencionalmente unificado: cada linha representa tanto a atividade **planejada** (`status`,
+`proximo_contato`) quanto o **registro da interação/resultado** (`resultado`,
+`motivo_resultado`, `concluido_em`) — não separar isso em duas entidades. `tipo_atendimento`
+aceita `ligacao, whatsapp, email, visita, test_drive, tarefa` (simplificado em
+`20260909140000_add_crm_veiculo_interesse_catalogo.sql`, removendo 4 valores legados nunca
+usados na UI).
 
 ## Atendimento (WhatsApp + IA)
 
@@ -60,8 +79,9 @@ secrets no painel da Meta.
 ## Realtime
 
 `useCrmRealtime.js` escuta INSERT/UPDATE/DELETE em `gestao_crm` (leads, clientes, atendimentos,
-historico_atendimentos, veiculos_interesse, categorias_veiculo, origens_lead, configuracoes_distribuicao,
-vendedores_distribuicao, conversas_atendimento, mensagens_atendimento)
+historico_atendimentos, veiculos_interesse, categorias_veiculo, origens_lead, marcas_veiculo,
+modelos_veiculo, configuracoes_distribuicao, vendedores_distribuicao, conversas_atendimento,
+mensagens_atendimento)
 e sincroniza o cache do React Query. Estados possíveis: `connecting`, `active`, `syncing`, `error`, `disabled`.
 Ao adicionar uma nova tabela ao schema `gestao_crm` que precise refletir em tempo real na UI,
 lembrar de registrá-la aqui também.

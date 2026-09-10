@@ -368,6 +368,7 @@ function avisoParaRascunho(aviso) {
     obrigatorio: aviso?.obrigatorio ?? true,
     ativo: aviso?.ativo ?? false,
     modoTeste: aviso?.modo_teste ?? false,
+    requerAtualizacao: aviso?.requer_atualizacao ?? false,
   };
 }
 
@@ -416,6 +417,11 @@ function HistoricoAvisos({ onEditar, editandoId }) {
             {aviso.modo_teste && (
               <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
                 Teste
+              </span>
+            )}
+            {aviso.requer_atualizacao && (
+              <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">
+                Atualização
               </span>
             )}
           </div>
@@ -507,6 +513,20 @@ function AvisoFormDialog({ open, onOpenChange, rascunho, setRascunho, onSalvar, 
               <Switch
                 checked={rascunho?.modoTeste ?? false}
                 onCheckedChange={(checked) => setCampo('modoTeste', checked)}
+                disabled={salvando}
+              />
+            </label>
+
+            <label className="flex cursor-pointer items-center justify-between gap-4">
+              <span className="text-sm">
+                Exige atualização
+                <span className="block text-xs text-muted-foreground">
+                  Ao aceitar, recarrega a página do colaborador (use para avisar sobre um deploy novo)
+                </span>
+              </span>
+              <Switch
+                checked={rascunho?.requerAtualizacao ?? false}
+                onCheckedChange={(checked) => setCampo('requerAtualizacao', checked)}
                 disabled={salvando}
               />
             </label>

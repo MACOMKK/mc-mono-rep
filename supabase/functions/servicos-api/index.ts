@@ -1105,6 +1105,7 @@ Deno.serve(async (request) => {
         obrigatorio: body.obrigatorio !== false,
         ativo: body.ativo !== false,
         modoTeste: body.modo_teste === true,
+        requerAtualizacao: body.requer_atualizacao === true,
         criadoPor: String(collaborator!.id),
         forcarInativarAnterior: body.forcar_inativar_anterior === true,
       });

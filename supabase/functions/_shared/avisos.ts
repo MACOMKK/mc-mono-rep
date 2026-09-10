@@ -15,6 +15,7 @@ export interface Aviso {
   obrigatorio: boolean;
   ativo: boolean;
   modo_teste: boolean;
+  requer_atualizacao: boolean;
   criado_por: string | null;
   criado_em: string;
   atualizado_em: string;
@@ -79,6 +80,7 @@ export interface SalvarAvisoInput {
   obrigatorio: boolean;
   ativo: boolean;
   modoTeste: boolean;
+  requerAtualizacao: boolean;
   criadoPor: string;
   // Quando true, inativa automaticamente o aviso ativo conflitante antes de salvar -- so setado
   // apos o admin confirmar isso explicitamente no dialogo de conflito (ver 409 abaixo).
@@ -119,8 +121,8 @@ export async function criarOuAtualizarAviso(sql: SqlTag, input: SalvarAvisoInput
 
   if (!input.id) {
     const rows = await sql`
-      insert into public.avisos (sistema_slug, titulo, mensagem, versao, obrigatorio, ativo, modo_teste, criado_por)
-      values (${input.sistemaSlug}, ${input.titulo}, ${input.mensagem}, 1, ${input.obrigatorio}, ${input.ativo}, ${input.modoTeste}, ${input.criadoPor})
+      insert into public.avisos (sistema_slug, titulo, mensagem, versao, obrigatorio, ativo, modo_teste, requer_atualizacao, criado_por)
+      values (${input.sistemaSlug}, ${input.titulo}, ${input.mensagem}, 1, ${input.obrigatorio}, ${input.ativo}, ${input.modoTeste}, ${input.requerAtualizacao}, ${input.criadoPor})
       returning *;
     `;
     return rows[0] as Aviso;
@@ -135,13 +137,15 @@ export async function criarOuAtualizarAviso(sql: SqlTag, input: SalvarAvisoInput
   }
 
   const mudouConteudo = existente.titulo !== input.titulo || existente.mensagem !== input.mensagem
-    || existente.obrigatorio !== input.obrigatorio || existente.ativo !== input.ativo;
+    || existente.obrigatorio !== input.obrigatorio || existente.ativo !== input.ativo
+    || existente.requer_atualizacao !== input.requerAtualizacao;
   const novaVersao = mudouConteudo ? existente.versao + 1 : existente.versao;
 
   const rows = await sql`
     update public.avisos
     set titulo = ${input.titulo}, mensagem = ${input.mensagem}, obrigatorio = ${input.obrigatorio},
-      ativo = ${input.ativo}, modo_teste = ${input.modoTeste}, versao = ${novaVersao}, atualizado_em = now()
+      ativo = ${input.ativo}, modo_teste = ${input.modoTeste}, requer_atualizacao = ${input.requerAtualizacao},
+      versao = ${novaVersao}, atualizado_em = now()
     where id = ${existente.id}
     returning *;
   `;
