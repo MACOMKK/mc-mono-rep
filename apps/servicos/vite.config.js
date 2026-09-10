@@ -69,7 +69,8 @@ export default mergeConfig(baseConfig, {
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.js',
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
+      injectRegister: false,
       manifestFilename: 'manifest.json',
       includeAssets: ['favicon.svg', 'pwa-icons/*.png'],
       manifest: {

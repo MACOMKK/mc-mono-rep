@@ -6,6 +6,7 @@ import { queryClientInstance } from '@/lib/query-client';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { PushProvider } from '@/lib/PushContext';
 import AppLayout from '@/components/layout/AppLayout';
+import AppUpdatePrompt from '@/components/AppUpdatePrompt';
 import NativeBackButtonHandler from '@/components/NativeBackButtonHandler';
 import Login from '@/pages/Login';
 import MinhasSolicitacoes from '@/pages/MinhasSolicitacoes';
@@ -118,6 +119,7 @@ function App() {
             <Route path="*" element={<ServicosRoutes />} />
           </Routes>
         </Router>
+        <AppUpdatePrompt />
         <Toaster />
       </AuthProvider>
     </QueryClientProvider>

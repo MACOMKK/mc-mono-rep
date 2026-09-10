@@ -87,7 +87,7 @@ function dispatch(action) {
   listeners.forEach((listener) => listener(memoryState));
 }
 
-function toast(props) {
+function toast({ duration = TOAST_AUTO_DISMISS_DELAY, ...props } = {}) {
   const id = genId();
 
   const update = (nextProps) =>
@@ -110,7 +110,11 @@ function toast(props) {
     },
   });
 
-  setTimeout(dismiss, TOAST_AUTO_DISMISS_DELAY);
+  // duration: Infinity (ou outro valor nao finito) mantem o toast ate o usuario fechar/agir --
+  // usado pelo aviso de nova versao do PWA, que nao pode sumir sozinho em 5s.
+  if (Number.isFinite(duration)) {
+    setTimeout(dismiss, duration);
+  }
 
   return { id, dismiss, update };
 }
