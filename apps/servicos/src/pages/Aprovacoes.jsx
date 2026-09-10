@@ -533,14 +533,18 @@ export default function Aprovacoes() {
               </div>
               <div className="flex justify-end gap-2">
                 <Button
-                  variant="outline"
                   disabled={decisaoMutation.isPending}
                   onClick={() => handleDecision(selected.id, 'reprovado')}
+                  className="bg-red-600 text-white hover:bg-red-600/90"
                 >
                   <X className="mr-1 h-4 w-4" />
                   Reprovar
                 </Button>
-                <Button disabled={decisaoMutation.isPending} onClick={() => handleDecision(selected.id, 'aprovado')}>
+                <Button
+                  disabled={decisaoMutation.isPending}
+                  onClick={() => handleDecision(selected.id, 'aprovado')}
+                  className="bg-emerald-600 text-white hover:bg-emerald-600/90"
+                >
                   <Check className="mr-1 h-4 w-4" />
                   Aprovar
                 </Button>
