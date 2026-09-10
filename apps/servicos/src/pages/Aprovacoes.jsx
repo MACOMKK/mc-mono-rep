@@ -427,6 +427,7 @@ export default function Aprovacoes() {
                   <TableHead>Beneficiário</TableHead>
                   <TableHead>Aprovador</TableHead>
                   <TableHead>Valor</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -442,6 +443,28 @@ export default function Aprovacoes() {
                     <TableCell className="font-medium">{row.fornecedor}</TableCell>
                     <TableCell>{row.aprovador_destino_nome || '-'}</TableCell>
                     <TableCell>{formatValor(row.valor)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2" onClick={(event) => event.stopPropagation()}>
+                        <Button
+                          size="icon"
+                          title="Reprovar"
+                          aria-label="Reprovar"
+                          disabled={decisaoMutation.isPending}
+                          onClick={() => handleDecision(row.id, 'reprovado')}
+                          className="bg-red-600 text-white hover:bg-red-600/90"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          disabled={decisaoMutation.isPending}
+                          onClick={() => handleDecision(row.id, 'aprovado')}
+                          className="bg-emerald-600 text-white hover:bg-emerald-600/90"
+                        >
+                          <Check className="mr-1 h-4 w-4" />
+                          Aprovar
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -459,12 +482,12 @@ export default function Aprovacoes() {
                 actions={
                   <>
                     <Button
-                      variant="outline"
                       size="icon"
                       title="Reprovar"
                       aria-label="Reprovar"
                       disabled={decisaoMutation.isPending}
                       onClick={() => handleDecision(row.id, 'reprovado')}
+                      className="bg-red-600 text-white hover:bg-red-600/90"
                     >
                       <X className="h-4 w-4" />
                     </Button>

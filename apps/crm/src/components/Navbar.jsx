@@ -160,8 +160,30 @@ export default function Navbar({ realtime }) {
             { label: 'Agenda de Atividades', icon: Tag, path: '/atividades' },
             { label: 'Leads', icon: DollarSign, path: '/leads' },
             { label: 'Contatos e Clientes', icon: Users, path: '/clientes' },
-            { label: 'Estoque', icon: Columns3, comingSoon: true },
             { label: 'Atendimento', icon: Headphones, path: '/atendimento' },
+          ]} />
+          <NavMenu label="Veículos" items={[
+            { label: 'Estoque', icon: Columns3, path: '/estoque' },
+            {
+              label: 'Categorias de Veiculo',
+              icon: Car,
+              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/categorias-veiculo' : undefined,
+            },
+            {
+              label: 'Marcas de Veiculo',
+              icon: Car,
+              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/marcas-veiculo' : undefined,
+            },
+            {
+              label: 'Modelos de Veiculo',
+              icon: Car,
+              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/modelos-veiculo' : undefined,
+            },
+            {
+              label: 'Versoes de Veiculo',
+              icon: Car,
+              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/versoes-veiculo' : undefined,
+            },
           ]} />
           <NavMenu label="Pós-Vendas" items={[
             { label: 'Agenda Online', icon: Calendar, comingSoon: true },
@@ -180,21 +202,6 @@ export default function Navbar({ realtime }) {
               label: 'Distribuicao de Leads',
               icon: SlidersHorizontal,
               path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/distribuicao' : undefined,
-            },
-            {
-              label: 'Categorias de Veiculo',
-              icon: Car,
-              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/categorias-veiculo' : undefined,
-            },
-            {
-              label: 'Marcas de Veiculo',
-              icon: Car,
-              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/marcas-veiculo' : undefined,
-            },
-            {
-              label: 'Modelos de Veiculo',
-              icon: Car,
-              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/modelos-veiculo' : undefined,
             },
             { label: 'Funil', icon: SlidersHorizontal, comingSoon: true },
             { label: 'Etapas do Funil', icon: SlidersHorizontal, comingSoon: true },

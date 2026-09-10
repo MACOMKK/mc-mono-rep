@@ -19,6 +19,8 @@ const CategoriasVeiculo = lazy(() => import('@/pages/CategoriasVeiculo'));
 const OrigensLead = lazy(() => import('@/pages/OrigensLead'));
 const MarcasVeiculo = lazy(() => import('@/pages/MarcasVeiculo'));
 const ModelosVeiculo = lazy(() => import('@/pages/ModelosVeiculo'));
+const VersoesVeiculo = lazy(() => import('@/pages/VersoesVeiculo'));
+const Estoque = lazy(() => import('@/pages/Estoque'));
 const Atendimento = lazy(() => import('@/pages/Atendimento'));
 
 const getFromPath = (search) => {
@@ -88,6 +90,8 @@ const CrmRoutes = () => {
           <Route path="/configuracoes/origens-lead" element={<OrigensLead />} />
           <Route path="/configuracoes/marcas-veiculo" element={<MarcasVeiculo />} />
           <Route path="/configuracoes/modelos-veiculo" element={<ModelosVeiculo />} />
+          <Route path="/configuracoes/versoes-veiculo" element={<VersoesVeiculo />} />
+          <Route path="/estoque" element={<Estoque />} />
         </Route>
         <Route path="*" element={<PageNotFound />} />
       </Routes>

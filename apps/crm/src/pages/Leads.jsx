@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Plus, LayoutGrid, List, Search, RotateCcw } from 'lucide-react';
 import LeadForm from '@/components/leads/LeadForm';
+import LeadViewer from '@/components/leads/LeadViewer';
 import LeadsKanban from '@/components/leads/LeadsKanban';
 import ListPagination from '@/components/ListPagination';
 import { Textarea } from '@/components/ui/textarea';
@@ -81,6 +82,7 @@ const formatVehicleLabel = (vehicle = {}, fallback = '') => {
 export default function Leads() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [viewingLead, setViewingLead] = useState(null);
   const [lossTarget, setLossTarget] = useState(null);
   const [lossReason, setLossReason] = useState('');
   const [statusFiltro, setStatusFiltro] = useState('todos');
@@ -235,6 +237,24 @@ export default function Leads() {
       toast({
         title: 'Nao foi possivel salvar o lead',
         description: error.message || 'Revise os dados informados.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const autoSaveMutation = useMutation({
+    mutationFn: ({ id, data }) => crmDataClient.entities.Lead.update(id, data),
+    onSuccess: (saved) => {
+      if (!saved) return;
+      queryClient.setQueryData(leadsQueryKey, (currentPage = leadsPage) => ({
+        ...currentPage,
+        rows: (currentPage.rows || []).map((lead) => (lead.id === saved.id ? saved : lead)),
+      }));
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel salvar automaticamente',
+        description: error.message || 'Tente novamente.',
         variant: 'destructive',
       });
     },
@@ -628,7 +648,7 @@ export default function Leads() {
         <LeadsKanban
           leads={filtrados}
           onDragEnd={handleDragEnd}
-          onCardClick={(lead) => { setEditing(lead); setFormOpen(true); }}
+          onCardClick={(lead) => setViewingLead(lead)}
           leadsComAtividadePendente={leadsComAtividadePendente}
         />
       )}
@@ -681,7 +701,7 @@ export default function Leads() {
                     <TableRow
                       key={lead.id}
                       className={cn('cursor-pointer hover:bg-red-50 transition-colors', i % 2 === 0 ? 'bg-white' : 'bg-[#f9f9f9]')}
-                      onClick={() => { setEditing(lead); setFormOpen(true); }}
+                      onClick={() => setViewingLead(lead)}
                     >
                       <TableCell className="font-bold text-sm">{lead.nome}</TableCell>
                       <TableCell className="text-sm">{lead.telefone}</TableCell>
@@ -718,6 +738,17 @@ export default function Leads() {
         </>
       )}
 
+      <LeadViewer
+        open={Boolean(viewingLead)}
+        onOpenChange={(next) => { if (!next) setViewingLead(null); }}
+        lead={viewingLead}
+        onEdit={() => {
+          setEditing(viewingLead);
+          setViewingLead(null);
+          setFormOpen(true);
+        }}
+      />
+
       {formOpen && (
         <LeadForm
           key={editing?.id || 'new'}
@@ -726,6 +757,7 @@ export default function Leads() {
           lead={editing}
           responsaveis={responsaveis}
           onSave={(data) => saveMutation.mutate({ id: editing?.id || null, data })}
+          onAutoSave={(data) => editing?.id && autoSaveMutation.mutate({ id: editing.id, data })}
           notes={editingNotes}
           attachments={editingAttachments}
           addingNote={noteMutation.isPending}

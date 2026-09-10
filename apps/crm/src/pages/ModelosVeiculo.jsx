@@ -18,6 +18,8 @@ export default function ModelosVeiculo() {
   const [novoNome, setNovoNome] = useState('');
   const [novaMarcaId, setNovaMarcaId] = useState('');
   const [novaCategoriaId, setNovaCategoriaId] = useState('');
+  const [novoAnoInicio, setNovoAnoInicio] = useState('');
+  const [novoAnoFim, setNovoAnoFim] = useState('');
 
   const { data: modelos = [], isLoading, error } = useQuery({
     queryKey: ['crm-modelos-veiculo'],
@@ -45,6 +47,8 @@ export default function ModelosVeiculo() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'] });
       setNovoNome('');
+      setNovoAnoInicio('');
+      setNovoAnoFim('');
       toast({ title: 'Modelo criado', variant: 'success' });
     },
     onError: (mutationError) => toast({
@@ -75,7 +79,14 @@ export default function ModelosVeiculo() {
     event.preventDefault();
     const nome = novoNome.trim();
     if (!nome || !novaMarcaId || !novaCategoriaId) return;
-    createMutation.mutate({ nome, marca_id: novaMarcaId, categoria_veiculo_id: novaCategoriaId, ativo: true });
+    createMutation.mutate({
+      nome,
+      marca_id: novaMarcaId,
+      categoria_veiculo_id: novaCategoriaId,
+      ativo: true,
+      ano_inicio: novoAnoInicio ? Number(novoAnoInicio) : null,
+      ano_fim: novoAnoFim ? Number(novoAnoFim) : null,
+    });
   };
 
   return (
@@ -88,7 +99,7 @@ export default function ModelosVeiculo() {
         </p>
       </div>
 
-      <form onSubmit={handleCreate} className="mb-5 grid gap-3 border-b bg-white p-5 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
+      <form onSubmit={handleCreate} className="mb-5 grid gap-3 border-b bg-white p-5 md:grid-cols-[1fr_1fr_1fr_0.7fr_0.7fr_auto] md:items-end">
         <div className="space-y-2">
           <Label className="text-xs font-bold uppercase tracking-wider">Marca</Label>
           <Select value={novaMarcaId} onValueChange={setNovaMarcaId}>
@@ -120,6 +131,30 @@ export default function ModelosVeiculo() {
             className="h-9 rounded-none"
           />
         </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Ano inicio</Label>
+          <Input
+            type="number"
+            min="1900"
+            max="2100"
+            value={novoAnoInicio}
+            onChange={(event) => setNovoAnoInicio(event.target.value)}
+            placeholder="Ex.: 2020"
+            className="h-9 rounded-none"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Ano fim</Label>
+          <Input
+            type="number"
+            min="1900"
+            max="2100"
+            value={novoAnoFim}
+            onChange={(event) => setNovoAnoFim(event.target.value)}
+            placeholder="Em producao"
+            className="h-9 rounded-none"
+          />
+        </div>
         <Button
           type="submit"
           disabled={!novoNome.trim() || !novaMarcaId || !novaCategoriaId || createMutation.isPending}
@@ -143,6 +178,8 @@ export default function ModelosVeiculo() {
                 <TableHead className="text-white">Nome</TableHead>
                 <TableHead className="text-white">Marca</TableHead>
                 <TableHead className="text-white">Segmento</TableHead>
+                <TableHead className="text-white">Ano inicio</TableHead>
+                <TableHead className="text-white">Ano fim</TableHead>
                 <TableHead className="text-white">Ativo</TableHead>
               </TableRow>
             </TableHeader>
@@ -162,6 +199,8 @@ export default function ModelosVeiculo() {
                             marca_id: modelo.marca_id,
                             categoria_veiculo_id: modelo.categoria_veiculo_id,
                             ativo: modelo.ativo,
+                            ano_inicio: modelo.ano_inicio ?? null,
+                            ano_fim: modelo.ano_fim ?? null,
                           });
                         }
                       }}
@@ -169,6 +208,53 @@ export default function ModelosVeiculo() {
                   </TableCell>
                   <TableCell className="text-sm text-slate-700">{marcaNomePorId[modelo.marca_id] || '-'}</TableCell>
                   <TableCell className="text-sm text-slate-700">{categoriaNomePorId[modelo.categoria_veiculo_id] || '-'}</TableCell>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      min="1900"
+                      max="2100"
+                      defaultValue={modelo.ano_inicio ?? ''}
+                      className="h-9 w-24 rounded-none"
+                      onBlur={(event) => {
+                        const valor = event.target.value ? Number(event.target.value) : null;
+                        if (valor !== (modelo.ano_inicio ?? null)) {
+                          updateMutation.mutate({
+                            id: modelo.id,
+                            nome: modelo.nome,
+                            marca_id: modelo.marca_id,
+                            categoria_veiculo_id: modelo.categoria_veiculo_id,
+                            ativo: modelo.ativo,
+                            ano_inicio: valor,
+                            ano_fim: modelo.ano_fim ?? null,
+                          });
+                        }
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      min="1900"
+                      max="2100"
+                      defaultValue={modelo.ano_fim ?? ''}
+                      placeholder="Em producao"
+                      className="h-9 w-28 rounded-none"
+                      onBlur={(event) => {
+                        const valor = event.target.value ? Number(event.target.value) : null;
+                        if (valor !== (modelo.ano_fim ?? null)) {
+                          updateMutation.mutate({
+                            id: modelo.id,
+                            nome: modelo.nome,
+                            marca_id: modelo.marca_id,
+                            categoria_veiculo_id: modelo.categoria_veiculo_id,
+                            ativo: modelo.ativo,
+                            ano_inicio: modelo.ano_inicio ?? null,
+                            ano_fim: valor,
+                          });
+                        }
+                      }}
+                    />
+                  </TableCell>
                   <TableCell>
                     <Switch
                       checked={modelo.ativo}
@@ -178,6 +264,8 @@ export default function ModelosVeiculo() {
                         marca_id: modelo.marca_id,
                         categoria_veiculo_id: modelo.categoria_veiculo_id,
                         ativo,
+                        ano_inicio: modelo.ano_inicio ?? null,
+                        ano_fim: modelo.ano_fim ?? null,
                       })}
                     />
                   </TableCell>

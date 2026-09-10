@@ -12,6 +12,8 @@ const REALTIME_TABLES = [
   'origens_lead',
   'marcas_veiculo',
   'modelos_veiculo',
+  'versoes_veiculo',
+  'veiculos_estoque',
   'configuracoes_distribuicao',
   'vendedores_distribuicao',
   'conversas_atendimento',
@@ -49,6 +51,12 @@ const TABLE_CACHE_CONFIG = {
   },
   modelos_veiculo: {
     queryKeys: [['crm-modelos-veiculo']],
+  },
+  versoes_veiculo: {
+    queryKeys: [['crm-versoes-veiculo']],
+  },
+  veiculos_estoque: {
+    queryKeys: [['crm-veiculos-estoque']],
   },
   configuracoes_distribuicao: {
     queryKeys: [['crm-distribuicao']],

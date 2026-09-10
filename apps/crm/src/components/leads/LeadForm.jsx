@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -56,6 +56,7 @@ export default function LeadForm({
   notes = [],
   attachments = [],
   onSave,
+  onAutoSave,
   onAddNote,
   onAddAttachment,
   onOpenAttachment,
@@ -78,6 +79,8 @@ export default function LeadForm({
       modelo_id: null,
       marca_outro: '',
       modelo_outro: '',
+      versao_id: null,
+      versao_outro: '',
       versao: '',
       ano: '',
       categoria_veiculo_id: null,
@@ -109,6 +112,31 @@ export default function LeadForm({
       [field]: value,
     },
   }));
+
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const lastAutoSavedRef = useRef(JSON.stringify(lead || null));
+
+  useEffect(() => {
+    if (!open || !onAutoSave || !lead?.id || !data.telefone) return undefined;
+    const snapshot = JSON.stringify(data);
+    if (snapshot === lastAutoSavedRef.current) return undefined;
+    const timeout = setTimeout(() => {
+      lastAutoSavedRef.current = snapshot;
+      onAutoSave(data);
+    }, 800);
+    return () => clearTimeout(timeout);
+  }, [data, open, onAutoSave, lead?.id]);
+
+  useEffect(() => () => {
+    if (!onAutoSave || !lead?.id) return;
+    const current = dataRef.current;
+    if (!current?.telefone) return;
+    const snapshot = JSON.stringify(current);
+    if (snapshot === lastAutoSavedRef.current) return;
+    lastAutoSavedRef.current = snapshot;
+    onAutoSave(current);
+  }, [onAutoSave, lead?.id]);
 
   const steps = useMemo(() => [
     { key: 'contato', label: 'Contato', icon: UserRound },
@@ -150,6 +178,12 @@ export default function LeadForm({
     enabled: open,
   });
 
+  const { data: versoesVeiculo = [] } = useQuery({
+    queryKey: ['crm-versoes-veiculo'],
+    queryFn: () => crmDataClient.entities.VersaoVeiculo.list('nome'),
+    enabled: open,
+  });
+
   const marcasIdsComModeloNoSegmento = useMemo(() => {
     const categoriaId = data.veiculo_interesse?.categoria_veiculo_id;
     if (!categoriaId) return null;
@@ -175,6 +209,24 @@ export default function LeadForm({
       && (modelo.ativo || modelo.id === data.veiculo_interesse?.modelo_id)
     )),
     [modelosVeiculo, data.veiculo_interesse?.marca_id, data.veiculo_interesse?.categoria_veiculo_id, data.veiculo_interesse?.modelo_id],
+  );
+
+  const modeloSelecionado = useMemo(
+    () => modelosVeiculo.find((modelo) => modelo.id === data.veiculo_interesse?.modelo_id) || null,
+    [modelosVeiculo, data.veiculo_interesse?.modelo_id],
+  );
+  const anoMin = modeloSelecionado?.ano_inicio || 1900;
+  const anoMax = modeloSelecionado?.ano_fim || 2100;
+  const anoPlaceholder = modeloSelecionado?.ano_inicio
+    ? `${modeloSelecionado.ano_inicio}${modeloSelecionado.ano_fim ? `-${modeloSelecionado.ano_fim}` : '+'}`
+    : undefined;
+
+  const versoesSelecionaveis = useMemo(
+    () => versoesVeiculo.filter((versao) => (
+      versao.modelo_id === data.veiculo_interesse?.modelo_id
+      && (versao.ativo || versao.id === data.veiculo_interesse?.versao_id)
+    )),
+    [versoesVeiculo, data.veiculo_interesse?.modelo_id, data.veiculo_interesse?.versao_id],
   );
 
   const setMarca = (value) => {
@@ -222,6 +274,9 @@ export default function LeadForm({
           ...(current.veiculo_interesse || {}),
           modelo_id: null,
           modelo: current.veiculo_interesse?.modelo_outro || '',
+          versao_id: null,
+          versao_outro: '',
+          versao: '',
         },
       }));
       return;
@@ -234,9 +289,47 @@ export default function LeadForm({
         modelo_id: value,
         modelo_outro: '',
         modelo: modelo?.nome || '',
+        versao_id: null,
+        versao_outro: '',
+        versao: '',
       },
     }));
     set('modelo_interesse', modelo?.nome || '');
+  };
+
+  const setVersao = (value) => {
+    if (value === 'outra') {
+      setData((current) => ({
+        ...current,
+        veiculo_interesse: {
+          ...(current.veiculo_interesse || {}),
+          versao_id: null,
+          versao: current.veiculo_interesse?.versao_outro || '',
+        },
+      }));
+      return;
+    }
+    const versao = versoesVeiculo.find((item) => item.id === value);
+    setData((current) => ({
+      ...current,
+      veiculo_interesse: {
+        ...(current.veiculo_interesse || {}),
+        versao_id: value,
+        versao_outro: '',
+        versao: versao?.nome || '',
+      },
+    }));
+  };
+
+  const setVersaoOutro = (texto) => {
+    setData((current) => ({
+      ...current,
+      veiculo_interesse: {
+        ...(current.veiculo_interesse || {}),
+        versao_outro: texto,
+        versao: texto,
+      },
+    }));
   };
 
   const setModeloOutro = (texto) => {
@@ -475,6 +568,9 @@ export default function LeadForm({
                           modelo_id: null,
                           modelo_outro: '',
                           modelo: '',
+                          versao_id: null,
+                          versao_outro: '',
+                          versao: '',
                         },
                       }))}
                     >
@@ -507,14 +603,6 @@ export default function LeadForm({
                         <SelectItem value="outra">Nao encontrei a marca</SelectItem>
                       </SelectContent>
                     </Select>
-                    {!data.veiculo_interesse?.marca_id ? (
-                      <Input
-                        placeholder="Digite a marca"
-                        value={data.veiculo_interesse?.marca_outro || ''}
-                        onChange={(event) => setMarcaOutro(event.target.value)}
-                        className="mt-2 h-9 rounded-none text-sm"
-                      />
-                    ) : null}
                   </Field>
                   <Field label="Modelo">
                     <Select
@@ -534,17 +622,17 @@ export default function LeadForm({
                         <SelectItem value="outro">Nao encontrei o modelo</SelectItem>
                       </SelectContent>
                     </Select>
-                    {!data.veiculo_interesse?.modelo_id ? (
-                      <Input
-                        placeholder="Digite o modelo"
-                        value={data.veiculo_interesse?.modelo_outro || ''}
-                        onChange={(event) => setModeloOutro(event.target.value)}
-                        className="mt-2 h-9 rounded-none text-sm"
-                      />
-                    ) : null}
                   </Field>
                   <Field label="Ano">
-                    <Input type="number" min="1900" max="2100" value={data.veiculo_interesse?.ano || ''} onChange={(event) => setVehicle('ano', event.target.value)} className="h-9 rounded-none text-sm" />
+                    <Input
+                      type="number"
+                      min={anoMin}
+                      max={anoMax}
+                      placeholder={anoPlaceholder}
+                      value={data.veiculo_interesse?.ano || ''}
+                      onChange={(event) => setVehicle('ano', event.target.value)}
+                      className="h-9 rounded-none text-sm"
+                    />
                   </Field>
                   <Field label="Condicao">
                     <Select value={data.veiculo_interesse?.condicao || 'novo'} onValueChange={(value) => setVehicle('condicao', value)}>
@@ -567,7 +655,23 @@ export default function LeadForm({
                 {showMaisDetalhesVeiculo ? (
                   <div className="grid gap-4 md:grid-cols-2">
                     <Field label="Versao">
-                      <Input value={data.veiculo_interesse?.versao || ''} onChange={(event) => setVehicle('versao', event.target.value)} className="h-9 rounded-none text-sm" />
+                      <Select
+                        value={data.veiculo_interesse?.versao_id || (data.veiculo_interesse?.versao_outro ? 'outra' : '')}
+                        onValueChange={setVersao}
+                        disabled={!data.veiculo_interesse?.modelo_id}
+                      >
+                        <SelectTrigger className="h-9 rounded-none text-sm">
+                          <SelectValue placeholder={data.veiculo_interesse?.modelo_id ? 'Selecione a versao' : 'Selecione o modelo primeiro'} />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-none">
+                          {versoesSelecionaveis.map((versao) => (
+                            <SelectItem key={versao.id} value={versao.id}>
+                              {versao.nome}{!versao.ativo ? ' (inativa)' : ''}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="outra">Nao encontrei a versao</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                     <Field label="Cor preferida">
                       <Input value={data.veiculo_interesse?.cor_preferida || ''} onChange={(event) => setVehicle('cor_preferida', event.target.value)} className="h-9 rounded-none text-sm" />

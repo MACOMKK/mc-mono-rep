@@ -102,6 +102,8 @@ const ENTITY_CONFIG = {
       'modelo_id',
       'marca_outro',
       'modelo_outro',
+      'versao_id',
+      'versao_outro',
       'versao',
       'ano',
       'categoria_veiculo_id',
@@ -138,7 +140,32 @@ const ENTITY_CONFIG = {
     table: 'modelos_veiculo',
     orderBy: 'nome',
     orderDirection: 'asc',
-    allowedFields: ['marca_id', 'categoria_veiculo_id', 'nome', 'ativo'],
+    allowedFields: ['marca_id', 'categoria_veiculo_id', 'nome', 'ativo', 'ano_inicio', 'ano_fim'],
+  },
+  versoes_veiculo: {
+    table: 'versoes_veiculo',
+    orderBy: 'nome',
+    orderDirection: 'asc',
+    allowedFields: ['modelo_id', 'nome', 'ativo'],
+  },
+  veiculos_estoque: {
+    table: 'veiculos_estoque',
+    orderBy: 'criado_em',
+    orderDirection: 'desc',
+    allowedFields: [
+      'modelo_id',
+      'versao_id',
+      'modelo_outro',
+      'versao_outro',
+      'chassi',
+      'placa',
+      'cor',
+      'km',
+      'condicao',
+      'status',
+      'preco',
+      'observacoes',
+    ],
   },
 } as const;
 
@@ -244,6 +271,18 @@ function mapDatabaseError(error: unknown) {
 
   if (message.includes('modelos_veiculo_marca_id_categoria_veiculo_id_nome_key')) {
     return 'Ja existe um modelo com este nome para esta marca e segmento.';
+  }
+
+  if (message.includes('modelos_veiculo_ano_check')) {
+    return 'O ano final deve ser maior ou igual ao ano inicial.';
+  }
+
+  if (message.includes('versoes_veiculo_modelo_id_nome_key')) {
+    return 'Ja existe uma versao com este nome para este modelo.';
+  }
+
+  if (message.includes('veiculos_estoque_chassi_key')) {
+    return 'Ja existe um veiculo em estoque com este chassi.';
   }
 
   if (message.includes('null value in column "categoria_veiculo_id"')) {
@@ -456,6 +495,12 @@ function buildSearchFilter(entity: EntityName, search: string, startIndex: numbe
     pushText('descricao');
     pushText('tipo');
     pushText('status');
+  } else if (entity === 'veiculos_estoque') {
+    pushText('chassi');
+    pushText('placa');
+    pushText('cor');
+    pushText('modelo_outro');
+    pushText('versao_outro');
   }
 
   return {
@@ -1208,7 +1253,7 @@ Deno.serve(async (request) => {
     }
 
     if (
-      ['categorias_veiculo', 'marcas_veiculo', 'modelos_veiculo'].includes(entity)
+      ['categorias_veiculo', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'veiculos_estoque'].includes(entity)
       && ['create', 'update', 'delete'].includes(action)
     ) {
       ensureCanConfigure(access);
@@ -1294,7 +1339,7 @@ Deno.serve(async (request) => {
       const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator);
       if (!Object.keys(payload).length) return json({ error: 'Payload vazio.' }, 400);
       validateContactFields(entity, payload);
-      const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo'];
+      const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo'];
       if (collaborator?.id && !entitiesWithoutCriadoPor.includes(entity)) payload.criado_por = collaborator.id;
       if (entity === 'atendimentos' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
