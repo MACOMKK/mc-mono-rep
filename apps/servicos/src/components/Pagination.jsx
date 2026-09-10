@@ -6,7 +6,7 @@ export default function Pagination({ page, pageSize, total, onPageChange, itemLa
   const end = Math.min(page * pageSize, total);
 
   return (
-    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <div className="flex flex-col gap-3 pb-20 md:flex-row md:items-center md:justify-between md:pb-16">
       <p className="text-sm text-muted-foreground">
         {total > 0 ? `Mostrando ${start}-${end} de ${total} ${itemLabel}` : `Nenhum ${itemLabel} encontrado`}
       </p>
