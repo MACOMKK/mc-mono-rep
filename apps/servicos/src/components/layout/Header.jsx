@@ -1,10 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { BellRing, Download, Menu, Settings, UserRound } from 'lucide-react';
+import { BellRing, Download, Headset, Menu, Settings, UserRound } from 'lucide-react';
 
 import { financeiroApi } from '@macom/api-client/financeiroApi';
-import { AccountMenu, AccountMenuItem, Button, ProfileViewDialog, useToast } from '@macom/ui';
+import {
+  AccountMenu,
+  AccountMenuItem,
+  Button,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  ProfileViewDialog,
+  useToast,
+} from '@macom/ui';
 import NotificationsBell from '@/components/NotificationsBell';
 import { useAuth } from '@/lib/AuthContext';
 import { useInstallPrompt } from '@/lib/useInstallPrompt';
@@ -15,6 +25,18 @@ const ROLE_LABEL = {
   aprovador: 'Aprovador',
   financeiro: 'Gerente',
 };
+
+// Numeros de contato dos responsaveis pelo suporte do sistema Servicos (WhatsApp) -- antes um
+// botao flutuante fixo por cima do conteudo, movido pra dentro do menu de conta porque disputava
+// espaco/z-index com o toast de atualizacao e o InstallPromptBanner no mesmo canto da tela.
+const SUPPORT_CONTACTS = [
+  { nome: 'Suporte I', telefone: '5591983927903' },
+  { nome: 'Suporte II', telefone: '5591989566353' },
+];
+
+function buildWhatsAppLink(telefone) {
+  return `https://wa.me/${telefone}`;
+}
 
 export default function Header({ onOpenMobileMenu }) {
   const { user, logout } = useAuth();
@@ -106,6 +128,23 @@ export default function Header({ onOpenMobileMenu }) {
               Configurações
             </AccountMenuItem>
           ) : null}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="gap-3 rounded-none p-0 text-sm font-medium text-[#d7d7db] outline-none focus:bg-transparent focus:text-white data-[state=open]:bg-transparent data-[state=open]:text-white [&_svg]:text-[#8f9198]">
+              <Headset className="h-4 w-4" />
+              Suporte
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-[180px] rounded-md border-[#3a3a3d] bg-[#242529] p-1 text-[#d7d7db] shadow-2xl">
+              {SUPPORT_CONTACTS.map((contact) => (
+                <DropdownMenuItem
+                  key={contact.telefone}
+                  onSelect={() => window.open(buildWhatsAppLink(contact.telefone), '_blank', 'noopener,noreferrer')}
+                  className="rounded-sm px-2 py-1.5 text-sm text-[#d7d7db] focus:bg-[#3a3a3d] focus:text-white"
+                >
+                  {contact.nome}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
         </AccountMenu>
 
         <ProfileViewDialog

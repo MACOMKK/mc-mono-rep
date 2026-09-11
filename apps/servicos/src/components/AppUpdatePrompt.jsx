@@ -32,7 +32,7 @@ export default function AppUpdatePrompt() {
       action: (
         <ToastAction
           altText="Atualizar agora"
-          className="border-primary-foreground/40 bg-transparent text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+          className="cursor-pointer border-primary-foreground/40 bg-transparent text-primary-foreground hover:bg-primary-foreground hover:text-primary"
           onClick={() => updateServiceWorker(true)}
         >
           Atualizar
