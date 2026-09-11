@@ -25,12 +25,16 @@ export default function AppUpdatePrompt() {
   useEffect(() => {
     if (!needRefresh) return;
     toast({
-      title: <span className="text-primary">Nova versão disponível</span>,
+      title: 'Nova versão disponível',
       description: 'Atualize para ver as últimas mudanças do sistema.',
       duration: Infinity,
-      className: 'border-2 border-primary bg-primary/10',
+      className: 'border-primary bg-primary text-primary-foreground',
       action: (
-        <ToastAction altText="Atualizar agora" onClick={() => updateServiceWorker(true)}>
+        <ToastAction
+          altText="Atualizar agora"
+          className="border-primary-foreground/40 bg-transparent text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+          onClick={() => updateServiceWorker(true)}
+        >
           Atualizar
         </ToastAction>
       ),
