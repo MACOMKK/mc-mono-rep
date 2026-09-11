@@ -17,7 +17,13 @@ registerRoute(({ url }) => url.hostname.endsWith('.supabase.co'), new NetworkOnl
 
 registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
 
-self.skipWaiting();
+// So pula a fase de espera quando o cliente pedir explicitamente (clique em "Atualizar" no
+// toast de AppUpdatePrompt.jsx, via updateServiceWorker(true)) -- um skipWaiting() incondicional
+// aqui faz o SW novo ativar sozinho sem nunca passar pelo estado "waiting", o que impede o
+// workbox-window de disparar o evento que aciona esse toast.
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
 
 self.addEventListener('push', (event) => {
   let data = {};
