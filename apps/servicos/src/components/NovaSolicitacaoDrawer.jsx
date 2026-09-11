@@ -8,6 +8,7 @@ import { useCatalogosSolicitacao } from '@/hooks/useCatalogos';
 import { isAllowedAnexoMimeType, MAX_ANEXO_SIZE, uploadAnexo } from '@/lib/anexoUpload';
 import { getFriendlyErrorMessage } from '@/lib/errorMessage';
 import { proximaDataUtil } from '@/lib/diasUteis';
+import { gerarParcelasAutomaticas } from '@/lib/parcelamento';
 import {
   TIPOS_ANEXO,
   FORMA_PAGAMENTO_LABEL,
@@ -80,6 +81,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
   const [anexoProgresso, setAnexoProgresso] = useState(null);
   const [parcelado, setParcelado] = useState(false);
   const [draftParcelas, setDraftParcelas] = useState([]);
+  const [quantidadeParcelas, setQuantidadeParcelas] = useState(2);
   const [visible, setVisible] = useState(open);
   const skipNextResetRef = useRef(false);
   const initialFormRef = useRef(EMPTY_FORM);
@@ -313,6 +315,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
       setAnexos([]);
       setParcelado(false);
       setDraftParcelas([]);
+      setQuantidadeParcelas(2);
       initialFormRef.current = EMPTY_FORM;
     }
   }, [visible, catalogosLoading, parcelasLoading, parcelasExistentes]);
@@ -320,12 +323,25 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
   function handleToggleParcelado(checked) {
     const nextChecked = checked === true;
     setParcelado(nextChecked);
-    if (nextChecked) {
-      setDraftParcelas([{ valor: form.valor, data_vencimento: form.dataVencimento }]);
-    } else {
+    if (!nextChecked) {
       setDraftParcelas([]);
     }
   }
+
+  function handleQuantidadeParcelasChange(value) {
+    setQuantidadeParcelas(Number(value));
+  }
+
+  useEffect(() => {
+    if (!parcelado) return;
+    setDraftParcelas(
+      gerarParcelasAutomaticas({
+        valorTotal: form.valor,
+        dataBase: form.dataVencimento,
+        quantidade: quantidadeParcelas,
+      }),
+    );
+  }, [form.valor, form.dataVencimento, parcelado, quantidadeParcelas]);
 
   function addDraftParcela() {
     setDraftParcelas((current) => [...current, { valor: '', data_vencimento: '' }]);
@@ -743,10 +759,29 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
           </div>
 
           <div className="space-y-3 rounded-md border border-border p-3">
-            <label htmlFor="parcelado" className="flex w-fit cursor-pointer items-center gap-2 text-sm">
-              <Checkbox id="parcelado" checked={parcelado} onCheckedChange={handleToggleParcelado} />
-              Parcelar pagamento
-            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <label htmlFor="parcelado" className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+                <Checkbox id="parcelado" checked={parcelado} onCheckedChange={handleToggleParcelado} />
+                Parcelar pagamento
+              </label>
+              {parcelado && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Quantidade de parcelas</span>
+                  <Select value={String(quantidadeParcelas)} onValueChange={handleQuantidadeParcelasChange}>
+                    <SelectTrigger className="w-20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((qtd) => (
+                        <SelectItem key={qtd} value={String(qtd)}>
+                          {qtd}x
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
             {parcelado && (
                 <div className="space-y-3">
                   {draftParcelas.map((item, index) => (

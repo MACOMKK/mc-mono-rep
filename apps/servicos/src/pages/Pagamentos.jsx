@@ -61,6 +61,7 @@ import {
   truncarTitulo,
 } from '@/lib/financeiroFormat';
 import { normalize } from '@/lib/normalize';
+import { gerarParcelasAutomaticas } from '@/lib/parcelamento';
 
 const CATEGORIA_FILTRO_TODAS = 'todas';
 const CLASSIFICACAO_TODAS = 'todas';
@@ -112,6 +113,7 @@ export default function Pagamentos() {
 
   const [dialogRowId, setDialogRowId] = useState(null);
   const [draftParcelas, setDraftParcelas] = useState([]);
+  const [quantidadeParcelas, setQuantidadeParcelas] = useState(2);
 
   const [reprovarTarget, setReprovarTarget] = useState(null);
   const [motivoReprovacao, setMotivoReprovacao] = useState('');
@@ -201,9 +203,31 @@ export default function Pagamentos() {
       setDraftParcelas([]);
       return;
     }
-    setDraftParcelas(parcelasQuery.data.length ? [] : [{ valor: dialogRow?.valor, data_vencimento: '' }]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (parcelasQuery.data.length) {
+      setDraftParcelas([]);
+      return;
+    }
+    setQuantidadeParcelas(2);
+    setDraftParcelas(
+      gerarParcelasAutomaticas({
+        valorTotal: dialogRow?.valor,
+        dataBase: new Date().toISOString().slice(0, 10),
+        quantidade: 2,
+      }),
+    );
   }, [dialogRowId, parcelasQuery.data]);
+
+  function handleQuantidadeParcelasChange(value) {
+    const qtd = Number(value);
+    setQuantidadeParcelas(qtd);
+    setDraftParcelas(
+      gerarParcelasAutomaticas({
+        valorTotal: dialogRow?.valor,
+        dataBase: new Date().toISOString().slice(0, 10),
+        quantidade: qtd,
+      }),
+    );
+  }
 
   const solicitantes = useMemo(() => {
     const porId = new Map();
@@ -1156,6 +1180,21 @@ export default function Pagamentos() {
             </div>
           ) : (
             <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Quantidade de parcelas</span>
+                <Select value={String(quantidadeParcelas)} onValueChange={handleQuantidadeParcelasChange}>
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((qtd) => (
+                      <SelectItem key={qtd} value={String(qtd)}>
+                        {qtd}x
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {draftParcelas.map((item, index) => (
                 <div key={index} className="flex items-end gap-2">
                   <div className="flex-1 space-y-1">
