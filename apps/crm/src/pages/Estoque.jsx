@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/components/ui/use-toast';
 
+// teste: Ignored Build Step Vercel (isolar deploys por app)
 const emptyNovoModelo = { nome: '', marca_id: '', categoria_veiculo_id: '', ano_inicio: '', ano_fim: '' };
 
 const CONDICAO_OPTIONS = [
