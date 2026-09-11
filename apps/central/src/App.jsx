@@ -1,3 +1,4 @@
+// teste: Ignored Build Step Vercel (isolar deploys por app) — central
 import { lazy, Suspense } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
