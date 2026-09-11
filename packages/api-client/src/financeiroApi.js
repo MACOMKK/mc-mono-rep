@@ -363,6 +363,10 @@ export const financeiroApi = {
       const result = await invokeServicos({ action: 'cancelar_parcela', id, motivo });
       return result.row || null;
     },
+    async reverterPagamento(id, motivo) {
+      const result = await invokeServicos({ action: 'reverter_pagamento_parcela', id, motivo });
+      return result.row || null;
+    },
     async atualizarVencimento(id, dataVencimento) {
       const result = await invokeServicos({ action: 'atualizar_vencimento_parcela', id, data_vencimento: dataVencimento });
       return result.row || null;

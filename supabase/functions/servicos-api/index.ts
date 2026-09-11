@@ -3289,6 +3289,82 @@ Deno.serve(async (request) => {
       return json({ row: rowsCancelarParcela[0] || null });
     }
 
+    if (action === 'reverter_pagamento_parcela') {
+      // Correcao de erro operacional (parcela paga errada, valor ou data errados) -- restrito
+      // ao financeiro (nao ao "contas a pagar" generico de isPagador), com motivo obrigatorio
+      // pra auditoria, no mesmo espirito do cancelamento de solicitacao ja paga.
+      if (!isFinanceiro(moduleRole)) {
+        throw Object.assign(new Error('Apenas o financeiro pode reverter um pagamento.'), { status: 403 });
+      }
+
+      const idReverterParcela = String(body.id || '');
+      if (!idReverterParcela) return json({ error: 'ID obrigatorio.' }, 400);
+
+      const motivoReverterParcela = body.motivo ? String(body.motivo).trim() : '';
+      if (!motivoReverterParcela) {
+        throw Object.assign(new Error('Informe o motivo da reversao.'), { status: 400 });
+      }
+
+      const parcelaParaReverter = await ensureParcelaAccess(idReverterParcela, moduleRole, collaborator);
+      if (parcelaParaReverter.status !== 'pago') {
+        throw Object.assign(new Error('Esta parcela nao esta paga.'), { status: 400 });
+      }
+      if (parcelaParaReverter.solicitacao_status === 'cancelado') {
+        throw Object.assign(
+          new Error('Esta solicitacao ja foi cancelada; nao e possivel reverter o pagamento da parcela.'),
+          { status: 400 },
+        );
+      }
+
+      const rowsReverterParcela = await sql.unsafe(
+        `
+          update ${SERVICOS_SCHEMA}.parcelas_pagamento
+          set status = 'pendente', data_pagamento = null, pago_por = null
+          where id = $1
+          returning *;
+        `,
+        [idReverterParcela],
+      );
+      const parcelaRevertida = rowsReverterParcela[0];
+
+      // Se essa era a parcela que tinha fechado o ciclo (rollup automatico via trigger), a
+      // solicitacao precisa voltar manualmente pra 'aprovado' -- nao existe trigger simetrico
+      // de reversao.
+      let solicitacaoRevertida: Record<string, unknown> | undefined;
+      if (parcelaParaReverter.solicitacao_status === 'pago') {
+        const rowsSolicitacaoRevertida = await sql.unsafe(
+          `
+            update ${SERVICOS_SCHEMA}.solicitacoes_pagamento
+            set status = 'aprovado', pago_em = null, pago_por = null
+            where id = $1
+            returning *;
+          `,
+          [parcelaParaReverter.solicitacao_id],
+        );
+        solicitacaoRevertida = rowsSolicitacaoRevertida[0];
+      } else {
+        const rowsSolicitacaoAtual = await sql.unsafe(
+          `select * from ${SERVICOS_SCHEMA}.solicitacoes_pagamento where id = $1 limit 1;`,
+          [parcelaParaReverter.solicitacao_id],
+        );
+        solicitacaoRevertida = rowsSolicitacaoAtual[0];
+      }
+
+      await insertHistorico(
+        String(parcelaParaReverter.solicitacao_id),
+        'pagamento_revertido',
+        collaborator!.id as string,
+        `Parcela ${parcelaParaReverter.numero}: ${motivoReverterParcela}`,
+      );
+
+      if (solicitacaoRevertida && parcelaParaReverter.solicitacao_status === 'pago') {
+        await notifySolicitanteStatusChange(solicitacaoRevertida, 'aprovado', collaborator!.id as string);
+        await enqueueStatusEmail(solicitacaoRevertida, 'aprovado');
+      }
+
+      return json({ row: parcelaRevertida, solicitacao: solicitacaoRevertida || null });
+    }
+
     if (action === 'atualizar_vencimento_parcela') {
       const parsedVencimentoParcela = atualizarVencimentoParcelaBodySchema.safeParse(body);
       if (!parsedVencimentoParcela.success) {

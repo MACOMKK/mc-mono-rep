@@ -584,6 +584,37 @@ export default function Pagamentos() {
     });
   }
 
+  const [reverterPagamentoTarget, setReverterPagamentoTarget] = useState(null);
+  const [motivoReverterPagamento, setMotivoReverterPagamento] = useState('');
+
+  const reverterPagamentoMutation = useMutation({
+    mutationFn: ({ parcelaId, motivo }) => financeiroApi.parcelas.reverterPagamento(parcelaId, motivo),
+    onSuccess: (_row, { solicitacaoId }) => {
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'parcelas', solicitacaoId] });
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacoes'] });
+      toast({ title: 'Pagamento revertido' });
+      setReverterPagamentoTarget(null);
+      setMotivoReverterPagamento('');
+    },
+    onError: (error) => {
+      toast({ title: 'Não foi possível reverter o pagamento', description: getFriendlyErrorMessage(error) });
+    },
+  });
+
+  function handleReverterPagamento(solicitacaoId, parcela) {
+    setReverterPagamentoTarget({ solicitacaoId, parcela });
+    setMotivoReverterPagamento('');
+  }
+
+  function confirmarReverterPagamento() {
+    if (!reverterPagamentoTarget || !motivoReverterPagamento.trim()) return;
+    reverterPagamentoMutation.mutate({
+      parcelaId: reverterPagamentoTarget.parcela.id,
+      motivo: motivoReverterPagamento.trim(),
+      solicitacaoId: reverterPagamentoTarget.solicitacaoId,
+    });
+  }
+
   const criarParcelasMutation = useMutation({
     mutationFn: (parcelasPayload) => financeiroApi.parcelas.criar(dialogRowId, parcelasPayload),
     onSuccess: () => {
@@ -1090,7 +1121,19 @@ export default function Pagamentos() {
                     <p className="text-muted-foreground">Vencimento: {formatDataVencimento(parcela.data_vencimento)}</p>
                   </div>
                   {parcela.status === 'pago' ? (
-                    <Badge>Paga</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge>Paga</Badge>
+                      {user?.isFinanceiro && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleReverterPagamento(dialogRow.id, parcela)}
+                          disabled={reverterPagamentoMutation.isPending}
+                        >
+                          Reverter pagamento
+                        </Button>
+                      )}
+                    </div>
                   ) : parcela.status === 'cancelado' ? (
                     <Badge variant="secondary">Cancelada</Badge>
                   ) : (
@@ -1303,6 +1346,30 @@ export default function Pagamentos() {
           placeholder="Motivo do cancelamento (opcional)"
           value={motivoCancelarParcela}
           onChange={(event) => setMotivoCancelarParcela(event.target.value)}
+          rows={3}
+        />
+      </ConfirmDeleteDialog>
+
+      <ConfirmDeleteDialog
+        open={Boolean(reverterPagamentoTarget)}
+        onOpenChange={(open) => !open && setReverterPagamentoTarget(null)}
+        onConfirm={confirmarReverterPagamento}
+        isLoading={reverterPagamentoMutation.isPending}
+        title="Reverter pagamento"
+        description={
+          reverterPagamentoTarget
+            ? `A parcela ${reverterPagamentoTarget.parcela.numero} (${formatValor(reverterPagamentoTarget.parcela.valor)}) voltará para pendente. Se essa era a última parcela paga, a solicitação também voltará para "aprovado".`
+            : ''
+        }
+        confirmLabel="Reverter pagamento"
+        loadingLabel="Revertendo..."
+        cancelLabel="Voltar"
+        confirmDisabled={!motivoReverterPagamento.trim()}
+      >
+        <Textarea
+          placeholder="Motivo da reversão (obrigatório)"
+          value={motivoReverterPagamento}
+          onChange={(event) => setMotivoReverterPagamento(event.target.value)}
           rows={3}
         />
       </ConfirmDeleteDialog>
