@@ -12,8 +12,6 @@ create table if not exists public.veiculos (
   id uuid primary key default gen_random_uuid(),
   modelo_id uuid not null references gestao_crm.modelos_veiculo(id),
   versao_id uuid references gestao_crm.versoes_veiculo(id),
-  modelo_outro text,
-  versao_outro text,
   chassi text not null unique,
   placa text,
   cor text,
@@ -74,8 +72,8 @@ create index if not exists idx_veiculos_versao_id
 
 -- Backfill: 1 public.veiculos por linha existente de veiculos_estoque
 -- (chassi unique garante 1:1).
-insert into public.veiculos (modelo_id, versao_id, modelo_outro, versao_outro, chassi, placa, cor, km)
-select modelo_id, versao_id, modelo_outro, versao_outro, chassi, placa, cor, km
+insert into public.veiculos (modelo_id, versao_id, chassi, placa, cor, km)
+select modelo_id, versao_id, chassi, placa, cor, km
 from gestao_crm.veiculos_estoque
 on conflict (chassi) do nothing;
 

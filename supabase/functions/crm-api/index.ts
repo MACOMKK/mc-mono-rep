@@ -341,8 +341,6 @@ function sanitizePayload(entity: EntityName, payload: Record<string, unknown> = 
 const VEICULO_ALLOWED_FIELDS = [
   'modelo_id',
   'versao_id',
-  'modelo_outro',
-  'versao_outro',
   'chassi',
   'placa',
   'cor',
@@ -507,8 +505,6 @@ function buildSearchFilter(entity: EntityName, search: string, startIndex: numbe
     pushText('v.chassi');
     pushText('v.placa');
     pushText('v.cor');
-    pushText('v.modelo_outro');
-    pushText('v.versao_outro');
   }
 
   return {

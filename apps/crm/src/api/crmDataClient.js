@@ -289,8 +289,6 @@ function mapVeiculoEstoqueRow(row = {}) {
     veiculo_id: row.veiculo_id || veiculo.id || '',
     modelo_id: veiculo.modelo_id || '',
     versao_id: veiculo.versao_id || null,
-    modelo_outro: veiculo.modelo_outro || '',
-    versao_outro: veiculo.versao_outro || '',
     chassi: veiculo.chassi || '',
     placa: veiculo.placa || '',
     cor: veiculo.cor || '',
@@ -912,8 +910,6 @@ const VeiculoEstoqueRepository = {
       veiculoPayload: {
         modelo_id: data.modelo_id || null,
         versao_id: data.versao_id || null,
-        modelo_outro: data.modelo_outro || null,
-        versao_outro: data.versao_outro || null,
         chassi: data.chassi,
         placa: data.placa || null,
         cor: data.cor || null,
@@ -935,8 +931,6 @@ const VeiculoEstoqueRepository = {
       veiculoPayload: {
         modelo_id: data.modelo_id || null,
         versao_id: data.versao_id || null,
-        modelo_outro: data.modelo_outro || null,
-        versao_outro: data.versao_outro || null,
         chassi: data.chassi,
         placa: data.placa || null,
         cor: data.cor || null,

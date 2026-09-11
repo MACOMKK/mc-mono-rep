@@ -39,8 +39,13 @@ Gestão comercial automotiva: leads, clientes, atendimentos e distribuição par
 
 `public.veiculos` (schema **`public`**, fora de `gestao_crm` — decisão deliberada) é o veículo
 físico central: `chassi` (unique, obrigatório), `placa`, `cor`, `km`, `modelo_id`/`versao_id` (FK
-`gestao_crm.modelos_veiculo`/`versoes_veiculo`) com `modelo_outro`/`versao_outro` como fallback. Sem
-coluna própria de `ano`: já vem do `modelo_id` escolhido (`ano_inicio`/`ano_fim` de
+`gestao_crm.modelos_veiculo`/`versoes_veiculo`, ambos obrigatórios via select — **sem** fallback de
+texto livre tipo `modelo_outro`/`versao_outro`; diferente de `veiculos_interesse`, aqui o veículo
+sempre precisa existir no catálogo). Para não travar o cadastro quando o modelo/versão ainda não
+existe, `Estoque.jsx` tem um botão "+" ao lado de cada select que abre um dialog e cria a linha em
+`modelos_veiculo`/`versoes_veiculo` na hora (mesmos campos/mutations de `ModelosVeiculo.jsx`/
+`VersoesVeiculo.jsx`), selecionando o novo registro automaticamente — sem sair da tela de Estoque.
+Sem coluna própria de `ano`: já vem do `modelo_id` escolhido (`ano_inicio`/`ano_fim` de
 `modelos_veiculo`). Motivo de ficar em `public` (mesmo espírito de `public.colaboradores`, entidade
 global usada por todos os apps): chassi/placa/cor/km descrevem a unidade física, não um conceito
 exclusivo de venda — o módulo Oficina do app `servicos` (ainda não implementado) vai precisar

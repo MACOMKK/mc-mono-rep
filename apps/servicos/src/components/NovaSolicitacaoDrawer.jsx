@@ -77,6 +77,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [anexos, setAnexos] = useState([]);
+  const [anexoProgresso, setAnexoProgresso] = useState(null);
   const [parcelado, setParcelado] = useState(false);
   const [draftParcelas, setDraftParcelas] = useState([]);
   const [visible, setVisible] = useState(open);
@@ -90,32 +91,38 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
     setVisible(open);
   }, [open]);
 
-  function uploadAnexosEmBackground(solicitacaoId, anexosParaEnviar) {
-    if (anexosParaEnviar.length === 0) return;
+  async function uploadAnexosSincrono(solicitacaoId, anexosParaEnviar) {
+    if (anexosParaEnviar.length === 0) return [];
 
-    Promise.allSettled(
-      anexosParaEnviar.map(({ file, tipoAnexo, sigiloso, assinaturasNecessarias }) =>
-        uploadAnexo({ file, solicitacaoId, tipoAnexo, sigiloso, assinaturasNecessarias }),
-      ),
-    ).then((results) => {
-      queryClient.invalidateQueries({ queryKey: ['servicos', 'anexos', solicitacaoId] });
-      const falhas = results.filter((result) => result.status === 'rejected');
-      if (falhas.length > 0) {
-        toast({
-          title: falhas.length === 1 ? 'Um anexo não foi enviado' : `${falhas.length} anexos não foram enviados`,
-          description: `A solicitação foi registrada normalmente, mas houve falha no envio: ${getFriendlyErrorMessage(falhas[0].reason)}. Você pode adicioná-los depois pela tela de detalhes.`,
-        });
+    const falhas = [];
+    try {
+      for (let i = 0; i < anexosParaEnviar.length; i += 1) {
+        setAnexoProgresso({ atual: i + 1, total: anexosParaEnviar.length });
+        const { file, tipoAnexo, sigiloso, assinaturasNecessarias } = anexosParaEnviar[i];
+        try {
+          await uploadAnexo({ file, solicitacaoId, tipoAnexo, sigiloso, assinaturasNecessarias });
+        } catch (error) {
+          falhas.push({ reason: error });
+        }
       }
-    });
+    } finally {
+      setAnexoProgresso(null);
+    }
+    queryClient.invalidateQueries({ queryKey: ['servicos', 'anexos', solicitacaoId] });
+    return falhas;
   }
 
   const minhasSolicitacoesKey = ['servicos', 'solicitacoes', 'minhas'];
 
   const submitMutation = useMutation({
-    mutationFn: ({ payload }) => {
-      if (isReenvio) return financeiroApi.solicitacoes.reenviar(solicitacao.id, payload);
-      if (isEdicao) return financeiroApi.solicitacoes.update(solicitacao.id, payload);
-      return financeiroApi.solicitacoes.create(payload);
+    mutationFn: async ({ payload, anexosParaEnviar }) => {
+      const row = isReenvio
+        ? await financeiroApi.solicitacoes.reenviar(solicitacao.id, payload)
+        : isEdicao
+          ? await financeiroApi.solicitacoes.update(solicitacao.id, payload)
+          : await financeiroApi.solicitacoes.create(payload);
+      const anexosFalhos = await uploadAnexosSincrono(row.id, anexosParaEnviar);
+      return { ...row, anexosFalhos };
     },
     onMutate: ({ payload, tempId }) => {
       const previous = queryClient.getQueryData(minhasSolicitacoesKey);
@@ -146,24 +153,28 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
         return [optimisticRow, ...rows];
       });
 
-      // Fecha so localmente (sem tocar no estado do pai) pra poder reabrir
-      // sozinho com o rascunho se o envio falhar — ver onError.
-      setVisible(false);
-
       return { previous, tempId: optimisticId, anexosSnapshot, formSnapshot };
     },
     onSuccess: (row, _variables, context) => {
       queryClient.setQueryData(minhasSolicitacoesKey, (old) =>
         (old || []).map((existing) => (existing.id === context.tempId ? row : existing)),
       );
-      toast(
-        isReenvio
-          ? { title: 'Solicitação reenviada', description: 'Sua solicitação voltou para a fila de aprovação.' }
-          : isEdicao
-            ? { title: 'Solicitação atualizada' }
-            : { title: 'Solicitação enviada', description: 'Sua solicitação de pagamento foi registrada.' },
-      );
-      uploadAnexosEmBackground(row.id, context.anexosSnapshot);
+      const falhas = row.anexosFalhos || [];
+      if (falhas.length > 0) {
+        toast({
+          title: falhas.length === 1 ? 'Um anexo não foi enviado' : `${falhas.length} anexos não foram enviados`,
+          description: `A solicitação foi registrada normalmente, mas houve falha no envio: ${getFriendlyErrorMessage(falhas[0].reason)}. Você pode adicioná-los depois pela tela de detalhes.`,
+        });
+      } else {
+        toast(
+          isReenvio
+            ? { title: 'Solicitação reenviada', description: 'Sua solicitação voltou para a fila de aprovação.' }
+            : isEdicao
+              ? { title: 'Solicitação atualizada' }
+              : { title: 'Solicitação enviada', description: 'Sua solicitação de pagamento foi registrada.' },
+        );
+      }
+      setVisible(false);
       onOpenChange(false);
     },
     onError: (error, _variables, context) => {
@@ -178,6 +189,16 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
       setVisible(true);
     },
   });
+
+  useEffect(() => {
+    if (!submitMutation.isPending) return;
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [submitMutation.isPending]);
 
   const {
     data: catalogos,
@@ -499,6 +520,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
 
     submitMutation.mutate({
       tempId: `optimistic-${crypto.randomUUID()}`,
+      anexosParaEnviar: anexos,
       payload: {
         titulo: form.titulo,
         tipo_beneficiario: form.tipoBeneficiario,
@@ -945,7 +967,19 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
             {submitMutation.isPending ? (
               <>
                 <Spinner size="sm" className="mr-2" />
-                {isReenvio ? 'Reenviando...' : isEdicao ? 'Salvando...' : 'Enviando...'}
+                {anexoProgresso
+                  ? `Enviando anexo ${anexoProgresso.atual} de ${anexoProgresso.total}...`
+                  : anexos.length > 0
+                    ? isReenvio
+                      ? 'Reenviando solicitação e anexos...'
+                      : isEdicao
+                        ? 'Salvando alterações e anexos...'
+                        : 'Enviando solicitação e anexos...'
+                    : isReenvio
+                      ? 'Reenviando...'
+                      : isEdicao
+                        ? 'Salvando...'
+                        : 'Enviando...'}
               </>
             ) : isReenvio ? (
               'Reenviar solicitação'
