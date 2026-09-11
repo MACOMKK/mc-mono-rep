@@ -15,7 +15,7 @@ export default function AppUpdatePrompt() {
       if (!registration) return;
       setInterval(() => {
         registration.update().catch(() => {});
-      }, 60 * 60 * 1000);
+      }, 10 * 60 * 1000);
     },
     onRegisterError(error) {
       console.error('Falha ao registrar service worker', error);
