@@ -1,6 +1,6 @@
 export const CRM_SCHEMA = 'gestao_crm';
 
-export type EntityName = 'clientes' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'veiculos_estoque';
+export type EntityName = 'clientes' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'veiculos_estoque' | 'pipelines' | 'etapas_pipeline' | 'motivos_status';
 
 export function getAccessLevel(access: Record<string, unknown> | null) {
   return String(access?.nivel_acesso || '');
@@ -79,6 +79,9 @@ export function buildAccessScope(
       case 'modelos_veiculo':
       case 'versoes_veiculo':
       case 'veiculos_estoque':
+      case 'pipelines':
+      case 'etapas_pipeline':
+      case 'motivos_status':
         return { clause: '', values: [] as unknown[] };
       default:
         throw unimplementedScopeError(entity);
@@ -139,6 +142,9 @@ export function buildAccessScope(
     case 'modelos_veiculo':
     case 'versoes_veiculo':
     case 'veiculos_estoque':
+    case 'pipelines':
+    case 'etapas_pipeline':
+    case 'motivos_status':
       return { clause: '', values: [] as unknown[] };
     default:
       throw unimplementedScopeError(entity);
@@ -159,6 +165,9 @@ export function applyCreateScope(
   if (entity !== 'leads') {
     delete payload.unidade_id;
     delete payload.responsavel_id;
+  }
+  if (entity === 'etapas_pipeline') {
+    delete payload.chave_sistema;
   }
 
   const level = getAccessLevel(access);

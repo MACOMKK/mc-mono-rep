@@ -6,7 +6,7 @@ import { useEmpresa } from '@/context/EmpresaContext';
 
 const CORES_STATUS = ['#94a3b8', '#3b82f6', '#16a34a', '#E30613'];
 const STATUS_ATIVIDADES = ['planejada', 'concluida', 'cancelada'];
-const FUNIL_STATUSES = ['novo', 'tentativa_contato', 'em_contato', 'qualificado', 'proposta', 'convertido', 'perdido'];
+const FUNIL_STATUSES = ['novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao', 'convertido', 'perdido'];
 
 async function countEntity(repository, filters = {}) {
   const result = await repository.listPage({

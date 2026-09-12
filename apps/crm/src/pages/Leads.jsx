@@ -11,13 +11,12 @@ import LeadForm from '@/components/leads/LeadForm';
 import LeadViewer from '@/components/leads/LeadViewer';
 import LeadsKanban from '@/components/leads/LeadsKanban';
 import ListPagination from '@/components/ListPagination';
-import { Textarea } from '@/components/ui/textarea';
 import { useEmpresa } from '@/context/EmpresaContext';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/use-toast';
-import { LEAD_STATUS_BADGE as STATUS_STYLES, LEAD_STATUS_LABEL as STATUS_LABEL } from '@/lib/leadStatus';
+import { LEAD_STATUS_BADGE as STATUS_STYLES, LEAD_STATUS_LABEL as STATUS_LABEL, LEAD_STATUS_REQUIREMENTS } from '@/lib/leadStatus';
 
-const FUNIL_STATUSES = ['novo', 'tentativa_contato', 'em_contato', 'qualificado', 'proposta', 'convertido', 'perdido'];
+const FUNIL_STATUSES = ['novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao', 'convertido', 'perdido'];
 
 const SLA_STYLES = {
   atrasado: 'bg-red-100 text-red-700',
@@ -83,8 +82,9 @@ export default function Leads() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [viewingLead, setViewingLead] = useState(null);
-  const [lossTarget, setLossTarget] = useState(null);
-  const [lossReason, setLossReason] = useState('');
+  const [statusTarget, setStatusTarget] = useState(null); // { lead, status }
+  const [statusMotivoId, setStatusMotivoId] = useState('');
+  const [statusExtraValues, setStatusExtraValues] = useState({});
   const [statusFiltro, setStatusFiltro] = useState('todos');
   const [viewMode, setViewMode] = useState('kanban');
   const [busca, setBusca] = useState('');
@@ -270,6 +270,11 @@ export default function Leads() {
     queryFn: () => crmDataClient.entities.OrigemLead.list('nome'),
   });
 
+  const { data: motivosStatus = [] } = useQuery({
+    queryKey: ['crm-motivos-status'],
+    queryFn: () => crmDataClient.entities.MotivoStatus.list('nome'),
+  });
+
   const editingId = editing?.id || '';
   const { data: historicoPage = { rows: [] } } = useQuery({
     queryKey: ['lead-historico', editingId],
@@ -307,10 +312,7 @@ export default function Leads() {
   };
 
   const updateStatusMutation = useMutation({
-    mutationFn: ({ id, status, motivo_perda }) => crmDataClient.entities.Lead.update(id, {
-      status,
-      ...(motivo_perda ? { motivo_perda } : {}),
-    }),
+    mutationFn: ({ id, status, ...extra }) => crmDataClient.entities.Lead.update(id, { status, ...extra }),
     onMutate: async ({ id, status }) => {
       await queryClient.cancelQueries({ queryKey: ['leads'] });
       const previousLeads = queryClient.getQueryData(leadsQueryKey);
@@ -326,8 +328,9 @@ export default function Leads() {
       queryClient.invalidateQueries({ queryKey: ['leads'] });
       queryClient.invalidateQueries({ queryKey: ['clientes'] });
       queryClient.invalidateQueries({ queryKey: ['lead-historico', editingId] });
-      setLossTarget(null);
-      setLossReason('');
+      setStatusTarget(null);
+      setStatusMotivoId('');
+      setStatusExtraValues({});
     },
     onError: (error, _variables, context) => {
       if (context?.previousLeads) {
@@ -514,8 +517,12 @@ export default function Leads() {
     const lead = leads.find((l) => l.id === draggableId);
     if (!lead || lead.status === novoStatus) return;
 
-    if (novoStatus === 'perdido') {
-      setLossTarget(lead);
+    if (LEAD_STATUS_REQUIREMENTS[novoStatus]) {
+      setStatusTarget({ lead, status: novoStatus });
+      setStatusMotivoId('');
+      setStatusExtraValues({
+        previsao_fechamento: lead.previsao_fechamento || '',
+      });
       return;
     }
 
@@ -542,10 +549,13 @@ export default function Leads() {
     ? historico.filter((item) => item.lead_id === editing.id && item.metadados?.origem === 'lead_attachment')
     : [];
 
-  const STATUS_TABS = ['todos', 'novo', 'tentativa_contato', 'em_contato', 'qualificado', 'proposta', 'convertido', 'perdido'];
+  const STATUS_TABS = ['todos', 'novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao', 'convertido', 'perdido'];
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-5">
+    <div className={cn(
+      'max-w-[1400px] mx-auto px-4 md:px-6',
+      viewMode === 'kanban' ? 'pt-5 h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden' : 'py-5'
+    )}>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-black uppercase tracking-widest">Central de Leads</h1>
@@ -645,12 +655,14 @@ export default function Leads() {
 
       {/* Kanban View */}
       {viewMode === 'kanban' && (
-        <LeadsKanban
-          leads={filtrados}
-          onDragEnd={handleDragEnd}
-          onCardClick={(lead) => setViewingLead(lead)}
-          leadsComAtividadePendente={leadsComAtividadePendente}
-        />
+        <div className="flex-1 min-h-0">
+          <LeadsKanban
+            leads={filtrados}
+            onDragEnd={handleDragEnd}
+            onCardClick={(lead) => setViewingLead(lead)}
+            leadsComAtividadePendente={leadsComAtividadePendente}
+          />
+        </div>
       )}
 
       {/* Table View */}
@@ -770,43 +782,90 @@ export default function Leads() {
         />
       )}
 
-      <Dialog open={Boolean(lossTarget)} onOpenChange={(next) => { if (!next) { setLossTarget(null); setLossReason(''); } }}>
-        <DialogContent className="max-w-md rounded-none p-0">
-          <DialogHeader className="bg-[#1a1a1a] px-6 py-4">
-            <DialogTitle className="text-sm font-black uppercase tracking-widest text-white">
-              Marcar lead como perdido
-            </DialogTitle>
-          </DialogHeader>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!lossTarget) return;
-              updateStatusMutation.mutate({ id: lossTarget.id, status: 'perdido', motivo_perda: lossReason });
-            }}
-            className="flex flex-col gap-4 p-6"
-          >
-            <p className="text-xs text-muted-foreground">
-              Informe o motivo da perda de <strong>{lossTarget?.nome}</strong>. Este campo e obrigatorio para encerrar o lead.
-            </p>
-            <Textarea
-              required
-              value={lossReason}
-              onChange={(event) => setLossReason(event.target.value)}
-              placeholder="Ex.: preco, comprou com concorrente, desistiu da compra..."
-              className="resize-none rounded-none text-sm"
-              rows={3}
-            />
-            <div className="flex items-center justify-end gap-2">
-              <Button type="button" variant="outline" className="rounded-none text-xs font-bold uppercase tracking-wider" onClick={() => { setLossTarget(null); setLossReason(''); }}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={updateStatusMutation.isPending} className="rounded-none bg-red-600 text-xs font-bold uppercase tracking-wider hover:bg-red-700">
-                {updateStatusMutation.isPending ? 'Salvando...' : 'Marcar como perdido'}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {(() => {
+        const requirement = statusTarget ? LEAD_STATUS_REQUIREMENTS[statusTarget.status] : null;
+        const motivosDoStatus = statusTarget
+          ? motivosStatus.filter((m) => m.status === statusTarget.status && m.ativo)
+          : [];
+        const closeDialog = () => {
+          setStatusTarget(null);
+          setStatusMotivoId('');
+          setStatusExtraValues({});
+        };
+        const canSubmit = statusTarget && requirement && (
+          (!requirement.motivo || statusMotivoId)
+          && requirement.fields.every((field) => String(statusExtraValues[field] || '').trim())
+        );
+
+        return (
+          <Dialog open={Boolean(statusTarget)} onOpenChange={(next) => { if (!next) closeDialog(); }}>
+            <DialogContent className="max-w-md rounded-none p-0">
+              <DialogHeader className={cn('px-6 py-4', statusTarget?.status === 'perdido' ? 'bg-red-700' : 'bg-[#1a1a1a]')}>
+                <DialogTitle className="text-sm font-black uppercase tracking-widest text-white">
+                  Mover lead para {statusTarget ? STATUS_LABEL[statusTarget.status] : ''}
+                </DialogTitle>
+              </DialogHeader>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!statusTarget || !canSubmit) return;
+                  updateStatusMutation.mutate({
+                    id: statusTarget.lead.id,
+                    status: statusTarget.status,
+                    ...(requirement.motivo ? { motivo_status_id: statusMotivoId } : {}),
+                    ...Object.fromEntries(requirement.fields.map((field) => [field, statusExtraValues[field]])),
+                  });
+                }}
+                className="flex flex-col gap-4 p-6"
+              >
+                <p className="text-xs text-muted-foreground">
+                  Informe os dados abaixo para mover <strong>{statusTarget?.lead?.nome}</strong> para {statusTarget ? STATUS_LABEL[statusTarget.status] : ''}.
+                </p>
+
+                {requirement?.motivo && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Motivo</label>
+                    <Select value={statusMotivoId} onValueChange={setStatusMotivoId}>
+                      <SelectTrigger className="rounded-none">
+                        <SelectValue placeholder="Selecione um motivo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {motivosDoStatus.length === 0 ? (
+                          <div className="px-3 py-2 text-xs text-muted-foreground">Nenhum motivo cadastrado para este status.</div>
+                        ) : motivosDoStatus.map((motivo) => (
+                          <SelectItem key={motivo.id} value={motivo.id}>{motivo.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {requirement?.fields.includes('previsao_fechamento') && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Previsao de fechamento</label>
+                    <Input
+                      type="date"
+                      required
+                      value={statusExtraValues.previsao_fechamento || ''}
+                      onChange={(event) => setStatusExtraValues((prev) => ({ ...prev, previsao_fechamento: event.target.value }))}
+                      className="rounded-none"
+                    />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2">
+                  <Button type="button" variant="outline" className="rounded-none text-xs font-bold uppercase tracking-wider" onClick={closeDialog}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" disabled={!canSubmit || updateStatusMutation.isPending} className="rounded-none text-xs font-bold uppercase tracking-wider">
+                    {updateStatusMutation.isPending ? 'Salvando...' : 'Confirmar'}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </div>
   );
 }

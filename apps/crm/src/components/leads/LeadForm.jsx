@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { companyFromUnit } from '@/lib/empresa';
 import { deriveUnidadesFromResponsaveis } from '@/hooks/useUnidadesEmpresa';
 import { crmDataClient } from '@/api/crmDataClient';
+import { LEAD_STATUS_LABEL, LEAD_STATUS_REQUIREMENTS } from '@/lib/leadStatus';
 import {
   BriefcaseBusiness,
   Car,
@@ -84,7 +85,7 @@ export default function LeadForm({
       versao: '',
       ano: '',
       categoria_veiculo_id: null,
-      condicao: 'novo',
+      condicao: '',
       faixa_preco_min: '',
       faixa_preco_max: '',
       cor_preferida: '',
@@ -96,6 +97,7 @@ export default function LeadForm({
     empresa: 'Macom Ananindeua',
     responsavel_id: '',
     previsao_fechamento: '',
+    motivo_status_id: '',
     motivo_perda: '',
     observacoes: '',
   });
@@ -103,7 +105,13 @@ export default function LeadForm({
   const [currentStep, setCurrentStep] = useState(0);
   const [unidadeError, setUnidadeError] = useState('');
   const [telefoneError, setTelefoneError] = useState('');
+  const [statusRequirementError, setStatusRequirementError] = useState('');
   const [showMaisDetalhesVeiculo, setShowMaisDetalhesVeiculo] = useState(false);
+
+  const { data: motivosStatus = [] } = useQuery({
+    queryKey: ['crm-motivos-status'],
+    queryFn: () => crmDataClient.entities.MotivoStatus.list('nome'),
+  });
   const set = (field, value) => setData((current) => ({ ...current, [field]: value }));
   const setVehicle = (field, value) => setData((current) => ({
     ...current,
@@ -432,6 +440,17 @@ export default function LeadForm({
       setCurrentStep(steps.findIndex((step) => step.key === 'responsavel'));
       return;
     }
+    const requirement = LEAD_STATUS_REQUIREMENTS[data.status];
+    if (requirement) {
+      const missingMotivo = requirement.motivo && !data.motivo_status_id;
+      const missingField = requirement.fields.find((field) => !String(data[field] || '').trim());
+      if (missingMotivo || missingField) {
+        setStatusRequirementError(`Preencha os dados exigidos para mover o lead para ${LEAD_STATUS_LABEL[data.status] || data.status}.`);
+        setCurrentStep(steps.findIndex((step) => step.key === 'comercial'));
+        return;
+      }
+    }
+    setStatusRequirementError('');
     onSave(data);
   };
 
@@ -527,20 +546,23 @@ export default function LeadForm({
                   </Select>
                 </Field>
                 <Field label="Status">
-                  <Select value={data.status} onValueChange={(value) => set('status', value)}>
+                  <Select
+                    value={data.status}
+                    onValueChange={(value) => setData((current) => ({ ...current, status: value, motivo_status_id: '' }))}
+                  >
                     <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent className="rounded-none">
                       <SelectItem value="novo">Novo</SelectItem>
                       <SelectItem value="tentativa_contato">Tentativa de contato</SelectItem>
                       <SelectItem value="em_contato">Em contato</SelectItem>
                       <SelectItem value="qualificado">Qualificado</SelectItem>
-                      <SelectItem value="proposta">Proposta</SelectItem>
+                      <SelectItem value="negociacao">Negociação</SelectItem>
                       <SelectItem value="convertido">Convertido</SelectItem>
                       <SelectItem value="perdido">Perdido</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Previsao de fechamento">
+                <Field label={`Previsao de fechamento${LEAD_STATUS_REQUIREMENTS[data.status]?.fields.includes('previsao_fechamento') ? ' *' : ''}`}>
                   <Input
                     type="date"
                     value={data.previsao_fechamento || ''}
@@ -548,6 +570,21 @@ export default function LeadForm({
                     className="h-9 rounded-none text-sm"
                   />
                 </Field>
+                {LEAD_STATUS_REQUIREMENTS[data.status]?.motivo ? (
+                  <Field label="Motivo *">
+                    <Select value={data.motivo_status_id || ''} onValueChange={(value) => set('motivo_status_id', value)}>
+                      <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione um motivo" /></SelectTrigger>
+                      <SelectContent className="rounded-none">
+                        {motivosStatus.filter((m) => m.status === data.status && m.ativo).map((motivo) => (
+                          <SelectItem key={motivo.id} value={motivo.id}>{motivo.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                ) : null}
+                {statusRequirementError ? (
+                  <p className="md:col-span-2 text-xs font-semibold text-red-600">{statusRequirementError}</p>
+                ) : null}
               </div>
             ) : null}
 
@@ -764,11 +801,11 @@ export default function LeadForm({
             {currentStepKey === 'observacoes' ? (
               <div className="space-y-4">
                 {data.status === 'perdido' ? (
-                  <Field label="Motivo da perda *">
+                  <Field label="Detalhe adicional da perda (opcional)">
                     <Textarea
-                      required
                       value={data.motivo_perda || ''}
                       onChange={(event) => set('motivo_perda', event.target.value)}
+                      placeholder="Complemento livre ao motivo selecionado na etapa Comercial."
                       className="resize-none rounded-none text-sm"
                       rows={3}
                     />

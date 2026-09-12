@@ -8,7 +8,7 @@ const COLUNAS = [
   { key: 'tentativa_contato', color: 'border-t-amber-400', headerBg: 'bg-amber-400', dot: 'bg-amber-400' },
   { key: 'em_contato', color: 'border-t-cyan-500', headerBg: 'bg-cyan-500', dot: 'bg-cyan-500' },
   { key: 'qualificado', color: 'border-t-violet-500', headerBg: 'bg-violet-500', dot: 'bg-violet-500' },
-  { key: 'proposta', color: 'border-t-orange-500', headerBg: 'bg-orange-500', dot: 'bg-orange-500' },
+  { key: 'negociacao', color: 'border-t-orange-500', headerBg: 'bg-orange-500', dot: 'bg-orange-500' },
   { key: 'convertido', color: 'border-t-green-600', headerBg: 'bg-green-600', dot: 'bg-green-600' },
   { key: 'perdido', color: 'border-t-red-600', headerBg: 'bg-red-600', dot: 'bg-red-600' },
 ].map((col) => ({ ...col, label: LEAD_STATUS_LABEL[col.key] }));
@@ -165,11 +165,11 @@ function LeadCard({ lead, index, onClick, semContatoAgendado }) {
 export default function LeadsKanban({ leads, onDragEnd, onCardClick, leadsComAtividadePendente }) {
   return (
     <DragDropContext onDragEnd={onDragEnd}>
-      <div className="flex gap-3 overflow-x-auto pb-4 items-start">
+      <div className="flex gap-3 overflow-x-auto h-full items-stretch">
         {COLUNAS.map((col) => {
           const colLeads = leads.filter((l) => l.status === col.key);
           return (
-            <div key={col.key} className={cn('flex-1 min-w-[240px] max-w-[300px] bg-[#f4f4f4] border-t-4 shrink-0', col.color)}>
+            <div key={col.key} className={cn('flex flex-col h-full flex-1 min-w-[240px] max-w-[300px] bg-[#f4f4f4] border-t-4 shrink-0', col.color)}>
               {/* Column Header */}
               <div className="px-3 py-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -188,7 +188,7 @@ export default function LeadsKanban({ leads, onDragEnd, onCardClick, leadsComAti
                     ref={provided.innerRef}
                     {...provided.droppableProps}
                     className={cn(
-                      'px-2 pb-2 space-y-2 min-h-[200px] transition-colors',
+                      'px-2 pb-2 space-y-2 min-h-[200px] flex-1 overflow-y-auto scrollbar-none transition-colors',
                       snapshot.isDraggingOver ? 'bg-primary/5' : ''
                     )}
                   >

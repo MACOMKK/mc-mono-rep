@@ -1,5 +1,6 @@
 import { crmApi } from '@macom/api-client/crmApi';
 import { assertSupabaseConfigured, supabase } from '@macom/api-client/supabaseClient';
+import { LEAD_STATUS_LABEL } from '@/lib/leadStatus';
 
 const CRM_ATTACHMENTS_BUCKET = 'crm-anexos';
 
@@ -170,6 +171,7 @@ function mapLeadRow(row = {}) {
     origem_id: row.origem_id || '',
     origem: row.origem_nome || '',
     status: row.status || 'novo',
+    motivo_status_id: row.motivo_status_id || '',
     modelo_interesse: vehicleLabel || row.modelo_interesse || '',
     veiculo_interesse: vehicle.id ? vehicle : null,
     empresa: row.empresa || 'Macom Ananindeua',
@@ -245,6 +247,39 @@ function mapOrigemLeadRow(row = {}) {
   return {
     id: row.id,
     nome: row.nome || '',
+    ativo: row.ativo !== false,
+    ...mapBaseDates(row),
+  };
+}
+
+function mapMotivoStatusRow(row = {}) {
+  return {
+    id: row.id,
+    status: row.status || '',
+    nome: row.nome || '',
+    ativo: row.ativo !== false,
+    ...mapBaseDates(row),
+  };
+}
+
+function mapPipelineRow(row = {}) {
+  return {
+    id: row.id,
+    nome: row.nome || '',
+    padrao: row.padrao === true,
+    ativo: row.ativo !== false,
+    ...mapBaseDates(row),
+  };
+}
+
+function mapEtapaPipelineRow(row = {}) {
+  return {
+    id: row.id,
+    pipeline_id: row.pipeline_id || '',
+    nome: row.nome || '',
+    cor: row.cor || '#90CAF9',
+    ordem: row.ordem ?? 0,
+    chave_sistema: row.chave_sistema || null,
     ativo: row.ativo !== false,
     ...mapBaseDates(row),
   };
@@ -383,8 +418,12 @@ function mapLeadPayload(data = {}, clienteId) {
   const phone = requireNormalizedPhone(data.telefone, 'Lead');
   const email = requireValidEmail(data.email, 'Lead');
 
-  if (data.status === 'perdido' && !String(data.motivo_perda || '').trim()) {
-    throw new Error('Informe o motivo da perda para encerrar este lead.');
+  if (['qualificado', 'convertido', 'perdido'].includes(data.status) && !data.motivo_status_id) {
+    throw new Error(`Selecione um motivo para mover o lead para ${LEAD_STATUS_LABEL[data.status] || data.status}.`);
+  }
+
+  if (data.status === 'negociacao' && !data.previsao_fechamento) {
+    throw new Error('Informe a previsao de fechamento para mover o lead para negociacao.');
   }
 
   if (!data.origem_id) {
@@ -408,7 +447,8 @@ function mapLeadPayload(data = {}, clienteId) {
     perdido_em: data.status === 'perdido'
       ? (data.perdido_em || new Date().toISOString())
       : (data.perdido_em || null),
-    motivo_perda: data.status === 'perdido' ? String(data.motivo_perda).trim() : null,
+    motivo_perda: data.status === 'perdido' ? String(data.motivo_perda || '').trim() || null : null,
+    motivo_status_id: ['qualificado', 'convertido', 'perdido'].includes(data.status) ? data.motivo_status_id : null,
     responsavel_id: data.responsavel_id || null,
     unidade_id: data.unidade_id || null,
     previsao_fechamento: data.previsao_fechamento || null,
@@ -837,6 +877,60 @@ const OrigemLeadRepository = {
   },
 };
 
+const MotivoStatusRepository = {
+  ...createListRepository('MotivoStatus', crmApi.motivos_status, mapMotivoStatusRow),
+
+  async create(data) {
+    const row = await crmApi.motivos_status.create({ status: data.status, nome: data.nome, ativo: data.ativo !== false });
+    return mapMotivoStatusRow(row);
+  },
+
+  async update(id, data) {
+    const row = await crmApi.motivos_status.update(id, { status: data.status, nome: data.nome, ativo: data.ativo !== false });
+    return mapMotivoStatusRow(row);
+  },
+};
+
+const PipelineRepository = {
+  ...createListRepository('Pipeline', crmApi.pipelines, mapPipelineRow),
+
+  async create(data) {
+    const row = await crmApi.pipelines.create({ nome: data.nome, padrao: data.padrao === true, ativo: data.ativo !== false });
+    return mapPipelineRow(row);
+  },
+
+  async update(id, data) {
+    const row = await crmApi.pipelines.update(id, { nome: data.nome, padrao: data.padrao === true, ativo: data.ativo !== false });
+    return mapPipelineRow(row);
+  },
+};
+
+const EtapaPipelineRepository = {
+  ...createListRepository('EtapaPipeline', crmApi.etapas_pipeline, mapEtapaPipelineRow),
+
+  async create(data) {
+    const row = await crmApi.etapas_pipeline.create({
+      pipeline_id: data.pipeline_id,
+      nome: data.nome,
+      cor: data.cor || '#90CAF9',
+      ordem: data.ordem ?? 0,
+      ativo: data.ativo !== false,
+    });
+    return mapEtapaPipelineRow(row);
+  },
+
+  async update(id, data) {
+    const row = await crmApi.etapas_pipeline.update(id, {
+      pipeline_id: data.pipeline_id,
+      nome: data.nome,
+      cor: data.cor,
+      ordem: data.ordem,
+      ativo: data.ativo !== false,
+    });
+    return mapEtapaPipelineRow(row);
+  },
+};
+
 const MarcaVeiculoRepository = {
   ...createListRepository('MarcaVeiculo', crmApi.marcas_veiculo, mapMarcaVeiculoRow),
 
@@ -1069,6 +1163,9 @@ export const crmDataClient = {
     VeiculoInteresse: VeiculoInteresseRepository,
     CategoriaVeiculo: CategoriaVeiculoRepository,
     OrigemLead: OrigemLeadRepository,
+    MotivoStatus: MotivoStatusRepository,
+    Pipeline: PipelineRepository,
+    EtapaPipeline: EtapaPipelineRepository,
     MarcaVeiculo: MarcaVeiculoRepository,
     ModeloVeiculo: ModeloVeiculoRepository,
     VersaoVeiculo: VersaoVeiculoRepository,

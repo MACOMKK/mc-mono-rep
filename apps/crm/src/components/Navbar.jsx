@@ -203,8 +203,11 @@ export default function Navbar({ realtime }) {
               icon: SlidersHorizontal,
               path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/distribuicao' : undefined,
             },
-            { label: 'Funil', icon: SlidersHorizontal, comingSoon: true },
-            { label: 'Etapas do Funil', icon: SlidersHorizontal, comingSoon: true },
+            {
+              label: 'Pipelines',
+              icon: SlidersHorizontal,
+              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/pipelines' : undefined,
+            },
             { label: 'Tipos de Atividade', icon: SlidersHorizontal, comingSoon: true },
             {
               label: 'Origens',
@@ -213,8 +216,16 @@ export default function Navbar({ realtime }) {
             },
             { label: 'Mídias', icon: SlidersHorizontal, comingSoon: true },
             { label: 'Modelos de Interesse', icon: SlidersHorizontal, comingSoon: true },
-            { label: 'Motivos Insucesso', icon: SlidersHorizontal, comingSoon: true },
-            { label: 'Motivos Andamento', icon: SlidersHorizontal, comingSoon: true },
+            {
+              label: 'Motivos Insucesso',
+              icon: SlidersHorizontal,
+              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/motivos-insucesso' : undefined,
+            },
+            {
+              label: 'Motivos Andamento',
+              icon: SlidersHorizontal,
+              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/motivos-andamento' : undefined,
+            },
             { label: 'Empresas', icon: SlidersHorizontal, comingSoon: true },
             { label: 'Temperatura', icon: SlidersHorizontal, comingSoon: true },
             { label: 'Tipo de Ação', icon: SlidersHorizontal, comingSoon: true },

@@ -21,7 +21,7 @@ export default function EmployeeForm({ onSubmit, isLoading, initial = {}, mode =
     email: initial.email || '',
     department: initial.department || '',
     position: initial.position || '',
-    unit: initial.unit || '',
+    unit: initial.unit_id || '',
     birth_date: normalizeDateInput(initial.birth_date),
   });
 
@@ -97,7 +97,7 @@ export default function EmployeeForm({ onSubmit, isLoading, initial = {}, mode =
             <SelectContent>
               <SelectItem value="__none__">Sem unidade</SelectItem>
               {units.map((unit) => (
-                <SelectItem key={unit.id} value={unit.key}>
+                <SelectItem key={unit.id} value={unit.id}>
                   {unit.city || unit.name}
                 </SelectItem>
               ))}

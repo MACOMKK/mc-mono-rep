@@ -26,7 +26,7 @@ Gestão comercial automotiva: leads, clientes, atendimentos e distribuição par
 | Tabela | Campos-chave |
 |---|---|
 | `clientes` | `status_relacionamento` (lead/cliente/pos_venda) |
-| `leads` | `origem_id` referencia `origens_lead` (FK), `status` (novo/tentativa_contato/em_contato/qualificado/proposta/convertido/perdido), SLA, responsável |
+| `leads` | `origem_id` referencia `origens_lead` (FK), `status` (novo/tentativa_contato/em_contato/qualificado/negociacao/convertido/perdido), SLA, responsável |
 | `atendimentos` | `tipo` (venda/pos_venda/agendamento/retorno), `temperatura` (frio/morno/quente) |
 | `historico_atendimentos` | auditoria de mudanças |
 | `veiculos_interesse` | veículos associados a um lead (1+ por lead, flag `principal`); `categoria_veiculo_id` (FK `categorias_veiculo`, **obrigatório**) define o segmento; `marca_id`/`modelo_id`/`versao_id` (FK `marcas_veiculo`/`modelos_veiculo`/`versoes_veiculo`) para catálogo estruturado, com `marca_outro`/`modelo_outro`/`versao_outro` como fallback quando o veículo ainda não está cadastrado (fallback é apenas interno — não há input de texto livre visível no `LeadForm.jsx`, só a opção "Não encontrei..." no select, decisão deliberada para não reintroduzir busca livre); `ano` é número livre, mas o `LeadForm.jsx` usa `ano_inicio`/`ano_fim` do modelo escolhido como `min`/`max` do input; `atributos` (jsonb) guarda os valores dos `campos_extra` do segmento (ex.: `{"cilindrada": 160}`) |
@@ -66,6 +66,7 @@ por empresa + `unique (empresa_id, nome)` no lugar de `unique (nome)`/`unique (m
 `veiculos_estoque`/`public.veiculos` entram na mesma decisão se isso acontecer.
 | `configuracoes_distribuicao` / `vendedores_distribuicao` | regras de distribuição automática de leads |
 | `conversas_atendimento` / `mensagens_atendimento` | chat de atendimento via WhatsApp + IA (módulo "Atendimento", em construção) |
+| `pipelines` / `etapas_pipeline` | funis configuráveis (tela `/configuracoes/pipelines`) — **fase 1, ainda desacoplada de `leads`**: `leads.status` continua sendo o enum fixo de sempre (Kanban/Dashboard/`prepare_lead_phase1` inalterados). `etapas_pipeline.chave_sistema` (nullable) marca etapas travadas — sem ela apagáveis/livres, com ela protegidas por trigger (`gestao_crm.protect_crm_pipeline_sistema()`, `20260912130000_add_crm_pipelines.sql`): nome/cor seguem editáveis, mas não dá para excluir, trocar de pipeline ou remover a chave. O pipeline `padrao = true` (seed "Comercial", espelhando as 7 etapas do funil atual) também não pode ser excluído. Se a fase 2 (religar `leads` a `etapa_id` em vez do enum) avançar, revisitar `LeadsKanban.jsx`/`leadStatus.js`/`Leads.jsx`/`Dashboard.jsx` e o trigger de distribuição — não faz parte do escopo atual |
 
 ## Agenda de Atividades
 

@@ -205,4 +205,7 @@ export const crmApi = {
       return invokeCrm({ action: 'save_veiculo_estoque_full', ...payload });
     },
   },
+  pipelines: buildEntity('pipelines'),
+  etapas_pipeline: buildEntity('etapas_pipeline'),
+  motivos_status: buildEntity('motivos_status'),
 };

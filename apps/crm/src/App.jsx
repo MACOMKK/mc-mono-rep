@@ -17,6 +17,9 @@ const Login = lazy(() => import('@/pages/Login'));
 const ConfiguracaoDistribuicao = lazy(() => import('@/pages/ConfiguracaoDistribuicao'));
 const CategoriasVeiculo = lazy(() => import('@/pages/CategoriasVeiculo'));
 const OrigensLead = lazy(() => import('@/pages/OrigensLead'));
+const MotivosInsucesso = lazy(() => import('@/pages/MotivosInsucesso'));
+const MotivosAndamento = lazy(() => import('@/pages/MotivosAndamento'));
+const Pipelines = lazy(() => import('@/pages/Pipelines'));
 const MarcasVeiculo = lazy(() => import('@/pages/MarcasVeiculo'));
 const ModelosVeiculo = lazy(() => import('@/pages/ModelosVeiculo'));
 const VersoesVeiculo = lazy(() => import('@/pages/VersoesVeiculo'));
@@ -88,6 +91,9 @@ const CrmRoutes = () => {
           <Route path="/configuracoes/distribuicao" element={<ConfiguracaoDistribuicao />} />
           <Route path="/configuracoes/categorias-veiculo" element={<CategoriasVeiculo />} />
           <Route path="/configuracoes/origens-lead" element={<OrigensLead />} />
+          <Route path="/configuracoes/motivos-insucesso" element={<MotivosInsucesso />} />
+          <Route path="/configuracoes/motivos-andamento" element={<MotivosAndamento />} />
+          <Route path="/configuracoes/pipelines" element={<Pipelines />} />
           <Route path="/configuracoes/marcas-veiculo" element={<MarcasVeiculo />} />
           <Route path="/configuracoes/modelos-veiculo" element={<ModelosVeiculo />} />
           <Route path="/configuracoes/versoes-veiculo" element={<VersoesVeiculo />} />

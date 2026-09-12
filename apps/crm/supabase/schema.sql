@@ -64,7 +64,7 @@ create table if not exists gestao_crm.leads (
   origem text not null default 'site'
     check (origem in ('telefone', 'whatsapp', 'site', 'showroom', 'indicacao')),
   status text not null default 'novo'
-    check (status in ('novo', 'tentativa_contato', 'em_contato', 'qualificado', 'proposta', 'convertido', 'perdido')),
+    check (status in ('novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao', 'convertido', 'perdido')),
   modelo_interesse text,
   empresa text not null default 'Macom Ananindeua'
     check (empresa in ('Macom Ananindeua', 'Macom Belém', 'Macom Paragominas')),
@@ -130,7 +130,7 @@ create unique index if not exists idx_crm_clientes_email_unique
 
 create unique index if not exists idx_crm_leads_cliente_ativo_unique
   on gestao_crm.leads (cliente_id)
-  where status in ('novo', 'tentativa_contato', 'em_contato', 'qualificado', 'proposta');
+  where status in ('novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao');
 
 create unique index if not exists idx_crm_atendimentos_lead_planejada_unique
   on gestao_crm.atendimentos (lead_id)
@@ -159,7 +159,7 @@ create index if not exists idx_crm_leads_unidade_status
 
 create index if not exists idx_crm_leads_sla_primeiro_contato
   on gestao_crm.leads (sla_primeiro_contato_em)
-  where primeiro_contato_em is null and status in ('novo', 'tentativa_contato', 'em_contato', 'qualificado', 'proposta');
+  where primeiro_contato_em is null and status in ('novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao');
 
 create index if not exists idx_crm_atendimentos_lead_id
   on gestao_crm.atendimentos (lead_id);

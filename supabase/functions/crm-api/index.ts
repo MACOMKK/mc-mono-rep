@@ -48,6 +48,7 @@ const ENTITY_CONFIG = {
       'convertido_em',
       'perdido_em',
       'motivo_perda',
+      'motivo_status_id',
       'responsavel_id',
       'unidade_id',
       'primeiro_contato_em',
@@ -153,6 +154,24 @@ const ENTITY_CONFIG = {
     orderBy: 'criado_em',
     orderDirection: 'desc',
     allowedFields: ['condicao', 'status', 'preco', 'observacoes'],
+  },
+  pipelines: {
+    table: 'pipelines',
+    orderBy: 'nome',
+    orderDirection: 'asc',
+    allowedFields: ['nome', 'padrao', 'ativo'],
+  },
+  etapas_pipeline: {
+    table: 'etapas_pipeline',
+    orderBy: 'ordem',
+    orderDirection: 'asc',
+    allowedFields: ['pipeline_id', 'nome', 'cor', 'ordem', 'ativo'],
+  },
+  motivos_status: {
+    table: 'motivos_status',
+    orderBy: 'nome',
+    orderDirection: 'asc',
+    allowedFields: ['status', 'nome', 'ativo'],
   },
 } as const;
 
@@ -272,6 +291,22 @@ function mapDatabaseError(error: unknown) {
     return 'Ja existe um veiculo com este chassi.';
   }
 
+  if (message.includes('pipelines_nome_key')) {
+    return 'Ja existe um pipeline com este nome.';
+  }
+
+  if (message.includes('etapas_pipeline_pipeline_id_ordem_key')) {
+    return 'Ja existe uma etapa nesta posicao do pipeline.';
+  }
+
+  if (message.includes('etapas_pipeline_pipeline_id_chave_sistema_key')) {
+    return 'Ja existe uma etapa de sistema com esta chave neste pipeline.';
+  }
+
+  if (message.includes('nao pode ser excluido') || message.includes('nao podem ser excluidas') || message.includes('nao podem trocar de pipeline')) {
+    return message;
+  }
+
   if (message.includes('null value in column "categoria_veiculo_id"')) {
     return 'Selecione o segmento (categoria) do veiculo.';
   }
@@ -282,6 +317,16 @@ function mapDatabaseError(error: unknown) {
 
   if (message.includes('Motivo da perda e obrigatorio')) {
     return 'Informe o motivo da perda para encerrar este lead.';
+  }
+
+  if (message.includes('Selecione um motivo para mover o lead')
+    || message.includes('motivo selecionado nao e valido')
+    || message.includes('Informe a previsao de fechamento para mover o lead')) {
+    return message;
+  }
+
+  if (message.includes('motivos_status_status_nome_key')) {
+    return 'Ja existe um motivo com este nome para este status.';
   }
 
   if (message.includes('Informe o resultado para concluir')) {
@@ -880,7 +925,7 @@ Deno.serve(async (request) => {
           on vd.unidade_id = c.unidade_id and vd.colaborador_id = c.id
         left join ${CRM_SCHEMA}.leads l
           on l.responsavel_id = c.id
-         and l.status in ('novo', 'tentativa_contato', 'em_contato', 'qualificado', 'proposta')
+         and l.status in ('novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao')
         where c.status <> 'inativo' and c.unidade_id is not null
           and ($2::uuid is null or c.unidade_id = $2::uuid)
         group by c.id, c.nome, c.email, c.unidade_id, vd.ativo,
@@ -1084,8 +1129,9 @@ Deno.serve(async (request) => {
       const leadPayloadRaw = sanitizePayload('leads', body.leadPayload || {});
       validateContactFields('leads', leadPayloadRaw);
 
+      let existingLead: Record<string, unknown> | null = null;
       if (leadId) {
-        await ensureEntityAccess('leads', leadId, access, collaborator);
+        existingLead = await ensureEntityAccess('leads', leadId, access, collaborator);
       }
 
       const result = await sql.begin(async (transaction) => {
@@ -1171,6 +1217,27 @@ Deno.serve(async (request) => {
           };
           if (collaborator?.id) historicoPayload.criado_por = collaborator.id;
           const insertQuery = buildInsertQuery(CRM_SCHEMA, 'historico_atendimentos', historicoPayload);
+          await transaction.unsafe(insertQuery.text, insertQuery.values);
+        }
+
+        if (existingLead && existingLead.status !== leadRow.status) {
+          const statusChangePayload: Record<string, unknown> = {
+            cliente_id: leadRow.cliente_id,
+            lead_id: leadRow.id,
+            atendimento_id: null,
+            tipo: 'atualizacao_lead',
+            descricao: `Status alterado de ${existingLead.status} para ${leadRow.status}.`,
+            entidade: 'Lead',
+            entidade_id: leadRow.id,
+            status: leadRow.status,
+            metadados: {
+              status_anterior: existingLead.status,
+              status_novo: leadRow.status,
+              motivo_status_id: leadRow.motivo_status_id || null,
+            },
+          };
+          if (collaborator?.id) statusChangePayload.criado_por = collaborator.id;
+          const insertQuery = buildInsertQuery(CRM_SCHEMA, 'historico_atendimentos', statusChangePayload);
           await transaction.unsafe(insertQuery.text, insertQuery.values);
         }
 
@@ -1312,7 +1379,7 @@ Deno.serve(async (request) => {
     }
 
     if (
-      ['categorias_veiculo', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'veiculos_estoque'].includes(entity)
+      ['categorias_veiculo', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'veiculos_estoque', 'pipelines', 'etapas_pipeline'].includes(entity)
       && ['create', 'update', 'delete'].includes(action)
     ) {
       ensureCanConfigure(access);
@@ -1398,7 +1465,7 @@ Deno.serve(async (request) => {
       const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator);
       if (!Object.keys(payload).length) return json({ error: 'Payload vazio.' }, 400);
       validateContactFields(entity, payload);
-      const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo'];
+      const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'pipelines', 'etapas_pipeline', 'motivos_status'];
       if (collaborator?.id && !entitiesWithoutCriadoPor.includes(entity)) payload.criado_por = collaborator.id;
       if (entity === 'atendimentos' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
@@ -1419,7 +1486,7 @@ Deno.serve(async (request) => {
 
     if (action === 'update') {
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
-      await ensureEntityAccess(entity, id, access, collaborator);
+      const existingRow = await ensureEntityAccess(entity, id, access, collaborator);
       const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator);
       if (!Object.keys(payload).length) return json({ error: 'Nenhum campo para atualizar.' }, 400);
       validateContactFields(entity, payload);
@@ -1431,7 +1498,30 @@ Deno.serve(async (request) => {
       }
       const query = buildUpdateQuery(CRM_SCHEMA, config.table, id, payload);
       const rows = await sql.unsafe(query.text, query.values);
-      return json({ row: rows[0] || null });
+      const row = rows[0] || null;
+
+      if (entity === 'leads' && row && 'status' in payload && existingRow.status !== row.status) {
+        const statusChangePayload: Record<string, unknown> = {
+          cliente_id: row.cliente_id,
+          lead_id: row.id,
+          atendimento_id: null,
+          tipo: 'atualizacao_lead',
+          descricao: `Status alterado de ${existingRow.status} para ${row.status}.`,
+          entidade: 'Lead',
+          entidade_id: row.id,
+          status: row.status,
+          metadados: {
+            status_anterior: existingRow.status,
+            status_novo: row.status,
+            motivo_status_id: row.motivo_status_id || null,
+          },
+        };
+        if (collaborator?.id) statusChangePayload.criado_por = collaborator.id;
+        const insertQuery = buildInsertQuery(CRM_SCHEMA, 'historico_atendimentos', statusChangePayload);
+        await sql.unsafe(insertQuery.text, insertQuery.values);
+      }
+
+      return json({ row });
     }
 
     if (action === 'delete') {
