@@ -263,6 +263,13 @@ export default function Aprovacoes() {
     decisaoMutation.mutate({ id, status, observacao: observacoes[id], confirmarSemAnexo: confirmarSemAnexoFlag });
   }
 
+  // So desabilita os botoes da propria linha em decisao -- sem isso, `decisaoMutation.isPending`
+  // (estado unico da mutation) travava aprovar/reprovar de TODAS as linhas enquanto uma decisao
+  // qualquer estava em voo, mesmo sendo rapido, impedindo aprovacoes em sequencia.
+  function isRowPending(id) {
+    return decisaoMutation.isPending && decisaoMutation.variables?.id === id;
+  }
+
   // Checa `anexos_total` (ja vem na listagem, sem ida extra ao servidor) antes de aprovar --
   // deixa o aviso instantaneo no clique, em vez de esperar o 409 do backend pra so entao
   // mostrar o modal. O backend continua validando de novo (rede de seguranca contra dado
@@ -480,7 +487,7 @@ export default function Aprovacoes() {
                           size="icon"
                           title="Reprovar"
                           aria-label="Reprovar"
-                          disabled={decisaoMutation.isPending}
+                          disabled={isRowPending(row.id)}
                           onClick={() => handleDecision(row.id, 'reprovado')}
                           className="bg-red-600 text-white hover:bg-red-600/90"
                         >
@@ -490,7 +497,7 @@ export default function Aprovacoes() {
                           size="icon"
                           title="Aprovar"
                           aria-label="Aprovar"
-                          disabled={decisaoMutation.isPending}
+                          disabled={isRowPending(row.id)}
                           onClick={() => handleAprovar(row)}
                           className="bg-emerald-600 text-white hover:bg-emerald-600/90"
                         >
@@ -518,7 +525,7 @@ export default function Aprovacoes() {
                       size="icon"
                       title="Reprovar"
                       aria-label="Reprovar"
-                      disabled={decisaoMutation.isPending}
+                      disabled={isRowPending(row.id)}
                       onClick={() => handleDecision(row.id, 'reprovado')}
                       className="bg-red-600 text-white hover:bg-red-600/90"
                     >
@@ -528,7 +535,7 @@ export default function Aprovacoes() {
                       size="icon"
                       title="Aprovar"
                       aria-label="Aprovar"
-                      disabled={decisaoMutation.isPending}
+                      disabled={isRowPending(row.id)}
                       onClick={() => handleAprovar(row)}
                       className="bg-emerald-600 text-white hover:bg-emerald-600/90"
                     >
@@ -564,7 +571,7 @@ export default function Aprovacoes() {
               </div>
               <div className="flex justify-end gap-2">
                 <Button
-                  disabled={decisaoMutation.isPending}
+                  disabled={isRowPending(selected.id)}
                   onClick={() => handleDecision(selected.id, 'reprovado')}
                   className="bg-red-600 text-white hover:bg-red-600/90"
                 >
@@ -572,7 +579,7 @@ export default function Aprovacoes() {
                   Reprovar
                 </Button>
                 <Button
-                  disabled={decisaoMutation.isPending}
+                  disabled={isRowPending(selected.id)}
                   onClick={() => handleAprovar(selected)}
                   className="bg-emerald-600 text-white hover:bg-emerald-600/90"
                 >
@@ -594,9 +601,9 @@ export default function Aprovacoes() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={decisaoMutation.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel disabled={isRowPending(confirmarSemAnexo?.id)}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              disabled={decisaoMutation.isPending}
+              disabled={isRowPending(confirmarSemAnexo?.id)}
               onClick={() => {
                 const pendente = confirmarSemAnexo;
                 setConfirmarSemAnexo(null);
