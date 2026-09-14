@@ -84,6 +84,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
   const [quantidadeParcelas, setQuantidadeParcelas] = useState(2);
   const [visible, setVisible] = useState(open);
   const skipNextResetRef = useRef(false);
+  const skipNextParcelasAutoGenRef = useRef(false);
   const initialFormRef = useRef(EMPTY_FORM);
   const [novoFornecedorOpen, setNovoFornecedorOpen] = useState(false);
   const [novoFornecedorForm, setNovoFornecedorForm] = useState(FORNECEDOR_FORM_VAZIO);
@@ -288,7 +289,9 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
       setForm(loadedForm);
       initialFormRef.current = loadedForm;
       if (parcelasExistentes.length > 0) {
+        skipNextParcelasAutoGenRef.current = true;
         setParcelado(true);
+        setQuantidadeParcelas(parcelasExistentes.length);
         setDraftParcelas(
           parcelasExistentes.map((parcela) => ({
             valor: String(parcela.valor),
@@ -333,6 +336,10 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
   }
 
   useEffect(() => {
+    if (skipNextParcelasAutoGenRef.current) {
+      skipNextParcelasAutoGenRef.current = false;
+      return;
+    }
     if (!parcelado) return;
     setDraftParcelas(
       gerarParcelasAutomaticas({
@@ -342,10 +349,6 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
       }),
     );
   }, [form.valor, form.dataVencimento, parcelado, quantidadeParcelas]);
-
-  function addDraftParcela() {
-    setDraftParcelas((current) => [...current, { valor: '', data_vencimento: '' }]);
-  }
 
   function avisarAjusteDiaUtil(dataAjustada) {
     toast({
@@ -811,10 +814,6 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
                       )}
                     </div>
                   ))}
-                  <Button type="button" variant="outline" size="sm" onClick={addDraftParcela}>
-                    <Plus className="mr-1 h-4 w-4" />
-                    Adicionar parcela
-                  </Button>
                   <p className="text-xs text-muted-foreground">
                     A soma das parcelas precisa ser igual ao valor total da solicitação. O plano fica sujeito a
                     revisão do financeiro/contas a pagar depois de aprovado.
