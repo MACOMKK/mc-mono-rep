@@ -121,6 +121,7 @@ const ENTITY_CONFIG = {
   },
   categorias_veiculo: {
     table: 'categorias_veiculo',
+    schema: 'public',
     orderBy: 'nome',
     orderDirection: 'asc',
     allowedFields: ['nome', 'ativo', 'campos_extra'],
@@ -133,18 +134,21 @@ const ENTITY_CONFIG = {
   },
   marcas_veiculo: {
     table: 'marcas_veiculo',
+    schema: 'public',
     orderBy: 'nome',
     orderDirection: 'asc',
     allowedFields: ['nome', 'ativo'],
   },
   modelos_veiculo: {
     table: 'modelos_veiculo',
+    schema: 'public',
     orderBy: 'nome',
     orderDirection: 'asc',
     allowedFields: ['marca_id', 'categoria_veiculo_id', 'nome', 'ativo', 'ano_inicio', 'ano_fim'],
   },
   versoes_veiculo: {
     table: 'versoes_veiculo',
+    schema: 'public',
     orderBy: 'nome',
     orderDirection: 'asc',
     allowedFields: ['modelo_id', 'nome', 'ativo'],
@@ -706,7 +710,8 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
   }
 
   if (entity !== 'atendimentos') {
-    return `select ${countExpr}* from ${CRM_SCHEMA}.${ENTITY_CONFIG[entity].table}`;
+    const entitySchema = ENTITY_CONFIG[entity].schema ?? CRM_SCHEMA;
+    return `select ${countExpr}* from ${entitySchema}.${ENTITY_CONFIG[entity].table}`;
   }
 
   return `
@@ -1479,7 +1484,7 @@ Deno.serve(async (request) => {
       if (entity === 'veiculos_interesse' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
       }
-      const query = buildInsertQuery(CRM_SCHEMA, config.table, payload);
+      const query = buildInsertQuery(config.schema ?? CRM_SCHEMA, config.table, payload);
       const rows = await sql.unsafe(query.text, query.values);
       return json({ row: rows[0] || null });
     }
@@ -1496,7 +1501,7 @@ Deno.serve(async (request) => {
       if (entity === 'veiculos_interesse' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
       }
-      const query = buildUpdateQuery(CRM_SCHEMA, config.table, id, payload);
+      const query = buildUpdateQuery(config.schema ?? CRM_SCHEMA, config.table, id, payload);
       const rows = await sql.unsafe(query.text, query.values);
       const row = rows[0] || null;
 
@@ -1527,7 +1532,7 @@ Deno.serve(async (request) => {
     if (action === 'delete') {
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
       await ensureEntityAccess(entity, id, access, collaborator);
-      await sql.unsafe(`delete from ${CRM_SCHEMA}.${config.table} where id = $1;`, [id]);
+      await sql.unsafe(`delete from ${config.schema ?? CRM_SCHEMA}.${config.table} where id = $1;`, [id]);
       return json({ success: true });
     }
 
