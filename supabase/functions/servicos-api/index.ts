@@ -102,6 +102,17 @@ const ANEXO_TIPOS = [
   'comprovante_pagamento',
   'documento_rh',
   'pdf_unificado',
+  'fatura',
+  'contrato',
+  'comprovante_abastecimento',
+  'comprovante_hospedagem',
+  'comprovante_passagem',
+  'comprovante_pedagio',
+  'conta_agua',
+  'conta_energia',
+  'conta_telefone',
+  'folha_comissao',
+  'comunicado_interno',
   'outros',
 ] as const;
 const ORDER_BY_COLUMNS: Record<string, string> = {

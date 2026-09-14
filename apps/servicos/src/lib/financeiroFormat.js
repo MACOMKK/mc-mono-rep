@@ -47,6 +47,17 @@ export const TIPOS_ANEXO = [
   { value: 'comprovante_pagamento', label: 'Comprovante de pagamento' },
   { value: 'documento_rh', label: 'Documento RH' },
   { value: 'pdf_unificado', label: 'PDF único (assinado)' },
+  { value: 'fatura', label: 'Fatura' },
+  { value: 'contrato', label: 'Contrato' },
+  { value: 'comprovante_abastecimento', label: 'Comprovante de abastecimento' },
+  { value: 'comprovante_hospedagem', label: 'Comprovante de hospedagem' },
+  { value: 'comprovante_passagem', label: 'Comprovante de passagem / transporte' },
+  { value: 'comprovante_pedagio', label: 'Comprovante de pedágio' },
+  { value: 'conta_agua', label: 'Conta de água' },
+  { value: 'conta_energia', label: 'Conta de energia elétrica' },
+  { value: 'conta_telefone', label: 'Conta de telefone / internet' },
+  { value: 'folha_comissao', label: 'Folha ou relação de comissão' },
+  { value: 'comunicado_interno', label: 'Comunicado interno' },
   { value: 'outros', label: 'Outros' },
 ];
 
