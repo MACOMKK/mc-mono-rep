@@ -40,6 +40,8 @@ import { buildAssetsConfig, buildCollaboratorsConfig, buildCompaniesConfig, buil
 import {
   assetCategoryOptions,
   assetConditionOptions,
+  assetStatusOptions,
+  assetStatusLabels,
   collaboratorRoleOptions,
   collaboratorStatusOptions,
   contactTypeOptions,
@@ -96,7 +98,7 @@ function formatPhone(phone) {
 }
 
 const ENTITY_DEPENDENCIES = {
-  ativos: ['ativos', 'colaboradores', 'unidades', 'ativos_historico_posse'],
+  ativos: ['ativos', 'colaboradores', 'unidades', 'ativos_historico_posse', 'termos_posse'],
   cargos: ['cargos', 'departamentos', 'colaboradores'],
   colaboradores: ['colaboradores', 'ativos', 'linhas_corporativas', 'departamentos', 'cargos', 'empresas', 'unidades', 'sistemas', 'acessos_usuario_sistema', 'termos_posse'],
   contatos: ['contatos', 'unidades'],
@@ -471,6 +473,8 @@ export default function CatalogManager({ lockedEntityKey }) {
       ativos: buildAssetsConfig({
         assetCategoryOptions,
         assetConditionOptions,
+        assetStatusOptions,
+        assetStatusLabels,
         assets,
         collaborators,
         collaboratorOptions: activeCollaboratorOptions,

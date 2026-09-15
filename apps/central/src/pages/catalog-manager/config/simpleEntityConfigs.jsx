@@ -603,6 +603,8 @@ export function buildCorporateLinesConfig({
 export function buildAssetsConfig({
   assetCategoryOptions,
   assetConditionOptions,
+  assetStatusOptions,
+  assetStatusLabels,
   assets,
   collaborators,
   collaboratorOptions,
@@ -626,7 +628,7 @@ export function buildAssetsConfig({
       { key: 'marca', label: 'Marca', placeholder: 'Ex.: Dell', inputClassName: 'h-9 rounded-lg px-3 text-[14px]' },
       { key: 'modelo', label: 'Modelo', placeholder: 'Ex.: Latitude 5440', inputClassName: 'h-9 rounded-lg px-3 text-[14px]' },
       { key: 'numero_serie', label: 'Numero de serie', required: true, placeholder: 'Ex.: SN123456789', inputClassName: 'h-9 rounded-lg px-3 text-[14px]' },
-      { key: 'patrimonio', label: 'Patrimonio', placeholder: 'Ex.: MAC-AT-00125', inputClassName: 'h-9 rounded-lg px-3 text-[14px]' },
+      { key: 'patrimonio', label: 'Patrimonio', disabled: true, placeholder: 'Gerado automaticamente', inputClassName: 'h-9 rounded-lg px-3 text-[14px]' },
       {
         key: 'unidade_id',
         label: 'Unidade',
@@ -654,6 +656,13 @@ export function buildAssetsConfig({
         inputClassName: 'h-9 rounded-lg px-3 text-[14px]',
         options: collaboratorOptions,
       },
+      {
+        key: 'status',
+        label: 'Status',
+        type: 'select',
+        inputClassName: 'h-9 rounded-lg px-3 text-[14px]',
+        options: assetStatusOptions,
+      },
     ],
     columns: [
       { key: 'patrimonio', label: 'Codigo', render: (value, row) => value || row.id?.slice(0, 8) || '-' },
@@ -665,7 +674,7 @@ export function buildAssetsConfig({
         label: 'Status',
         render: (value) => (
           <Badge variant="outline" className={statusTone[value] || statusTone.inativo}>
-            {value === 'em_uso' ? 'Em uso' : value || '-'}
+            {assetStatusLabels[value] || value || '-'}
           </Badge>
         ),
       },

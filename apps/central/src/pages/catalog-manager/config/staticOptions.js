@@ -58,6 +58,20 @@ export const assetConditionOptions = [
   { value: 'inservivel', label: 'Inservivel' },
 ];
 
+export const assetStatusOptions = [
+  { value: 'disponivel', label: 'Disponivel (automatico)' },
+  { value: 'em_uso', label: 'Em uso (automatico)' },
+  { value: 'manutencao', label: 'Em manutencao' },
+  { value: 'descartado', label: 'Descartado' },
+];
+
+export const assetStatusLabels = {
+  disponivel: 'Disponivel',
+  em_uso: 'Em uso',
+  manutencao: 'Em manutencao',
+  descartado: 'Descartado',
+};
+
 export const infrastructureTypeOptions = [
   { value: 'ip', label: 'IP' },
   { value: 'link', label: 'LINK' },

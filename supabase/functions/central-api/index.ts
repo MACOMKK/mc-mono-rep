@@ -1015,7 +1015,19 @@ function normalizeDigits(value: string | null) {
 
 function normalizeAtivosPayload(payload: Record<string, unknown>) {
   const normalized = { ...payload };
-  normalized.status = normalized.usuario_id ? 'em_uso' : 'disponivel';
+  const requestedStatus = typeof normalized.status === 'string' ? normalized.status.trim().toLowerCase() : '';
+  const manualStatuses = ['manutencao', 'descartado'];
+
+  normalized.status = manualStatuses.includes(requestedStatus)
+    ? requestedStatus
+    : normalized.usuario_id
+      ? 'em_uso'
+      : 'disponivel';
+
+  if (normalized.status === 'descartado') {
+    normalized.usuario_id = null;
+  }
+
   return normalized;
 }
 
