@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { jsPDF } from 'jspdf';
 import { PDFDocument } from 'pdf-lib';
@@ -25,6 +25,7 @@ import { Card } from '@/components/ui/card';
 import FeedbackToast from '@/components/ui/feedback-toast';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import PaginationControls from '@/components/PaginationControls';
 import { useAuth } from '@/lib/AuthContext';
 import { catalogApi } from '@/lib/catalogApi';
 import { supabase } from '@/lib/supabaseClient';
@@ -218,6 +219,7 @@ const conditionLabels = {
 };
 
 const LOGO_URL = 'https://res.cloudinary.com/drevbr5eq/image/upload/q_auto/f_auto/v1777603989/logo_vermelha_e2aob2.png';
+const DEFAULT_PAGE_SIZE = 10;
 
 function formatCpf(value) {
   const digits = String(value || '').replace(/\D/g, '');
@@ -674,6 +676,8 @@ export default function TermsPossession() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [feedback, setFeedback] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [pendingActions, setPendingActions] = useState(/** @type {Record<string, Record<string, boolean>>} */ ({}));
 
   /**
@@ -763,6 +767,17 @@ export default function TermsPossession() {
       })
       .sort((left, right) => (left.collaborator.nome || '').localeCompare(right.collaborator.nome || ''));
   }, [assetsByCollaboratorId, collaborators, departmentById, normalizedSearch, statusFilter, terms]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [normalizedSearch, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(collaboratorCards.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedCollaboratorCards = useMemo(
+    () => collaboratorCards.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [collaboratorCards, currentPage, pageSize]
+  );
 
   const ensureTermRows = async (collaborator, linkedAssets, latestTermsByAsset) => {
     const rows = [];
@@ -1174,7 +1189,7 @@ export default function TermsPossession() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {collaboratorCards.map(({ collaborator, assets: linkedAssets, status, latestTermsByAsset, termRows }) => {
+          {paginatedCollaboratorCards.map(({ collaborator, assets: linkedAssets, status, latestTermsByAsset, termRows }) => {
             const departmentName = departmentById.get(collaborator.departamento_id) || 'Sem departamento';
             const statusInfo = statusMeta[status];
             const StatusIcon = statusInfo.icon;
@@ -1457,6 +1472,19 @@ export default function TermsPossession() {
               </Card>
             );
           })}
+
+          <Card className="rounded-2xl border border-border/80 p-0 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
+            <PaginationControls
+              page={currentPage}
+              pageSize={pageSize}
+              totalItems={collaboratorCards.length}
+              onPageChange={setPage}
+              onPageSizeChange={(value) => {
+                setPageSize(value);
+                setPage(1);
+              }}
+            />
+          </Card>
         </div>
       )}
 
