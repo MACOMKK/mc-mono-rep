@@ -2605,7 +2605,7 @@ Deno.serve(async (request) => {
 
     if (action === 'update') {
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
-      const beforeRow = shouldAuditReportsEntity(entity) || entity === 'colaboradores' || entity === 'ativos' || entity === 'linhas_corporativas'
+      const beforeRow = shouldAuditReportsEntity(entity) || entity === 'colaboradores' || entity === 'ativos' || entity === 'linhas_corporativas' || entity === 'termos_posse'
         ? await fetchRowById(schema, table, id)
         : null;
       const sanitized = sanitizePayload(entity, payload);
@@ -2614,6 +2614,13 @@ Deno.serve(async (request) => {
       }
       if (entity === 'termos_posse' && sanitized.colaborador_anchor && typeof sanitized.colaborador_anchor === 'object') {
         sanitized.colaborador_anchor = JSON.stringify(sanitized.colaborador_anchor);
+      }
+      if (
+        entity === 'termos_posse' &&
+        'arquivo_path' in sanitized &&
+        ['assinado', 'devolvido'].includes(String(beforeRow?.status || ''))
+      ) {
+        return json({ error: 'Nao e possivel substituir o comprovante de um termo ja assinado ou devolvido.' }, 400);
       }
       const normalized =
         entity === 'ativos'

@@ -1364,6 +1364,7 @@ export default function TermsPossession() {
                         const inputId = `signed-file-${asset.id}`;
                         const isAttaching = attachSignedFileMutation.isPending && attachSignedFileMutation.variables?.term?.id === term?.id;
                         const isReturning = registerReturnMutation.isPending && registerReturnMutation.variables?.asset?.id === asset.id;
+                        const canAttachFile = term && term.status !== 'assinado' && term.status !== 'devolvido';
 
                         return (
                           <div
@@ -1406,26 +1407,30 @@ export default function TermsPossession() {
                                   <span className="text-xs text-muted-foreground">Sem comprovante assinado anexado.</span>
                                 )}
 
-                                <input
-                                  id={inputId}
-                                  type="file"
-                                  accept={SIGNED_FILE_ACCEPT}
-                                  className="hidden"
-                                  onChange={(event) => {
-                                    const file = event.target.files?.[0];
-                                    event.target.value = '';
-                                    if (file) {
-                                      attachSignedFileMutation.mutate({ term, file });
-                                    }
-                                  }}
-                                />
-                                <label
-                                  htmlFor={inputId}
-                                  className="ml-auto inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground hover:bg-muted"
-                                >
-                                  <Paperclip className="h-3 w-3" />
-                                  {isAttaching ? 'Enviando...' : term.arquivo_path ? 'Substituir' : 'Anexar comprovante'}
-                                </label>
+                                {canAttachFile ? (
+                                  <>
+                                    <input
+                                      id={inputId}
+                                      type="file"
+                                      accept={SIGNED_FILE_ACCEPT}
+                                      className="hidden"
+                                      onChange={(event) => {
+                                        const file = event.target.files?.[0];
+                                        event.target.value = '';
+                                        if (file) {
+                                          attachSignedFileMutation.mutate({ term, file });
+                                        }
+                                      }}
+                                    />
+                                    <label
+                                      htmlFor={inputId}
+                                      className="ml-auto inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground hover:bg-muted"
+                                    >
+                                      <Paperclip className="h-3 w-3" />
+                                      {isAttaching ? 'Enviando...' : term.arquivo_path ? 'Substituir' : 'Anexar comprovante'}
+                                    </label>
+                                  </>
+                                ) : null}
                               </div>
                             ) : (
                               <p className="pl-6 text-xs text-muted-foreground">
