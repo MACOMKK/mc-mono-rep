@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { crmDataClient } from '@/api/crmDataClient';
 import { cn } from '@/lib/utils';
 import { LEAD_STATUS_BADGE, LEAD_STATUS_LABEL } from '@/lib/leadStatus';
-import { Pencil, Phone, Mail, Car, Store, BriefcaseBusiness, UserRound } from 'lucide-react';
+import EventoCard from '@/components/eventos/EventoCard';
+import { Pencil, Phone, Mail, Car, Store, BriefcaseBusiness, UserRound, AlarmClock } from 'lucide-react';
 
 function formatDate(value) {
   if (!value) return '-';
@@ -54,6 +55,17 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit }) {
   const categoria = categoriasVeiculo.find((item) => item.id === veiculo?.categoria_veiculo_id) || null;
   const camposExtraSegmento = categoria?.campos_extra || [];
 
+  const { data: atividadesPage = { rows: [] } } = useQuery({
+    queryKey: ['lead-atividades', lead?.id],
+    queryFn: () => crmDataClient.entities.Atividade.listPage({
+      orderBy: '-created_date',
+      limit: 50,
+      filters: { lead_id: lead.id },
+    }),
+    enabled: open && Boolean(lead?.id),
+  });
+  const atividades = atividadesPage.rows || [];
+
   if (!lead) return null;
 
   return (
@@ -87,6 +99,16 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit }) {
             {lead.status === 'perdido' ? (
               <Item label="Motivo da perda">{lead.motivo_perda || '-'}</Item>
             ) : null}
+          </Section>
+
+          <Section icon={AlarmClock} title="Atividades">
+            <div className="space-y-2 md:col-span-2">
+              {atividades.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma atividade registrada.</p>
+              ) : atividades.map((atividade) => (
+                <EventoCard key={atividade.id} evento={atividade} onClick={() => {}} />
+              ))}
+            </div>
           </Section>
 
           {veiculo ? (

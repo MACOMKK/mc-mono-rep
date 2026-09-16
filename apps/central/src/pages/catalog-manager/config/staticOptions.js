@@ -44,6 +44,7 @@ export const assetCategoryOptions = [
   { value: 'impressora', label: 'Impressora' },
   { value: 'celular', label: 'Celular' },
   { value: 'tablet', label: 'Tablet' },
+  { value: 'tv', label: 'TV' },
   { value: 'periferico', label: 'Periferico' },
   { value: 'rede', label: 'Equipamento de rede' },
   { value: 'servidor', label: 'Servidor' },

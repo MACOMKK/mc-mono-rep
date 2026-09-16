@@ -2228,6 +2228,12 @@ Deno.serve(async (request) => {
         validateComprovanteSize(updateBody.payload?.comprovante_file_size);
       }
 
+      // Beneficiario (colaborador) e opcional no suprimento de caixa -- quando nao preenchido o
+      // frontend manda '' em vez de omitir a chave, e a coluna e uuid: sem essa normalizacao o
+      // update abaixo quebra com "invalid input syntax for type uuid" (chk_servicos_solicitacoes_beneficiario).
+      if (payload.colaborador_beneficiario_id === '') payload.colaborador_beneficiario_id = null;
+      if (payload.fornecedor_id === '') payload.fornecedor_id = null;
+
       if ('tipo_beneficiario' in payload) {
         const tipoBeneficiario = String(payload.tipo_beneficiario || '').trim();
         if (!['fornecedor', 'colaborador'].includes(tipoBeneficiario)) {
@@ -2526,6 +2532,12 @@ Deno.serve(async (request) => {
         validateComprovanteSize(reenviarBody.payload?.comprovante_file_size);
       }
 
+      // Beneficiario (colaborador) e opcional no suprimento de caixa -- quando nao preenchido o
+      // frontend manda '' em vez de omitir a chave, e a coluna e uuid: sem essa normalizacao o
+      // update abaixo quebra com "invalid input syntax for type uuid" (chk_servicos_solicitacoes_beneficiario).
+      if (payload.colaborador_beneficiario_id === '') payload.colaborador_beneficiario_id = null;
+      if (payload.fornecedor_id === '') payload.fornecedor_id = null;
+
       if ('tipo_beneficiario' in payload) {
         const tipoBeneficiario = String(payload.tipo_beneficiario || '').trim();
         if (!['fornecedor', 'colaborador'].includes(tipoBeneficiario)) {
@@ -2590,7 +2602,7 @@ Deno.serve(async (request) => {
         [id, ...fields.map((field) => payload[field])],
       );
 
-      const row = rows[0] || null;
+      let row = rows[0] || null;
       await insertHistorico(id, 'reenviada', collaborator!.id as string);
 
       if (parcelasPropostas !== null) {
@@ -2598,7 +2610,33 @@ Deno.serve(async (request) => {
         await substituirPlanoParcelas(id, parcelasPropostas, valorReferencia, collaborator!.id as string);
       }
 
-      if (row) await notifyAprovadorNovaSolicitacao(row, 'Solicitação corrigida e reenviada', collaborator!.id as string);
+      // Mesmo comportamento do create (linhas ~2173-2195): suprimento de caixa sem aprovador
+      // nao deveria voltar pra fila de aprovacao manual so por ter sido reenviado -- pula direto
+      // pra 'aprovado' de novo, igual nasceu na criacao original.
+      const aprovadorDispensadoReenvio =
+        tipoBeneficiarioEfetivo === 'colaborador' && (await getSuprimentoCaixaSemAprovador());
+      const autoAprovarReenvio = aprovadorDispensadoReenvio && (await getSuprimentoCaixaAutoAprovar());
+
+      if (row && autoAprovarReenvio) {
+        const observacaoAutoAprovacao = 'Aprovação automática (suprimento de caixa sem aprovador).';
+        const aprovadoRows = await sql.unsafe(
+          `
+            update ${SERVICOS_SCHEMA}.solicitacoes_pagamento
+            set status = 'aprovado', observacao_analise = $2, analisado_por = $3, analisado_em = now()
+            where id = $1
+            returning *;
+          `,
+          [row.id, observacaoAutoAprovacao, collaborator!.id],
+        );
+        row = aprovadoRows[0] || row;
+        await insertHistorico(id, 'aprovada', collaborator!.id as string, observacaoAutoAprovacao);
+        await enqueueStatusEmail(row, 'aprovado');
+        await notifySolicitanteStatusChange(row, 'aprovado', collaborator!.id as string);
+        await notifyFinanceirosSolicitacaoAprovada(row, collaborator!.id as string);
+      } else if (row) {
+        await notifyAprovadorNovaSolicitacao(row, 'Solicitação corrigida e reenviada', collaborator!.id as string);
+      }
+
       return json({ row });
     }
 

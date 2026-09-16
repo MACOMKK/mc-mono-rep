@@ -51,3 +51,35 @@ export const LEAD_STATUS_REQUIREMENTS = {
   convertido: { motivo: true, fields: [] },
   perdido: { motivo: true, fields: [] },
 };
+
+// Resultado de gestao_crm.atendimentos -> status de lead que a conclusao da atividade
+// provoca (gestao_crm.apply_activity_outcome()). Usado para decidir, no formulario de
+// conclusao de atividade (EventoForm), quando exigir motivo/previsao de fechamento --
+// mesma exigencia de LEAD_STATUS_REQUIREMENTS, so que disparada pelo resultado do
+// atendimento em vez de uma mudanca manual de status no Kanban/LeadForm.
+export const RESULTADO_LEAD_STATUS_TARGET = {
+  venda_realizada: 'convertido',
+  lead_perdido: 'perdido',
+  proposta_enviada: 'negociacao',
+  visita_agendada: 'qualificado',
+  test_drive: 'qualificado',
+};
+
+// Guard de elegibilidade: replica o WHERE de gestao_crm.apply_activity_outcome() --
+// a transicao (e portanto a exigencia de motivo/previsao) so ocorre se o lead ainda
+// estiver num status "anterior" ao alvo. Se o lead ja passou do alvo, o UPDATE do
+// trigger e um no-op e nada e exigido.
+const RESULTADO_ELIGIBLE_LEAD_STATUSES = {
+  venda_realizada: null, // sempre roda, independente do status atual
+  lead_perdido: null, // sempre roda, independente do status atual
+  proposta_enviada: ['novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao'],
+  visita_agendada: ['novo', 'tentativa_contato', 'em_contato', 'qualificado'],
+  test_drive: ['novo', 'tentativa_contato', 'em_contato', 'qualificado'],
+};
+
+export function isLeadEligibleForResultado(resultado, leadStatus) {
+  if (!(resultado in RESULTADO_ELIGIBLE_LEAD_STATUSES)) return false;
+  const eligibleStatuses = RESULTADO_ELIGIBLE_LEAD_STATUSES[resultado];
+  if (eligibleStatuses === null) return true;
+  return eligibleStatuses.includes(leadStatus);
+}

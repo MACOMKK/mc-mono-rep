@@ -155,6 +155,11 @@ export default function Eventos() {
     queryFn: () => crmDataClient.entities.Responsavel.list(),
   });
 
+  const { data: motivosStatus = [] } = useQuery({
+    queryKey: ['crm-motivos-status'],
+    queryFn: () => crmDataClient.entities.MotivoStatus.list('nome'),
+  });
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['eventos'] });
     queryClient.invalidateQueries({ queryKey: ['eventos-contadores'] });
@@ -439,6 +444,7 @@ export default function Eventos() {
           evento={editing}
           leads={leadsDaEmpresa}
           atendimentos={porEmpresa}
+          motivosStatus={motivosStatus}
           onSave={(data) => saveMutation.mutate({ id: editing?.id || null, data })}
           onDelete={(id) => deleteMutation.mutate(id)}
         />

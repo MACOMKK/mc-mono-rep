@@ -10,6 +10,7 @@ import { companyFromUnit } from '@/lib/empresa';
 import { deriveUnidadesFromResponsaveis } from '@/hooks/useUnidadesEmpresa';
 import { crmDataClient } from '@/api/crmDataClient';
 import { LEAD_STATUS_LABEL, LEAD_STATUS_REQUIREMENTS } from '@/lib/leadStatus';
+import MotivoStatusSelect from '@/components/leads/MotivoStatusSelect';
 import {
   BriefcaseBusiness,
   Car,
@@ -572,14 +573,12 @@ export default function LeadForm({
                 </Field>
                 {LEAD_STATUS_REQUIREMENTS[data.status]?.motivo ? (
                   <Field label="Motivo *">
-                    <Select value={data.motivo_status_id || ''} onValueChange={(value) => set('motivo_status_id', value)}>
-                      <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione um motivo" /></SelectTrigger>
-                      <SelectContent className="rounded-none">
-                        {motivosStatus.filter((m) => m.status === data.status && m.ativo).map((motivo) => (
-                          <SelectItem key={motivo.id} value={motivo.id}>{motivo.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <MotivoStatusSelect
+                      status={data.status}
+                      value={data.motivo_status_id || ''}
+                      onChange={(value) => set('motivo_status_id', value)}
+                      motivosStatus={motivosStatus}
+                    />
                   </Field>
                 ) : null}
                 {statusRequirementError ? (

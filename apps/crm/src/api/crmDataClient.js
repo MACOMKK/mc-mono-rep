@@ -1,6 +1,11 @@
 import { crmApi } from '@macom/api-client/crmApi';
 import { assertSupabaseConfigured, supabase } from '@macom/api-client/supabaseClient';
-import { LEAD_STATUS_LABEL } from '@/lib/leadStatus';
+import {
+  LEAD_STATUS_LABEL,
+  LEAD_STATUS_REQUIREMENTS,
+  RESULTADO_LEAD_STATUS_TARGET,
+  isLeadEligibleForResultado,
+} from '@/lib/leadStatus';
 
 const CRM_ATTACHMENTS_BUCKET = 'crm-anexos';
 
@@ -375,6 +380,8 @@ function mapEventoRow(row = {}) {
     observacoes: row.observacoes || '',
     resultado: normalizedResult,
     motivo_resultado: row.motivo_resultado || '',
+    motivo_status_id: row.motivo_status_id || '',
+    previsao_fechamento: normalizeDateOnly(row.previsao_fechamento),
     concluido_em: row.concluido_em || null,
     ...mapBaseDates(row),
   };
@@ -523,6 +530,18 @@ function mapEventoPayload(data = {}, lead) {
     throw new Error('Informe o motivo da perda para concluir a atividade.');
   }
 
+  const targetLeadStatus = data.status === 'concluida' ? RESULTADO_LEAD_STATUS_TARGET[data.resultado] : null;
+  const willTransitionLead = Boolean(targetLeadStatus) && isLeadEligibleForResultado(data.resultado, lead?.status);
+  const targetRequirement = willTransitionLead ? LEAD_STATUS_REQUIREMENTS[targetLeadStatus] : null;
+
+  if (targetRequirement?.motivo && !data.motivo_status_id) {
+    throw new Error('Selecione um motivo para concluir esta atividade.');
+  }
+
+  if (targetRequirement?.fields.includes('previsao_fechamento') && !data.previsao_fechamento) {
+    throw new Error('Informe a previsao de fechamento para concluir esta atividade.');
+  }
+
   return {
     lead_id: data.lead_id,
     cliente_id: lead?.cliente_id || data.cliente_id,
@@ -536,6 +555,8 @@ function mapEventoPayload(data = {}, lead) {
     motivo_resultado: data.status === 'concluida' && data.resultado === 'lead_perdido'
       ? String(data.motivo_resultado || '').trim()
       : null,
+    motivo_status_id: targetRequirement?.motivo ? data.motivo_status_id : null,
+    previsao_fechamento: targetRequirement?.fields.includes('previsao_fechamento') ? data.previsao_fechamento : null,
   };
 }
 

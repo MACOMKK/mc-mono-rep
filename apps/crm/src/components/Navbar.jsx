@@ -1,4 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { crmDataClient } from '@/api/crmDataClient';
 import {
   BarChart3,
   Calendar,
@@ -59,6 +61,11 @@ function NavMenu({ label, items }) {
               {item.path ? <item.icon className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
             </span>
             {item.label}
+            {item.badge > 0 ? (
+              <span className="ml-auto rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-black text-white">
+                {item.badge}
+              </span>
+            ) : null}
             {!item.path ? (
               <span className="ml-auto text-[9px] font-black uppercase tracking-widest text-slate-400">
                 {item.comingSoon ? 'Em breve' : 'Sem acesso'}
@@ -145,6 +152,24 @@ export default function Navbar({ realtime }) {
   const { logout, user } = useAuth();
   const userInitial = (user?.name || user?.email || 'U').slice(0, 1).toUpperCase();
 
+  const { data: atrasadasCount = 0 } = useQuery({
+    queryKey: ['crm-atividades-atrasadas', empresa],
+    queryFn: async () => {
+      const ontem = new Date();
+      ontem.setDate(ontem.getDate() - 1);
+      const result = await crmDataClient.entities.Atividade.listPage({
+        limit: 1,
+        filters: {
+          status: 'planejada',
+          proximo_to: ontem.toISOString().slice(0, 10),
+          ...(empresa !== 'Todas' ? { empresa } : {}),
+        },
+      });
+      return result.count || 0;
+    },
+    refetchInterval: 60000,
+  });
+
   return (
     <header className="bg-[#1a1a1a] px-6">
       <div className="flex h-14 items-center">
@@ -157,7 +182,7 @@ export default function Navbar({ realtime }) {
 
         <nav className="hidden h-full items-center md:flex">
           <NavMenu label="Vendas" items={[
-            { label: 'Agenda de Atividades', icon: Tag, path: '/atividades' },
+            { label: 'Agenda de Atividades', icon: Tag, path: '/atividades', badge: atrasadasCount },
             { label: 'Leads', icon: DollarSign, path: '/leads' },
             { label: 'Contatos e Clientes', icon: Users, path: '/clientes' },
             { label: 'Atendimento', icon: Headphones, path: '/atendimento' },

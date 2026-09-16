@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Plus, LayoutGrid, List, Search, RotateCcw } from 'lucide-react';
 import LeadForm from '@/components/leads/LeadForm';
+import MotivoStatusSelect from '@/components/leads/MotivoStatusSelect';
 import LeadViewer from '@/components/leads/LeadViewer';
 import LeadsKanban from '@/components/leads/LeadsKanban';
 import ListPagination from '@/components/ListPagination';
@@ -784,9 +785,6 @@ export default function Leads() {
 
       {(() => {
         const requirement = statusTarget ? LEAD_STATUS_REQUIREMENTS[statusTarget.status] : null;
-        const motivosDoStatus = statusTarget
-          ? motivosStatus.filter((m) => m.status === statusTarget.status && m.ativo)
-          : [];
         const closeDialog = () => {
           setStatusTarget(null);
           setStatusMotivoId('');
@@ -825,18 +823,12 @@ export default function Leads() {
                 {requirement?.motivo && (
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Motivo</label>
-                    <Select value={statusMotivoId} onValueChange={setStatusMotivoId}>
-                      <SelectTrigger className="rounded-none">
-                        <SelectValue placeholder="Selecione um motivo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {motivosDoStatus.length === 0 ? (
-                          <div className="px-3 py-2 text-xs text-muted-foreground">Nenhum motivo cadastrado para este status.</div>
-                        ) : motivosDoStatus.map((motivo) => (
-                          <SelectItem key={motivo.id} value={motivo.id}>{motivo.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <MotivoStatusSelect
+                      status={statusTarget?.status}
+                      value={statusMotivoId}
+                      onChange={setStatusMotivoId}
+                      motivosStatus={motivosStatus}
+                    />
                   </div>
                 )}
 

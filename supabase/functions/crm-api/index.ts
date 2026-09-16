@@ -75,6 +75,8 @@ const ENTITY_CONFIG = {
       'observacoes',
       'resultado',
       'motivo_resultado',
+      'motivo_status_id',
+      'previsao_fechamento',
       'concluido_em',
     ],
   },
@@ -332,7 +334,9 @@ function mapDatabaseError(error: unknown) {
 
   if (message.includes('Selecione um motivo para mover o lead')
     || message.includes('motivo selecionado nao e valido')
-    || message.includes('Informe a previsao de fechamento para mover o lead')) {
+    || message.includes('Informe a previsao de fechamento para mover o lead')
+    || message.includes('Selecione um motivo para concluir esta atividade')
+    || message.includes('Informe a previsao de fechamento para concluir esta atividade')) {
     return message;
   }
 

@@ -32,6 +32,10 @@ const TABLE_CACHE_CONFIG = {
   },
   atendimentos: {
     queryKeys: [['eventos'], ['eventos-resumo'], ['eventos-contadores'], ['cliente-atendimentos'], ['atividade-planejadas'], ['dashboard-metrics']],
+    // Contagens agregadas (nao arrays/paginas de atendimento) -- patchCachedQueries nao sabe
+    // atualiza-las incrementalmente, entao sao sempre invalidadas (refetch), independente do
+    // eventType, em vez de entrarem em queryKeys.
+    countKeys: [['crm-atividades-atrasadas']],
     mapRow: mapAtendimentoRow,
   },
   historico_atendimentos: {
@@ -267,6 +271,10 @@ function handleRealtimeChange(queryClient, payload) {
   const eventType = payload.eventType;
   const oldId = payload.old?.id;
   const nextItem = config.mapRow ? config.mapRow(payload.new || payload.old || {}) : null;
+
+  if (config.countKeys?.length) {
+    invalidateQueries(queryClient, config.countKeys);
+  }
 
   if (!config.mapRow) {
     invalidateQueries(queryClient, queryKeys);

@@ -7,7 +7,13 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Building2, Car, Phone, Tag, UserRound } from 'lucide-react';
 
-import { ACTIVE_LEAD_STATUSES as ACTIVE_LEAD_STATUSES_LIST } from '@/lib/leadStatus';
+import {
+  ACTIVE_LEAD_STATUSES as ACTIVE_LEAD_STATUSES_LIST,
+  LEAD_STATUS_REQUIREMENTS,
+  RESULTADO_LEAD_STATUS_TARGET,
+  isLeadEligibleForResultado,
+} from '@/lib/leadStatus';
+import MotivoStatusSelect from '@/components/leads/MotivoStatusSelect';
 
 const ACTIVE_LEAD_STATUSES = new Set(ACTIVE_LEAD_STATUSES_LIST);
 const PLANNED_ACTIVITY_STATUSES = new Set(['planejada']);
@@ -60,6 +66,8 @@ function createInitialData(evento, leads) {
     observacoes: '',
     resultado: '',
     motivo_resultado: '',
+    motivo_status_id: '',
+    previsao_fechamento: '',
     proxima_atividade: {
       titulo: '',
       tipo_evento: 'ligacao',
@@ -68,7 +76,7 @@ function createInitialData(evento, leads) {
   });
 }
 
-export default function EventoForm({ open, onOpenChange, evento, leads = [], atendimentos = [], onSave, onDelete }) {
+export default function EventoForm({ open, onOpenChange, evento, leads = [], atendimentos = [], motivosStatus = [], onSave, onDelete }) {
   const availableLeads = useMemo(() => {
     const hasOpenAttendance = (leadId) => atendimentos.some((atendimento) => (
       atendimento.lead_id === leadId &&
@@ -94,12 +102,21 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
   const closesLead = needsResult && ['venda_realizada', 'lead_perdido'].includes(data.resultado);
   const needsNextActivity = needsResult && data.resultado && !closesLead && ACTIVE_LEAD_STATUSES.has(selectedLead?.status);
   const needsScheduledDate = data.status === 'planejada';
+
+  const targetLeadStatus = needsResult ? RESULTADO_LEAD_STATUS_TARGET[data.resultado] : null;
+  const willTransitionLead = Boolean(targetLeadStatus) && isLeadEligibleForResultado(data.resultado, selectedLead?.status);
+  const targetRequirement = willTransitionLead ? LEAD_STATUS_REQUIREMENTS[targetLeadStatus] : null;
+  const needsMotivoStatus = Boolean(targetRequirement?.motivo);
+  const needsPrevisaoFechamento = Boolean(targetRequirement?.fields.includes('previsao_fechamento'));
+
   const canSave = Boolean(
     data.lead_id
     && data.titulo
     && (!needsScheduledDate || data.proximo_contato)
     && (!needsResult || data.resultado)
     && (!needsLossReason || String(data.motivo_resultado || '').trim())
+    && (!needsMotivoStatus || data.motivo_status_id)
+    && (!needsPrevisaoFechamento || data.previsao_fechamento)
     && (!needsNextActivity || (
       String(data.proxima_atividade?.titulo || '').trim()
       && data.proxima_atividade?.tipo_evento
@@ -127,7 +144,22 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
       status,
       resultado: status === 'concluida' ? current.resultado : '',
       motivo_resultado: status === 'concluida' ? current.motivo_resultado : '',
+      motivo_status_id: status === 'concluida' ? current.motivo_status_id : '',
+      previsao_fechamento: status === 'concluida' ? current.previsao_fechamento : '',
     }));
+  }
+
+  function setResultado(resultado) {
+    setData((current) => {
+      const targetStatus = RESULTADO_LEAD_STATUS_TARGET[resultado];
+      const requirement = targetStatus ? LEAD_STATUS_REQUIREMENTS[targetStatus] : null;
+      return {
+        ...current,
+        resultado,
+        motivo_status_id: requirement?.motivo ? current.motivo_status_id : '',
+        previsao_fechamento: requirement?.fields.includes('previsao_fechamento') ? current.previsao_fechamento : '',
+      };
+    });
   }
 
   return (
@@ -193,6 +225,7 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
                   <SelectItem value="email">E-mail</SelectItem>
                   <SelectItem value="visita">Visita</SelectItem>
                   <SelectItem value="test_drive">Test-drive</SelectItem>
+                  <SelectItem value="tarefa">Tarefa</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
@@ -212,7 +245,7 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
             {needsResult ? (
               <div className="col-span-2">
                 <Field label="Resultado *">
-                  <Select value={data.resultado || ''} onValueChange={(value) => set('resultado', value)} disabled={isClosed}>
+                  <Select value={data.resultado || ''} onValueChange={setResultado} disabled={isClosed}>
                     <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione o resultado" /></SelectTrigger>
                     <SelectContent className="rounded-none">
                       <SelectItem value="contato_realizado">Contato realizado</SelectItem>
@@ -237,6 +270,33 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
                     disabled={isClosed}
                     className="resize-none rounded-none text-sm"
                     rows={2}
+                  />
+                </Field>
+              </div>
+            ) : null}
+            {needsMotivoStatus ? (
+              <div className="col-span-2">
+                <Field label="Motivo *">
+                  <MotivoStatusSelect
+                    status={targetLeadStatus}
+                    value={data.motivo_status_id || ''}
+                    onChange={(value) => set('motivo_status_id', value)}
+                    motivosStatus={motivosStatus}
+                    disabled={isClosed}
+                  />
+                </Field>
+              </div>
+            ) : null}
+            {needsPrevisaoFechamento ? (
+              <div className="col-span-2">
+                <Field label="Previsao de fechamento *">
+                  <Input
+                    required
+                    type="date"
+                    value={data.previsao_fechamento || ''}
+                    onChange={(event) => set('previsao_fechamento', event.target.value)}
+                    disabled={isClosed}
+                    className="h-9 rounded-none text-sm"
                   />
                 </Field>
               </div>
@@ -269,6 +329,7 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
                         <SelectItem value="email">E-mail</SelectItem>
                         <SelectItem value="visita">Visita</SelectItem>
                         <SelectItem value="test_drive">Test-drive</SelectItem>
+                        <SelectItem value="tarefa">Tarefa</SelectItem>
                       </SelectContent>
                     </Select>
                   </Field>
