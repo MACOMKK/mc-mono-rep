@@ -16,7 +16,10 @@ const CRM_SYSTEM_SLUG = 'crm';
 
 const ENTITY_CONFIG = {
   clientes: {
-    table: 'clientes',
+    // Tabela fisica e a extensao comercial (gestao_crm.clientes_crm) -- a entidade
+    // de API continua se chamando 'clientes' (identidade + extensao combinadas na
+    // resposta). Ver 20260915120000_extract_public_clientes.sql.
+    table: 'clientes_crm',
     orderBy: 'criado_em',
     orderDirection: 'desc',
     allowedFields: [
@@ -259,12 +262,16 @@ function mapDatabaseError(error: unknown) {
     return 'Este lead ja possui uma atividade planejada.';
   }
 
-  if (message.includes('idx_crm_clientes_telefone_unique')) {
+  if (message.includes('idx_clientes_telefone_unique')) {
     return 'Ja existe outro cliente com este telefone.';
   }
 
-  if (message.includes('idx_crm_clientes_email_unique')) {
+  if (message.includes('idx_clientes_email_unique')) {
     return 'Ja existe outro cliente com este e-mail.';
+  }
+
+  if (message.includes('idx_clientes_cpf_cnpj_unique')) {
+    return 'Ja existe outro cliente com este CPF/CNPJ.';
   }
 
   if (message.includes('categorias_veiculo_nome_key')) {
@@ -404,6 +411,38 @@ function sanitizeVeiculoPayload(payload: Record<string, unknown> = {}) {
     }
   }
   return sanitized;
+}
+
+// cliente e dividido entre public.clientes (identidade, reaproveitavel por
+// outros apps) e ${CRM_SCHEMA}.clientes_crm (extensao comercial do CRM) -- mesmo
+// id nas duas tabelas. Ver 20260915120000_extract_public_clientes.sql.
+const CLIENTE_IDENTITY_FIELDS = [
+  'nome',
+  'telefone',
+  'telefone_normalizado',
+  'email',
+  'email_normalizado',
+  'cpf_cnpj',
+] as const;
+
+const CLIENTE_EXTENSAO_FIELDS = [
+  'empresa',
+  'status_relacionamento',
+  'observacoes',
+  'criado_por',
+] as const;
+
+function splitClientePayload(payload: Record<string, unknown>) {
+  const identidade: Record<string, unknown> = {};
+  const extensao: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(payload)) {
+    if ((CLIENTE_IDENTITY_FIELDS as readonly string[]).includes(field)) {
+      identidade[field] = value;
+    } else if ((CLIENTE_EXTENSAO_FIELDS as readonly string[]).includes(field)) {
+      extensao[field] = value;
+    }
+  }
+  return { identidade, extensao };
 }
 
 function quoteIdentifier(value: string) {
@@ -709,6 +748,18 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
     `;
   }
 
+  if (entity === 'clientes') {
+    // Tabela fisica e clientes_crm (extensao comercial); o FROM usa "as clientes"
+    // para que access-scope.ts continue referenciando o nome logico "clientes"
+    // sem qualificacao (buildAccessScope conta com esse nome de range-table).
+    return `
+      select ${countExpr}clientes.*, p.nome, p.telefone, p.telefone_normalizado,
+        p.email, p.email_normalizado, p.cpf_cnpj
+      from ${CRM_SCHEMA}.clientes_crm as clientes
+      join public.clientes p on p.id = clientes.id
+    `;
+  }
+
   if (entity !== 'atendimentos') {
     const entitySchema = ENTITY_CONFIG[entity].schema ?? CRM_SCHEMA;
     return `select ${countExpr}* from ${entitySchema}.${ENTITY_CONFIG[entity].table}`;
@@ -718,7 +769,11 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
     select
       ${countExpr}a.*,
       row_to_json(l) as lead,
-      row_to_json(c) as cliente,
+      case
+        when c.id is null then null
+        else (select row_to_json(cj) from (select c.*, cp.nome, cp.telefone, cp.telefone_normalizado,
+          cp.email, cp.email_normalizado, cp.cpf_cnpj) cj)
+      end as cliente,
       case
         when r.id is null then null
         else json_build_object(
@@ -731,7 +786,8 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
       lo.nome as lead_origem_nome
     from ${CRM_SCHEMA}.atendimentos a
     left join ${CRM_SCHEMA}.leads l on l.id = a.lead_id
-    left join ${CRM_SCHEMA}.clientes c on c.id = a.cliente_id
+    left join ${CRM_SCHEMA}.clientes_crm c on c.id = a.cliente_id
+    left join public.clientes cp on cp.id = c.id
     left join public.colaboradores r on r.id = l.responsavel_id
     left join ${CRM_SCHEMA}.origens_lead lo on lo.id = l.origem_id
   `;
@@ -741,6 +797,11 @@ function baseAlias(entity: EntityName) {
   if (entity === 'atendimentos') return 'a';
   if (entity === 'leads') return 'l';
   if (entity === 'veiculos_estoque') return 've';
+  // 'clientes' e nao 'c'/alias curto porque nao e um alias de verdade -- e o
+  // proprio nome da tabela base no FROM (sem "as"). Necessario para desambiguar
+  // colunas presentes nas duas tabelas do join (id/criado_em/atualizado_em) desde
+  // que public.clientes entrou no join em buildListSelect.
+  if (entity === 'clientes') return 'clientes';
   return '';
 }
 
@@ -1055,7 +1116,7 @@ Deno.serve(async (request) => {
         );
         const [{ count: clientesCount }] = scopeUnitId
           ? [{ count: 0 }]
-          : await transaction.unsafe(`select count(*)::int as count from ${CRM_SCHEMA}.clientes;`);
+          : await transaction.unsafe(`select count(*)::int as count from ${CRM_SCHEMA}.clientes_crm;`);
 
         await transaction.unsafe(
           `insert into ${CRM_SCHEMA}.logs_auditoria (entidade, acao, actor_colaborador_id, actor_email, metadados)
@@ -1096,10 +1157,20 @@ Deno.serve(async (request) => {
             [scopeUnitId],
           );
         } else {
+          const clienteIds = (await transaction.unsafe(`select id from ${CRM_SCHEMA}.clientes_crm;`)).map(
+            (row: { id: string }) => row.id,
+          );
           await transaction.unsafe(`delete from ${CRM_SCHEMA}.historico_atendimentos;`);
           await transaction.unsafe(`delete from ${CRM_SCHEMA}.atendimentos;`);
           await transaction.unsafe(`delete from ${CRM_SCHEMA}.leads;`);
-          await transaction.unsafe(`delete from ${CRM_SCHEMA}.clientes;`);
+          await transaction.unsafe(`delete from ${CRM_SCHEMA}.clientes_crm;`);
+          // identidade em public.clientes so e removida depois da extensao (FK
+          // clientes_crm_id_fkey) -- se algum dia existir extensao de outro app (ex.:
+          // servicos) para o mesmo id, isso precisa passar a filtrar quem ainda tem
+          // extensao viva antes de apagar a identidade.
+          if (clienteIds.length) {
+            await transaction.unsafe(`delete from public.clientes where id = any($1);`, [clienteIds]);
+          }
           await transaction.unsafe(`
             update ${CRM_SCHEMA}.vendedores_distribuicao
             set ultimo_lead_atribuido_em = null;
@@ -1139,34 +1210,63 @@ Deno.serve(async (request) => {
         existingLead = await ensureEntityAccess('leads', leadId, access, collaborator);
       }
 
+      const { identidade: clienteIdentidadeRaw, extensao: clienteExtensaoRaw } = splitClientePayload(clientePayloadRaw);
+
       const result = await sql.begin(async (transaction) => {
-        const phone = String(clientePayloadRaw.telefone_normalizado || '');
-        const email = String(clientePayloadRaw.email_normalizado || '');
+        // identidade (public.clientes): dedup por telefone/email, reaproveitavel por
+        // qualquer app -- ver 20260915120000_extract_public_clientes.sql.
+        const phone = String(clienteIdentidadeRaw.telefone_normalizado || '');
+        const email = String(clienteIdentidadeRaw.email_normalizado || '');
         const existingClienteRows = phone
           ? await transaction.unsafe(
-              `select * from ${CRM_SCHEMA}.clientes where telefone_normalizado = $1 ${email ? 'or email_normalizado = $2' : ''} limit 1;`,
+              `select * from public.clientes where telefone_normalizado = $1 ${email ? 'or email_normalizado = $2' : ''} limit 1;`,
               email ? [phone, email] : [phone],
             )
           : [];
 
-        let cliente;
+        let clienteIdentidade;
         if (existingClienteRows[0]) {
-          const mergedCliente = applyCreateScope('clientes', {
-            ...clientePayloadRaw,
-            nome: clientePayloadRaw.nome || existingClienteRows[0].nome,
-            email: clientePayloadRaw.email || existingClienteRows[0].email,
-            email_normalizado: clientePayloadRaw.email_normalizado || existingClienteRows[0].email_normalizado,
-            status_relacionamento: clientePayloadRaw.status_relacionamento || existingClienteRows[0].status_relacionamento,
-          }, access, collaborator);
-          const updateQuery = buildUpdateQuery(CRM_SCHEMA, 'clientes', existingClienteRows[0].id, mergedCliente);
+          const mergedIdentidade = {
+            ...clienteIdentidadeRaw,
+            nome: clienteIdentidadeRaw.nome || existingClienteRows[0].nome,
+            email: clienteIdentidadeRaw.email || existingClienteRows[0].email,
+            email_normalizado: clienteIdentidadeRaw.email_normalizado || existingClienteRows[0].email_normalizado,
+          };
+          const updateQuery = buildUpdateQuery('public', 'clientes', existingClienteRows[0].id, mergedIdentidade);
           const rows = await transaction.unsafe(updateQuery.text, updateQuery.values);
-          cliente = rows[0];
+          clienteIdentidade = rows[0];
         } else {
-          const insertPayload = applyCreateScope('clientes', { ...clientePayloadRaw }, access, collaborator);
-          if (collaborator?.id) insertPayload.criado_por = collaborator.id;
-          const insertQuery = buildInsertQuery(CRM_SCHEMA, 'clientes', insertPayload);
+          const insertQuery = buildInsertQuery('public', 'clientes', clienteIdentidadeRaw);
           const rows = await transaction.unsafe(insertQuery.text, insertQuery.values);
-          cliente = rows[0];
+          clienteIdentidade = rows[0];
+        }
+
+        // extensao comercial (gestao_crm.clientes_crm), mesmo id da identidade -- pode
+        // ja existir mesmo numa identidade recem-criada? nao, mas pode ja existir
+        // extensao para uma identidade que ja era cliente de outra origem (ex.: futura
+        // extensao de servicos), entao sempre verificamos por id antes de decidir
+        // insert/update.
+        const existingExtensaoRows = await transaction.unsafe(
+          `select * from ${CRM_SCHEMA}.clientes_crm where id = $1 limit 1;`,
+          [clienteIdentidade.id],
+        );
+
+        let cliente;
+        if (existingExtensaoRows[0]) {
+          const mergedExtensao = applyCreateScope('clientes', {
+            ...clienteExtensaoRaw,
+            status_relacionamento: clienteExtensaoRaw.status_relacionamento || existingExtensaoRows[0].status_relacionamento,
+          }, access, collaborator);
+          const updateQuery = buildUpdateQuery(CRM_SCHEMA, 'clientes_crm', clienteIdentidade.id, mergedExtensao);
+          const rows = await transaction.unsafe(updateQuery.text, updateQuery.values);
+          cliente = { ...rows[0], ...clienteIdentidade };
+        } else {
+          const insertPayload = applyCreateScope('clientes', { ...clienteExtensaoRaw }, access, collaborator);
+          insertPayload.id = clienteIdentidade.id;
+          if (collaborator?.id) insertPayload.criado_por = collaborator.id;
+          const insertQuery = buildInsertQuery(CRM_SCHEMA, 'clientes_crm', insertPayload);
+          const rows = await transaction.unsafe(insertQuery.text, insertQuery.values);
+          cliente = { ...rows[0], ...clienteIdentidade };
         }
 
         const leadPayload = applyCreateScope('leads', { ...leadPayloadRaw, cliente_id: cliente.id }, access, collaborator);
@@ -1484,6 +1584,21 @@ Deno.serve(async (request) => {
       if (entity === 'veiculos_interesse' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
       }
+      if (entity === 'clientes') {
+        const { identidade, extensao } = splitClientePayload(payload);
+        if (!identidade.nome || !identidade.telefone) {
+          return json({ error: 'Nome e telefone sao obrigatorios.' }, 400);
+        }
+        const row = await sql.begin(async (transaction) => {
+          const insertIdentidade = buildInsertQuery('public', 'clientes', identidade);
+          const identRows = await transaction.unsafe(insertIdentidade.text, insertIdentidade.values);
+          const identRow = identRows[0];
+          const insertExtensao = buildInsertQuery(CRM_SCHEMA, 'clientes_crm', { ...extensao, id: identRow.id });
+          const extRows = await transaction.unsafe(insertExtensao.text, insertExtensao.values);
+          return { ...extRows[0], ...identRow };
+        });
+        return json({ row });
+      }
       const query = buildInsertQuery(config.schema ?? CRM_SCHEMA, config.table, payload);
       const rows = await sql.unsafe(query.text, query.values);
       return json({ row: rows[0] || null });
@@ -1500,6 +1615,25 @@ Deno.serve(async (request) => {
       }
       if (entity === 'veiculos_interesse' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
+      }
+      if (entity === 'clientes') {
+        const { identidade, extensao } = splitClientePayload(payload);
+        const { identidadeRow, extensaoRow } = await sql.begin(async (transaction) => {
+          let identidadeRow: Record<string, unknown> | null = null;
+          let extensaoRow: Record<string, unknown> | null = null;
+          if (Object.keys(identidade).length) {
+            const q = buildUpdateQuery('public', 'clientes', id, identidade);
+            const rows = await transaction.unsafe(q.text, q.values);
+            identidadeRow = rows[0] || null;
+          }
+          if (Object.keys(extensao).length) {
+            const q = buildUpdateQuery(CRM_SCHEMA, 'clientes_crm', id, extensao);
+            const rows = await transaction.unsafe(q.text, q.values);
+            extensaoRow = rows[0] || null;
+          }
+          return { identidadeRow, extensaoRow };
+        });
+        return json({ row: { ...existingRow, ...extensaoRow, ...identidadeRow } });
       }
       const query = buildUpdateQuery(config.schema ?? CRM_SCHEMA, config.table, id, payload);
       const rows = await sql.unsafe(query.text, query.values);
