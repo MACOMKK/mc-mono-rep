@@ -2945,6 +2945,16 @@ Deno.serve(async (request) => {
         }
       }
 
+      // [dedupe-anexo] barra reenvio do mesmo arquivo (mesmo nome + tamanho) na mesma solicitacao
+      const duplicados = await sql.unsafe(
+        `select id from ${SERVICOS_SCHEMA}.anexos_solicitacao where solicitacao_id = $1 and nome_arquivo = $2 and tamanho_bytes = $3 limit 1;`,
+        [solicitacaoId, nomeArquivo, Number(anexoBody.tamanho_bytes) || 0],
+      );
+      if (duplicados.length > 0) {
+        return json({ error: 'Ja existe um anexo com esse nome e tamanho nesta solicitacao.' }, 409);
+      }
+      // [/dedupe-anexo]
+
       const rows = await sql.unsafe(
         `
           insert into ${SERVICOS_SCHEMA}.anexos_solicitacao
