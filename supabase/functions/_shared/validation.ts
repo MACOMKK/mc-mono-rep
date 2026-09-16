@@ -391,6 +391,17 @@ export const assinarAnexoBodySchema = z.object({
   posicao: posicaoAssinaturaSchema.nullish(),
 });
 
+// servicos-api -- substituir_anexo. Correcao de anexo enviado errado numa solicitacao ja `pago`,
+// restrita a financeiro: atualiza o arquivo em vez de excluir, preservando rastro no historico.
+export const substituirAnexoBodySchema = z.object({
+  id: z.string().nullish(),
+  storage_path: z.string().nullish(),
+  nome_arquivo: z.string().nullish(),
+  tipo_mime: z.string().nullish(),
+  tamanho_bytes: z.number().nullish(),
+  motivo: z.string().nullish(),
+});
+
 export const parcelaItemSchema = z.object({
   valor: z.number().nullish(),
   data_vencimento: z.string().nullish(),

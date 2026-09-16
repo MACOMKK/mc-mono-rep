@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -67,7 +67,7 @@ import {
   useToast,
 } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
-import { isAllowedAnexoMimeType, MAX_ANEXO_SIZE, uploadAnexo } from '@/lib/anexoUpload';
+import { isAllowedAnexoMimeType, MAX_ANEXO_SIZE, substituirAnexo, uploadAnexo } from '@/lib/anexoUpload';
 import { getFriendlyErrorMessage } from '@/lib/errorMessage';
 import {
   formatData,
@@ -187,6 +187,8 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const [novoSigiloso, setNovoSigiloso] = useState(false);
   const [novoExigirDuasAssinaturas, setNovoExigirDuasAssinaturas] = useState(false);
   const [removerTarget, setRemoverTarget] = useState(null);
+  const [substituirTarget, setSubstituirTarget] = useState(null);
+  const substituirAnexoInputRef = useRef(null);
   const [anexosPendentes, setAnexosPendentes] = useState([]);
   const [baixandoTodos, setBaixandoTodos] = useState(false);
   const [baixandoAnexoId, setBaixandoAnexoId] = useState(null);
@@ -210,6 +212,10 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const podeAdicionarAnexo = Boolean(user?.isFinanceiro) || isDonoSolicitacao;
   const dentroDaJanelaRemocao = solicitacao?.status === 'pendente' || solicitacao?.pendencia_bloqueio === true;
   const podeRemoverAnexo = (Boolean(user?.isFinanceiro) || isDonoSolicitacao) && dentroDaJanelaRemocao;
+  // Fora da janela de remocao normal, so financeiro pode corrigir anexo enviado errado, e so em
+  // `pago` -- em `aprovado` o caminho e reprovar/reabrir a solicitacao (ver plano de correcao de
+  // anexo em `pago`, servicos-api substituir_anexo).
+  const podeSubstituirAnexo = Boolean(user?.isFinanceiro) && solicitacao?.status === 'pago';
   // Janela mais ampla que dentroDaJanelaRemocao: aqui inclui 'aprovado' de proposito (ver
   // atualizar_vencimento/atualizar_vencimento_parcela na servicos-api) -- so nao vale mais
   // depois de pago/reprovado/cancelado.
@@ -366,6 +372,41 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   function handleRemoverAnexo() {
     if (!removerTarget) return;
     removerAnexoMutation.mutate(removerTarget.id);
+  }
+
+  const substituirAnexoMutation = useMutation({
+    mutationFn: ({ file, anexo }) =>
+      substituirAnexo({ file, anexoId: anexo.id, solicitacaoId, tipoAnexo: anexo.tipo_anexo }),
+    onSuccess: () => {
+      toast({ title: 'Anexo substituído' });
+      loadAnexos();
+      loadHistorico();
+    },
+    onError: (error) => {
+      toast({ title: 'Não foi possível substituir o anexo', description: getFriendlyErrorMessage(error) });
+    },
+  });
+
+  function handleEscolherSubstitutoAnexo(anexo) {
+    setSubstituirTarget(anexo);
+    substituirAnexoInputRef.current?.click();
+  }
+
+  function handleSubstituirAnexo(event) {
+    const file = event.target.files?.[0];
+    const anexo = substituirTarget;
+    event.target.value = '';
+    setSubstituirTarget(null);
+    if (!file || !anexo) return;
+    if (file.size > MAX_ANEXO_SIZE) {
+      toast({ title: 'Arquivo muito grande', description: `"${file.name}" deve ter no máximo 5 MB.` });
+      return;
+    }
+    if (!isAllowedAnexoMimeType(file)) {
+      toast({ title: 'Tipo de arquivo não suportado', description: `"${file.name}" deve ser PDF, JPEG, PNG ou WebP.` });
+      return;
+    }
+    substituirAnexoMutation.mutate({ file, anexo });
   }
 
   const atualizarAssinaturasAnexoMutation = useMutation({
@@ -1184,12 +1225,34 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                                     <Trash2 className="h-4 w-4" />
                                   </button>
                                 )}
+                                {podeSubstituirAnexo && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEscolherSubstitutoAnexo(anexo)}
+                                    disabled={substituirAnexoMutation.isPending}
+                                    title="Substituir (anexo enviado errado)"
+                                    className="rounded p-2 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                                  >
+                                    {substituirAnexoMutation.isPending && substituirAnexoMutation.variables?.anexo?.id === anexo.id ? (
+                                      <Spinner size="sm" />
+                                    ) : (
+                                      <RefreshCw className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                )}
                               </div>
                             </li>
                       ))}
                     </ul>
                   )}
                 </div>
+
+                <input
+                  ref={substituirAnexoInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleSubstituirAnexo}
+                />
 
                 <ConfirmDeleteDialog
                   open={Boolean(removerTarget)}

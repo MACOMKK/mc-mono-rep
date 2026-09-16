@@ -345,6 +345,18 @@ export const financeiroApi = {
       });
       return result.row || null;
     },
+    async substituir({ id, storagePath, nomeArquivo, tipoMime, tamanhoBytes, motivo }) {
+      const result = await invokeServicos({
+        action: 'substituir_anexo',
+        id,
+        storage_path: storagePath,
+        nome_arquivo: nomeArquivo,
+        tipo_mime: tipoMime,
+        tamanho_bytes: tamanhoBytes,
+        motivo: motivo || null,
+      });
+      return result.row || null;
+    },
   },
   parcelas: {
     async list(solicitacaoId) {

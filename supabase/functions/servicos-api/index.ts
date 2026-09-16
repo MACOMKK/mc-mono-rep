@@ -17,6 +17,7 @@ import {
   atualizarConfiguracaoModuloBodySchema,
   registrarAnexoBodySchema,
   assinarAnexoBodySchema,
+  substituirAnexoBodySchema,
   criarParcelasBodySchema,
   registrarPagamentoParcelaBodySchema,
   criarSolicitacaoBodySchema,
@@ -3189,6 +3190,88 @@ Deno.serve(async (request) => {
           ...atualizadoRows[0],
           url: await createSignedUrlForPath(storagePath),
           assinaturas: assinaturasRows,
+        },
+      });
+    }
+
+    // Correcao de anexo enviado errado numa solicitacao ja `pago`: nao existe mais um caminho
+    // natural de "reabrir" a solicitacao nesse status (diferente de `aprovado`, que pode ser
+    // reprovado de volta a `pendente` e usar remover_anexo normalmente). Por isso substitui o
+    // arquivo em vez de excluir -- preserva rastro no historico em vez de apagar a evidencia que
+    // sustentou o pagamento.
+    if (action === 'substituir_anexo') {
+      if (!isFinanceiro(moduleRole)) {
+        throw Object.assign(new Error('Apenas o financeiro pode substituir um anexo de solicitacao paga.'), { status: 403 });
+      }
+
+      const parsedSubstituicao = substituirAnexoBodySchema.safeParse(body);
+      if (!parsedSubstituicao.success) {
+        const issue = parsedSubstituicao.error.issues[0];
+        return json({ error: `Campo invalido: ${issue?.path?.join('.') || 'payload'}.` }, 400);
+      }
+      const substituicaoBody = parsedSubstituicao.data;
+
+      const id = String(substituicaoBody.id || '');
+      const storagePath = String(substituicaoBody.storage_path || '');
+      const nomeArquivo = String(substituicaoBody.nome_arquivo || '');
+      const tipoMime = String(substituicaoBody.tipo_mime || '');
+      if (!id || !storagePath || !nomeArquivo) {
+        return json({ error: 'Dados do anexo incompletos.' }, 400);
+      }
+      validateComprovanteSize(substituicaoBody.tamanho_bytes);
+
+      const rows = await sql.unsafe(
+        `
+          select an.*, sp.status as solicitacao_status
+          from ${SERVICOS_SCHEMA}.anexos_solicitacao an
+          join ${SERVICOS_SCHEMA}.solicitacoes_pagamento sp on sp.id = an.solicitacao_id
+          where an.id = $1
+          limit 1;
+        `,
+        [id],
+      );
+      const anexo = rows[0];
+      if (!anexo) return json({ error: 'Anexo nao encontrado.' }, 404);
+      if (anexo.solicitacao_status !== 'pago') {
+        throw Object.assign(
+          new Error(
+            'Substituicao direta so e permitida em solicitacoes pagas. Para outros status, remova o anexo (se pendente) ou reprove a solicitacao para reabri-la.',
+          ),
+          { status: 403 },
+        );
+      }
+
+      const storagePathAnterior = String(anexo.storage_path);
+      const nomeArquivoAnterior = String(anexo.nome_arquivo);
+      const tamanhoBytes = Number(substituicaoBody.tamanho_bytes) || 0;
+
+      const atualizadoRows = await sql.unsafe(
+        `
+          update ${SERVICOS_SCHEMA}.anexos_solicitacao
+          set storage_path = $2, nome_arquivo = $3, tipo_mime = $4, tamanho_bytes = $5
+          where id = $1
+          returning *;
+        `,
+        [id, storagePath, nomeArquivo, tipoMime, tamanhoBytes],
+      );
+
+      const storageClient = createStorageAdminClient();
+      if (storageClient && storagePathAnterior !== storagePath) {
+        await storageClient.storage.from(COMPROVANTES_STORAGE_BUCKET).remove([storagePathAnterior]);
+      }
+
+      const motivo = substituicaoBody.motivo ? String(substituicaoBody.motivo) : '';
+      await insertHistorico(
+        String(anexo.solicitacao_id),
+        'anexo_substituido',
+        collaborator!.id as string,
+        `${nomeArquivoAnterior} substituído por ${nomeArquivo}${motivo ? ` — ${motivo}` : ''}`,
+      );
+
+      return json({
+        row: {
+          ...atualizadoRows[0],
+          url: await createSignedUrlForPath(storagePath),
         },
       });
     }

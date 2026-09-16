@@ -36,3 +36,23 @@ export async function uploadAnexo({
     assinaturasNecessarias,
   });
 }
+
+// Correcao de anexo enviado errado numa solicitacao ja `pago` (ver substituir_anexo na
+// servicos-api): sobe o arquivo novo no lugar do antigo, preservando o id/linha do anexo.
+export async function substituirAnexo({ file, anexoId, solicitacaoId, tipoAnexo = 'outros', motivo }) {
+  const extension = file.name.split('.').pop();
+  const path = `${solicitacaoId}/${tipoAnexo}/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await supabase.storage
+    .from(financeiroApi.storage.bucket)
+    .upload(path, file, { upsert: false });
+  if (uploadError) throw uploadError;
+
+  return financeiroApi.anexos.substituir({
+    id: anexoId,
+    storagePath: path,
+    nomeArquivo: file.name,
+    tipoMime: file.type || 'application/octet-stream',
+    tamanhoBytes: file.size,
+    motivo,
+  });
+}
