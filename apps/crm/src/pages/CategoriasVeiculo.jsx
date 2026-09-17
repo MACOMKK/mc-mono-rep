@@ -151,9 +151,11 @@ export default function CategoriasVeiculo() {
 
   const createMutation = useMutation({
     mutationFn: (nome) => crmDataClient.entities.CategoriaVeiculo.create({ nome, ativo: true }),
+    onMutate: () => {
+      setNovoNome('');
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-categorias-veiculo'] });
-      setNovoNome('');
       toast({ title: 'Categoria criada', variant: 'success' });
     },
     onError: (mutationError) => toast({
@@ -178,9 +180,11 @@ export default function CategoriasVeiculo() {
 
   const saveCamposExtraMutation = useMutation({
     mutationFn: ({ id, ...data }) => crmDataClient.entities.CategoriaVeiculo.update(id, data),
+    onMutate: () => {
+      setCategoriaEditandoCampos(null);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-categorias-veiculo'] });
-      setCategoriaEditandoCampos(null);
       toast({ title: 'Campos extras salvos', variant: 'success' });
     },
     onError: (mutationError) => toast({

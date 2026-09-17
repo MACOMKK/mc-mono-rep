@@ -786,16 +786,10 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
               </span>
             </div>
           )}
-        {solicitacao && solicitacao.possui_nota_fiscal === false && (
-          <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
-            <FileText className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>Sem nota fiscal prevista — o solicitante sinalizou que esta solicitação não terá NF anexada.</span>
-          </div>
-        )}
         {solicitacao && solicitacao.possui_nota_fiscal === true && Number(solicitacao.nota_fiscal_total || 0) === 0 && (
           <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
             <FileText className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>Nota fiscal esperada, mas ainda não anexada — pode ser adicionada até a data de pagamento.</span>
+            <span>Nota fiscal esperada, aguardando solicitante anexar o documento</span>
           </div>
         )}
         {solicitacao && isDonoSolicitacao && user?.system_access_level === 'admin' && (

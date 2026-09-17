@@ -44,11 +44,13 @@ export default function ModelosVeiculo() {
 
   const createMutation = useMutation({
     mutationFn: (data) => crmDataClient.entities.ModeloVeiculo.create(data),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'] });
+    onMutate: () => {
       setNovoNome('');
       setNovoAnoInicio('');
       setNovoAnoFim('');
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'] });
       toast({ title: 'Modelo criado', variant: 'success' });
     },
     onError: (mutationError) => toast({

@@ -23,9 +23,11 @@ export default function MarcasVeiculo() {
 
   const createMutation = useMutation({
     mutationFn: (nome) => crmDataClient.entities.MarcaVeiculo.create({ nome, ativo: true }),
+    onMutate: () => {
+      setNovoNome('');
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-marcas-veiculo'] });
-      setNovoNome('');
       toast({ title: 'Marca criada', variant: 'success' });
     },
     onError: (mutationError) => toast({

@@ -105,9 +105,11 @@ export default function Estoque() {
 
   const createMutation = useMutation({
     mutationFn: (data) => crmDataClient.entities.VeiculoEstoque.create(data),
+    onMutate: () => {
+      setForm(emptyForm);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque'] });
-      setForm(emptyForm);
       toast({ title: 'Veiculo adicionado ao estoque', variant: 'success' });
     },
     onError: (mutationError) => toast({

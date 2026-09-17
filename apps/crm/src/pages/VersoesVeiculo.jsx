@@ -41,9 +41,11 @@ export default function VersoesVeiculo() {
 
   const createMutation = useMutation({
     mutationFn: (data) => crmDataClient.entities.VersaoVeiculo.create(data),
+    onMutate: () => {
+      setNovoNome('');
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-versoes-veiculo'] });
-      setNovoNome('');
       toast({ title: 'Versao criada', variant: 'success' });
     },
     onError: (mutationError) => toast({

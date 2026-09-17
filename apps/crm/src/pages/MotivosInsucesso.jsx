@@ -26,9 +26,11 @@ export default function MotivosInsucesso() {
 
   const createMutation = useMutation({
     mutationFn: (nome) => crmDataClient.entities.MotivoStatus.create({ status: STATUS, nome, ativo: true }),
+    onMutate: () => {
+      setNovoNome('');
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-motivos-status'] });
-      setNovoNome('');
       toast({ title: 'Motivo criado', variant: 'success' });
     },
     onError: (mutationError) => toast({

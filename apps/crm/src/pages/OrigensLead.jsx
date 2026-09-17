@@ -23,9 +23,11 @@ export default function OrigensLead() {
 
   const createMutation = useMutation({
     mutationFn: (nome) => crmDataClient.entities.OrigemLead.create({ nome, ativo: true }),
+    onMutate: () => {
+      setNovoNome('');
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-origens-lead'] });
-      setNovoNome('');
       toast({ title: 'Origem criada', variant: 'success' });
     },
     onError: (mutationError) => toast({

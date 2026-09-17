@@ -176,9 +176,11 @@ export default function Pipelines() {
       cor,
       ordem: etapas.length,
     }),
+    onMutate: () => {
+      setNovaEtapaAberta(false);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-etapas-pipeline', pipelineSelecionadoId] });
-      setNovaEtapaAberta(false);
       toast({ title: 'Etapa criada', variant: 'success' });
     },
     onError: (error) => toast({ title: 'Nao foi possivel criar a etapa', description: error.message, variant: 'destructive' }),

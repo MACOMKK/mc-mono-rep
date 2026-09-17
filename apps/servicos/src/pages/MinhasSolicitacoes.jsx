@@ -27,6 +27,10 @@ import {
   TableHeader,
   TableRow,
   Textarea,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
   useToast,
 } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
@@ -622,13 +626,21 @@ export default function MinhasSolicitacoes() {
                           </Badge>
                         )}
                         {row.possui_nota_fiscal === true && Number(row.nota_fiscal_total || 0) === 0 && (
-                          <Badge
-                            variant="outline"
-                            className="gap-1 border-amber-500/50 bg-amber-500/10 text-amber-600"
-                          >
-                            <FileWarning className="h-3 w-3" />
-                            Aguardando NF
-                          </Badge>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Badge
+                                    variant="outline"
+                                    className="gap-1 border-amber-500/50 bg-amber-500/10 text-amber-600"
+                                  >
+                                    <FileWarning className="h-3 w-3" />
+                                  </Badge>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>Aguardando NF</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         )}
                       </div>
                     </TableCell>
@@ -662,10 +674,18 @@ export default function MinhasSolicitacoes() {
                       </Badge>
                     )}
                     {row.possui_nota_fiscal === true && Number(row.nota_fiscal_total || 0) === 0 && (
-                      <Badge variant="outline" className="gap-1 border-amber-500/50 bg-amber-500/10 text-amber-600">
-                        <FileWarning className="h-3 w-3" />
-                        Aguardando NF
-                      </Badge>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Badge variant="outline" className="gap-1 border-amber-500/50 bg-amber-500/10 text-amber-600">
+                                <FileWarning className="h-3 w-3" />
+                              </Badge>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Aguardando NF</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     )}
                     {!row.aprovador_destino_nome && row.tipo_beneficiario === 'colaborador' && (
                       <Badge variant="outline" className="border-sky-500/50 bg-sky-500/10 text-sky-600">

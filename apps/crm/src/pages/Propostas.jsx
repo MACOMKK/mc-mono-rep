@@ -145,12 +145,14 @@ export default function Propostas() {
 
   const createMutation = useMutation({
     mutationFn: (data) => crmDataClient.entities.Proposta.create(data),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['crm-propostas'] });
+    onMutate: () => {
       setCreateOpen(false);
       setForm(emptyForm);
       setSelectedLead(null);
       setLeadSearch('');
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-propostas'] });
       toast({ title: 'Proposta criada', variant: 'success' });
     },
     onError: (mutationError) => toast({
@@ -188,11 +190,13 @@ export default function Propostas() {
 
   const acceptMutation = useMutation({
     mutationFn: ({ id, vendaData }) => crmDataClient.entities.Proposta.aceitar(id, vendaData),
+    onMutate: () => {
+      setAcceptTarget(null);
+      setVendaForm(emptyVendaForm);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-propostas'] });
       await queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque'] });
-      setAcceptTarget(null);
-      setVendaForm(emptyVendaForm);
       toast({ title: 'Venda fechada com sucesso', variant: 'success' });
     },
     onError: (mutationError) => toast({

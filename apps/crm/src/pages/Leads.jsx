@@ -199,11 +199,12 @@ export default function Leads() {
         };
       });
 
+      setFormOpen(false);
+      setEditing(null);
+
       return { previousLeads, tempId, id };
     },
     onSuccess: (saved, variables, context) => {
-      setFormOpen(false);
-      setEditing(null);
       const selectedResponsavel = responsaveis.find((item) => item.id === variables.data.responsavel_id) || null;
       const hydratedSaved = saved
         ? {
@@ -301,10 +302,12 @@ export default function Leads() {
     mutationFn: ({ id, data }) => (id
       ? crmDataClient.entities.Atividade.update(id, data)
       : crmDataClient.entities.Atividade.create(data)),
-    onSuccess: (_result, variables) => {
-      invalidateActivityQueries();
+    onMutate: () => {
       setActivityFormOpen(false);
       setEditingActivity(null);
+    },
+    onSuccess: (_result, variables) => {
+      invalidateActivityQueries();
       toast({
         title: variables.id ? 'Atividade atualizada' : 'Atividade criada',
         description: variables.id ? 'As alteracoes foram salvas.' : 'A atividade foi registrada para o lead.',
@@ -384,15 +387,16 @@ export default function Leads() {
         rows: (currentPage.rows || []).map((lead) => lead.id === id ? { ...lead, status } : lead),
       }));
 
+      setStatusTarget(null);
+      setStatusMotivoId('');
+      setStatusExtraValues({});
+
       return { previousLeads };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leads'] });
       queryClient.invalidateQueries({ queryKey: ['clientes'] });
       queryClient.invalidateQueries({ queryKey: ['lead-historico', editingId] });
-      setStatusTarget(null);
-      setStatusMotivoId('');
-      setStatusExtraValues({});
     },
     onError: (error, _variables, context) => {
       if (context?.previousLeads) {
