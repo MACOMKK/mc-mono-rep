@@ -1062,6 +1062,170 @@ const VeiculoEstoqueRepository = {
   },
 };
 
+function mapPropostaRow(row = {}) {
+  return {
+    id: row.id,
+    lead_id: row.lead_id || '',
+    cliente_id: row.cliente_id || '',
+    veiculo_estoque_id: row.veiculo_estoque_id || '',
+    veiculo_descricao: row.veiculo_descricao || '',
+    valor_veiculo: row.valor_veiculo ?? '',
+    desconto_valor: row.desconto_valor ?? 0,
+    valor_final: row.valor_final ?? '',
+    forma_pagamento: row.forma_pagamento || 'a_vista',
+    valor_entrada: row.valor_entrada ?? '',
+    status: row.status || 'rascunho',
+    vendedor_id: row.vendedor_id || '',
+    validade_ate: normalizeDateOnly(row.validade_ate),
+    observacoes: row.observacoes || '',
+    aceita_em: row.aceita_em || null,
+    recusada_em: row.recusada_em || null,
+    ...mapBaseDates(row),
+  };
+}
+
+function mapVendaRow(row = {}) {
+  return {
+    id: row.id,
+    proposta_id: row.proposta_id || null,
+    lead_id: row.lead_id || '',
+    cliente_id: row.cliente_id || '',
+    veiculo_estoque_id: row.veiculo_estoque_id || '',
+    vendedor_id: row.vendedor_id || '',
+    valor_final: row.valor_final ?? '',
+    forma_pagamento: row.forma_pagamento || 'a_vista',
+    desconto_valor: row.desconto_valor ?? 0,
+    data_venda: normalizeDateOnly(row.data_venda),
+    motivo_status_id: row.motivo_status_id || '',
+    observacoes: row.observacoes || '',
+    ...mapBaseDates(row),
+  };
+}
+
+function mapPropostaPayload(data = {}) {
+  const valorVeiculo = toNullableNumber(data.valor_veiculo) ?? 0;
+  const descontoValor = toNullableNumber(data.desconto_valor) ?? 0;
+  const veiculoEstoqueId = data.veiculo_estoque_id || null;
+  const veiculoDescricao = String(data.veiculo_descricao || '').trim();
+
+  if (!veiculoEstoqueId && !veiculoDescricao) {
+    throw new Error('Selecione um veiculo do estoque ou descreva o veiculo da proposta.');
+  }
+
+  return {
+    lead_id: data.lead_id,
+    veiculo_estoque_id: veiculoEstoqueId,
+    veiculo_descricao: veiculoEstoqueId ? null : veiculoDescricao,
+    valor_veiculo: valorVeiculo,
+    desconto_valor: descontoValor,
+    valor_final: Math.max(valorVeiculo - descontoValor, 0),
+    forma_pagamento: data.forma_pagamento || 'a_vista',
+    valor_entrada: toNullableNumber(data.valor_entrada),
+    status: data.status || 'rascunho',
+    vendedor_id: data.vendedor_id || null,
+    validade_ate: data.validade_ate || null,
+    observacoes: data.observacoes || null,
+  };
+}
+
+const PropostaRepository = {
+  ...createListRepository('Proposta', crmApi.propostas, mapPropostaRow),
+
+  async create(data) {
+    if (!data.lead_id) {
+      throw new Error('Proposta deve estar vinculada a um lead.');
+    }
+    const payload = mapPropostaPayload(data);
+    const row = await crmApi.propostas.create(payload);
+    return mapPropostaRow(row);
+  },
+
+  async update(id, data) {
+    const payload = mapPropostaPayload(data);
+    delete payload.lead_id;
+    const row = await crmApi.propostas.update(id, payload);
+    return mapPropostaRow(row);
+  },
+
+  async recusar(id) {
+    const row = await crmApi.propostas.update(id, { status: 'recusada' });
+    return mapPropostaRow(row);
+  },
+
+  async marcarEnviada(id) {
+    const row = await crmApi.propostas.update(id, { status: 'enviada' });
+    return mapPropostaRow(row);
+  },
+
+  async aceitar(id, vendaData = {}) {
+    if (!vendaData.veiculo_estoque_id) {
+      throw new Error('Vincule um veiculo do estoque antes de aceitar a proposta.');
+    }
+    const valorFinal = toNullableNumber(vendaData.valor_final);
+    if (!valorFinal) {
+      throw new Error('Informe o valor final da venda.');
+    }
+    if (!vendaData.motivo_status_id) {
+      throw new Error('Selecione o motivo de conversao do lead.');
+    }
+
+    const result = await crmApi.propostas.acceptProposta({
+      propostaId: id,
+      vendaPayload: {
+        veiculo_estoque_id: vendaData.veiculo_estoque_id,
+        vendedor_id: vendaData.vendedor_id || null,
+        valor_final: valorFinal,
+        forma_pagamento: vendaData.forma_pagamento || 'a_vista',
+        desconto_valor: toNullableNumber(vendaData.desconto_valor) ?? 0,
+        data_venda: vendaData.data_venda || null,
+        motivo_status_id: vendaData.motivo_status_id,
+        observacoes: vendaData.observacoes || null,
+      },
+    });
+
+    return {
+      proposta: mapPropostaRow(result.proposta),
+      venda: mapVendaRow(result.venda),
+    };
+  },
+};
+
+const VendaRepository = {
+  ...createListRepository('Venda', crmApi.vendas, mapVendaRow),
+
+  async closeVenda(data = {}) {
+    if (!data.lead_id) {
+      throw new Error('Venda deve estar vinculada a um lead.');
+    }
+    if (!data.veiculo_estoque_id) {
+      throw new Error('Selecione o veiculo vendido.');
+    }
+    const valorFinal = toNullableNumber(data.valor_final);
+    if (!valorFinal) {
+      throw new Error('Informe o valor final da venda.');
+    }
+    if (!data.motivo_status_id) {
+      throw new Error('Selecione o motivo de conversao do lead.');
+    }
+
+    const result = await crmApi.vendas.closeVenda({
+      vendaPayload: {
+        lead_id: data.lead_id,
+        veiculo_estoque_id: data.veiculo_estoque_id,
+        vendedor_id: data.vendedor_id || null,
+        valor_final: valorFinal,
+        forma_pagamento: data.forma_pagamento || 'a_vista',
+        desconto_valor: toNullableNumber(data.desconto_valor) ?? 0,
+        data_venda: data.data_venda || null,
+        motivo_status_id: data.motivo_status_id,
+        observacoes: data.observacoes || null,
+      },
+    });
+
+    return mapVendaRow(result.venda);
+  },
+};
+
 const ResponsavelRepository = {
   async list() {
     return crmApi.responsaveis.list();
@@ -1191,5 +1355,7 @@ export const crmDataClient = {
     ModeloVeiculo: ModeloVeiculoRepository,
     VersaoVeiculo: VersaoVeiculoRepository,
     VeiculoEstoque: VeiculoEstoqueRepository,
+    Proposta: PropostaRepository,
+    Venda: VendaRepository,
   },
 };

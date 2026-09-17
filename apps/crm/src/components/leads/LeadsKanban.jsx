@@ -182,7 +182,7 @@ export default function LeadsKanban({ leads, onDragEnd, onCardClick, leadsComAti
               </div>
 
               {/* Droppable area */}
-              <Droppable droppableId={col.key}>
+              <Droppable droppableId={col.key} isDropDisabled={col.key === 'convertido'}>
                 {(provided, snapshot) => (
                   <div
                     ref={provided.innerRef}
@@ -207,7 +207,9 @@ export default function LeadsKanban({ leads, onDragEnd, onCardClick, leadsComAti
                     {provided.placeholder}
                     {colLeads.length === 0 && !snapshot.isDraggingOver && (
                       <div className="border-2 border-dashed border-border rounded-sm py-6 text-center">
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">Arraste aqui</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                          {col.key === 'convertido' ? 'Aceite uma proposta em Propostas' : 'Arraste aqui'}
+                        </p>
                       </div>
                     )}
                   </div>

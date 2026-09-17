@@ -1,6 +1,6 @@
 export const CRM_SCHEMA = 'gestao_crm';
 
-export type EntityName = 'clientes' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'veiculos_estoque' | 'pipelines' | 'etapas_pipeline' | 'motivos_status';
+export type EntityName = 'clientes' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'veiculos_estoque' | 'pipelines' | 'etapas_pipeline' | 'motivos_status' | 'propostas' | 'vendas';
 
 export function getAccessLevel(access: Record<string, unknown> | null) {
   return String(access?.nivel_acesso || '');
@@ -73,6 +73,16 @@ export function buildAccessScope(
           )`,
           values: [unitId],
         };
+      case 'propostas':
+      case 'vendas':
+        return {
+          clause: `exists (
+            select 1 from ${CRM_SCHEMA}.leads scope_lead
+            where scope_lead.id = ${entity}.lead_id
+              and scope_lead.unidade_id = $${startIndex}
+          )`,
+          values: [unitId],
+        };
       case 'categorias_veiculo':
       case 'origens_lead':
       case 'marcas_veiculo':
@@ -132,6 +142,16 @@ export function buildAccessScope(
         clause: `exists (
           select 1 from ${CRM_SCHEMA}.leads scope_lead
           where scope_lead.id = veiculos_interesse.lead_id
+            and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
+        )`,
+        values: [collaboratorId],
+      };
+    case 'propostas':
+    case 'vendas':
+      return {
+        clause: `exists (
+          select 1 from ${CRM_SCHEMA}.leads scope_lead
+          where scope_lead.id = ${entity}.lead_id
             and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
         )`,
         values: [collaboratorId],

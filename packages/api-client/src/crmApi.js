@@ -208,4 +208,16 @@ export const crmApi = {
   pipelines: buildEntity('pipelines'),
   etapas_pipeline: buildEntity('etapas_pipeline'),
   motivos_status: buildEntity('motivos_status'),
+  propostas: {
+    ...buildEntity('propostas'),
+    async acceptProposta(payload) {
+      return invokeCrm({ action: 'accept_proposta', ...payload });
+    },
+  },
+  vendas: {
+    ...buildEntity('vendas'),
+    async closeVenda(payload) {
+      return invokeCrm({ action: 'close_venda', ...payload });
+    },
+  },
 };

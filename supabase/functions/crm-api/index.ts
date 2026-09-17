@@ -182,6 +182,42 @@ const ENTITY_CONFIG = {
     orderDirection: 'asc',
     allowedFields: ['status', 'nome', 'ativo'],
   },
+  propostas: {
+    table: 'propostas',
+    orderBy: 'criado_em',
+    orderDirection: 'desc',
+    allowedFields: [
+      'lead_id',
+      'veiculo_estoque_id',
+      'veiculo_descricao',
+      'valor_veiculo',
+      'desconto_valor',
+      'valor_final',
+      'forma_pagamento',
+      'valor_entrada',
+      'status',
+      'vendedor_id',
+      'validade_ate',
+      'observacoes',
+    ],
+  },
+  vendas: {
+    table: 'vendas',
+    orderBy: 'criado_em',
+    orderDirection: 'desc',
+    allowedFields: [
+      'proposta_id',
+      'lead_id',
+      'veiculo_estoque_id',
+      'vendedor_id',
+      'valor_final',
+      'forma_pagamento',
+      'desconto_valor',
+      'data_venda',
+      'motivo_status_id',
+      'observacoes',
+    ],
+  },
 } as const;
 
 
@@ -374,6 +410,31 @@ function mapDatabaseError(error: unknown) {
 
   if (message.includes('Unidade do lead e obrigatoria')) {
     return 'Selecione a unidade responsavel pelo lead.';
+  }
+
+  if (message.includes('vendas_veiculo_estoque_id_key') || message.includes('Este veiculo ja foi vendido')) {
+    return 'Este veiculo ja foi vendido.';
+  }
+
+  if (message.includes('propostas_veiculo_check')) {
+    return 'Selecione um veiculo do estoque ou descreva o veiculo da proposta.';
+  }
+
+  if (message.includes('Proposta aceita nao pode ter o status alterado')) {
+    return 'Proposta aceita nao pode ter o status alterado diretamente.';
+  }
+
+  if (message.includes('Lead vinculado a proposta nao foi encontrado')
+    || message.includes('Lead vinculado a venda nao foi encontrado')) {
+    return 'Lead nao encontrado ou sem permissao.';
+  }
+
+  if (message.includes('Veiculo em estoque nao foi encontrado')) {
+    return 'Veiculo em estoque nao encontrado.';
+  }
+
+  if (message.includes('Lead so pode ser convertido ao aceitar uma proposta ou fechar uma venda')) {
+    return 'Lead so pode ser convertido ao aceitar uma proposta ou fechar uma venda.';
   }
 
   return message || 'Falha ao consultar o CRM.';
@@ -1480,6 +1541,75 @@ Deno.serve(async (request) => {
       return json(result);
     }
 
+    // accept_proposta/close_venda sao as unicas portas para criar gestao_crm.vendas:
+    // o INSERT dispara trg_crm_vendas_outcome (baixa de estoque + conversao do lead +
+    // historico) dentro da mesma transacao que marca a proposta como aceita (quando
+    // houver). Nunca expor 'vendas' via action 'create' generica para nao permitir
+    // criar uma venda sem passar por essa validacao.
+    if (action === 'accept_proposta') {
+      const propostaId = typeof body.propostaId === 'string' && body.propostaId ? body.propostaId : '';
+      if (!propostaId) return json({ error: 'Proposta obrigatoria.' }, 400);
+
+      const proposta = await ensureEntityAccess('propostas', propostaId, access, collaborator);
+      if (!['rascunho', 'enviada'].includes(String(proposta.status))) {
+        return json({ error: 'Apenas propostas em rascunho ou enviadas podem ser aceitas.' }, 400);
+      }
+
+      const vendaPayloadRaw = sanitizePayload('vendas', body.vendaPayload || {});
+      const veiculoEstoqueId = vendaPayloadRaw.veiculo_estoque_id || proposta.veiculo_estoque_id;
+      if (!veiculoEstoqueId) {
+        return json({ error: 'Esta proposta nao tem um veiculo do estoque vinculado. Vincule um veiculo antes de aceitar.' }, 400);
+      }
+      if (!vendaPayloadRaw.valor_final) {
+        return json({ error: 'Informe o valor final da venda.' }, 400);
+      }
+      if (!vendaPayloadRaw.forma_pagamento) {
+        return json({ error: 'Informe a forma de pagamento da venda.' }, 400);
+      }
+      if (!vendaPayloadRaw.motivo_status_id) {
+        return json({ error: 'Selecione o motivo de conversao do lead.' }, 400);
+      }
+
+      const result = await sql.begin(async (transaction) => {
+        const updateProposta = buildUpdateQuery(CRM_SCHEMA, 'propostas', propostaId, { status: 'aceita' });
+        const propostaRows = await transaction.unsafe(updateProposta.text, updateProposta.values);
+
+        const vendaPayload: Record<string, unknown> = {
+          ...vendaPayloadRaw,
+          proposta_id: propostaId,
+          lead_id: proposta.lead_id,
+          veiculo_estoque_id: veiculoEstoqueId,
+          vendedor_id: vendaPayloadRaw.vendedor_id || proposta.vendedor_id,
+        };
+        if (collaborator?.id) vendaPayload.criado_por = collaborator.id;
+        const insertVenda = buildInsertQuery(CRM_SCHEMA, 'vendas', vendaPayload);
+        const vendaRows = await transaction.unsafe(insertVenda.text, insertVenda.values);
+
+        return { proposta: propostaRows[0], venda: vendaRows[0] };
+      });
+
+      return json(result);
+    }
+
+    if (action === 'close_venda') {
+      const vendaPayloadRaw = sanitizePayload('vendas', body.vendaPayload || body.payload || {});
+      const leadId = typeof vendaPayloadRaw.lead_id === 'string' && vendaPayloadRaw.lead_id ? vendaPayloadRaw.lead_id : '';
+      if (!leadId) return json({ error: 'Lead obrigatorio.' }, 400);
+      if (!vendaPayloadRaw.veiculo_estoque_id) return json({ error: 'Selecione o veiculo vendido.' }, 400);
+      if (!vendaPayloadRaw.valor_final) return json({ error: 'Informe o valor final da venda.' }, 400);
+      if (!vendaPayloadRaw.forma_pagamento) return json({ error: 'Informe a forma de pagamento da venda.' }, 400);
+      if (!vendaPayloadRaw.motivo_status_id) return json({ error: 'Selecione o motivo de conversao do lead.' }, 400);
+
+      await ensureLeadAccessLight(leadId, access, collaborator);
+
+      const vendaPayload: Record<string, unknown> = { ...vendaPayloadRaw, proposta_id: null };
+      if (collaborator?.id) vendaPayload.criado_por = collaborator.id;
+      const insertVenda = buildInsertQuery(CRM_SCHEMA, 'vendas', vendaPayload);
+      const vendaRows = await sql.unsafe(insertVenda.text, insertVenda.values);
+
+      return json({ venda: vendaRows[0] });
+    }
+
     const entity = String(body.entity || '') as EntityName;
     const config = ENTITY_CONFIG[entity];
 
@@ -1492,6 +1622,20 @@ Deno.serve(async (request) => {
       && ['create', 'update', 'delete'].includes(action)
     ) {
       ensureCanConfigure(access);
+    }
+
+    // gestao_crm.vendas so pode ser criada via accept_proposta/close_venda (efeitos
+    // colaterais em outras tabelas dentro da mesma transacao) -- nunca via create
+    // generico, que pularia a baixa de estoque e a conversao do lead.
+    if (entity === 'vendas' && action === 'create') {
+      return json({ error: 'Use a acao de aceitar proposta ou fechar venda direta.' }, 400);
+    }
+
+    // Proposta so pode virar 'aceita' atraves de accept_proposta, porque essa
+    // transicao tem efeito colateral obrigatorio (criar a Venda). Um UPDATE generico
+    // com status='aceita' ficaria com a proposta aceita sem venda nenhuma registrada.
+    if (entity === 'propostas' && action === 'update' && body.payload?.status === 'aceita') {
+      return json({ error: 'Use a acao de aceitar proposta.' }, 400);
     }
 
     const id = typeof body.id === 'string' ? body.id : '';
@@ -1588,6 +1732,9 @@ Deno.serve(async (request) => {
       if (entity === 'veiculos_interesse' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
       }
+      if (entity === 'propostas' && payload.lead_id) {
+        await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
+      }
       if (entity === 'clientes') {
         const { identidade, extensao } = splitClientePayload(payload);
         if (!identidade.nome || !identidade.telefone) {
@@ -1618,6 +1765,9 @@ Deno.serve(async (request) => {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
       }
       if (entity === 'veiculos_interesse' && payload.lead_id) {
+        await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
+      }
+      if (entity === 'propostas' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
       }
       if (entity === 'clientes') {

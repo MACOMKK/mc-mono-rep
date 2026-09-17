@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Columns3,
   DollarSign,
+  FileText,
   GraduationCap,
   Headphones,
   LayoutDashboard,
@@ -184,6 +185,7 @@ export default function Navbar({ realtime }) {
           <NavMenu label="Vendas" items={[
             { label: 'Agenda de Atividades', icon: Tag, path: '/atividades', badge: atrasadasCount },
             { label: 'Leads', icon: DollarSign, path: '/leads' },
+            { label: 'Propostas', icon: FileText, path: '/propostas' },
             { label: 'Contatos e Clientes', icon: Users, path: '/clientes' },
             { label: 'Atendimento', icon: Headphones, path: '/atendimento' },
           ]} />
