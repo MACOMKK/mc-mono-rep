@@ -11,6 +11,7 @@ import LeadForm from '@/components/leads/LeadForm';
 import MotivoStatusSelect from '@/components/leads/MotivoStatusSelect';
 import LeadViewer from '@/components/leads/LeadViewer';
 import LeadsKanban from '@/components/leads/LeadsKanban';
+import EventoForm from '@/components/eventos/EventoForm';
 import ListPagination from '@/components/ListPagination';
 import { useEmpresa } from '@/context/EmpresaContext';
 import { cn } from '@/lib/utils';
@@ -83,6 +84,8 @@ export default function Leads() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [viewingLead, setViewingLead] = useState(null);
+  const [activityFormOpen, setActivityFormOpen] = useState(false);
+  const [editingActivity, setEditingActivity] = useState(null);
   const [statusTarget, setStatusTarget] = useState(null); // { lead, status }
   const [statusMotivoId, setStatusMotivoId] = useState('');
   const [statusExtraValues, setStatusExtraValues] = useState({});
@@ -274,6 +277,64 @@ export default function Leads() {
   const { data: motivosStatus = [] } = useQuery({
     queryKey: ['crm-motivos-status'],
     queryFn: () => crmDataClient.entities.MotivoStatus.list('nome'),
+  });
+
+  const { data: activityFormAtendimentos = [] } = useQuery({
+    queryKey: ['lead-atividades-planejadas', viewingLead?.id],
+    enabled: activityFormOpen && Boolean(viewingLead?.id),
+    queryFn: () => crmDataClient.entities.Atividade.listPage({
+      limit: 20,
+      filters: { lead_id: viewingLead.id, status: 'planejada' },
+    }).then((result) => result.rows || []),
+  });
+
+  const invalidateActivityQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ['lead-atividades', viewingLead?.id] });
+    queryClient.invalidateQueries({ queryKey: ['lead-atividades-planejadas', viewingLead?.id] });
+    queryClient.invalidateQueries({ queryKey: ['leads'] });
+    queryClient.invalidateQueries({ queryKey: ['eventos'] });
+    queryClient.invalidateQueries({ queryKey: ['eventos-contadores'] });
+    queryClient.invalidateQueries({ queryKey: ['crm-atividades-atrasadas'] });
+  };
+
+  const saveActivityMutation = useMutation({
+    mutationFn: ({ id, data }) => (id
+      ? crmDataClient.entities.Atividade.update(id, data)
+      : crmDataClient.entities.Atividade.create(data)),
+    onSuccess: (_result, variables) => {
+      invalidateActivityQueries();
+      setActivityFormOpen(false);
+      setEditingActivity(null);
+      toast({
+        title: variables.id ? 'Atividade atualizada' : 'Atividade criada',
+        description: variables.id ? 'As alteracoes foram salvas.' : 'A atividade foi registrada para o lead.',
+        variant: 'success',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel salvar a atividade',
+        description: error.message || 'Revise os dados informados.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const deleteActivityMutation = useMutation({
+    mutationFn: (id) => crmDataClient.entities.Atividade.delete(id),
+    onSuccess: () => {
+      invalidateActivityQueries();
+      setActivityFormOpen(false);
+      setEditingActivity(null);
+      toast({ title: 'Atividade excluida', variant: 'success' });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel excluir a atividade',
+        description: error.message || 'Tente novamente.',
+        variant: 'destructive',
+      });
+    },
   });
 
   const editingId = editing?.id || '';
@@ -760,7 +821,23 @@ export default function Leads() {
           setViewingLead(null);
           setFormOpen(true);
         }}
+        onCreateActivity={() => { setEditingActivity(null); setActivityFormOpen(true); }}
+        onSelectActivity={(atividade) => { setEditingActivity(atividade); setActivityFormOpen(true); }}
       />
+
+      {activityFormOpen && viewingLead && (
+        <EventoForm
+          open={activityFormOpen}
+          onOpenChange={(next) => { setActivityFormOpen(next); if (!next) setEditingActivity(null); }}
+          evento={editingActivity}
+          initialLeadId={viewingLead.id}
+          leads={[viewingLead]}
+          atendimentos={activityFormAtendimentos}
+          motivosStatus={motivosStatus}
+          onSave={(data) => saveActivityMutation.mutate({ id: editingActivity?.id || null, data })}
+          onDelete={(id) => deleteActivityMutation.mutate(id)}
+        />
+      )}
 
       {formOpen && (
         <LeadForm

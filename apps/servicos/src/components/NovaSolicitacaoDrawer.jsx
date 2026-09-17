@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Paperclip, Plus, Trash2, X } from 'lucide-react';
+import { FileWarning, Paperclip, Plus, Trash2, X } from 'lucide-react';
 
 import { financeiroApi } from '@macom/api-client/financeiroApi';
 import { useAuth } from '@/lib/AuthContext';
@@ -66,6 +66,7 @@ const EMPTY_FORM = {
   departamentoId: '',
   aprovadorDestinoId: '',
   ehTeste: false,
+  possuiNotaFiscal: false,
 };
 
 export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao = null }) {
@@ -285,6 +286,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
         unidadeId: solicitacao.unidade_id || '',
         departamentoId: solicitacao.departamento_id || '',
         aprovadorDestinoId: solicitacao.aprovador_destino_id || '',
+        possuiNotaFiscal: solicitacao.possui_nota_fiscal === true,
       };
       setForm(loadedForm);
       initialFormRef.current = loadedForm;
@@ -555,6 +557,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
         unidade_id: form.unidadeId || null,
         departamento_id: form.departamentoId || null,
         aprovador_destino_id: aprovadorDispensado ? null : form.aprovadorDestinoId,
+        possui_nota_fiscal: form.possuiNotaFiscal,
         ...(parcelasPayload ? { parcelas: parcelasPayload } : {}),
         ...(!isEdicao && !isReenvio && user?.system_access_level === 'admin' && form.ehTeste
           ? { eh_teste: true }
@@ -759,6 +762,30 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div
+            className={`rounded-md border p-3 ${
+              form.possuiNotaFiscal
+                ? 'border-border bg-muted/50'
+                : 'border-amber-500/50 bg-amber-500/10'
+            }`}
+          >
+            <label htmlFor="possuiNotaFiscal" className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+              <Checkbox
+                id="possuiNotaFiscal"
+                checked={form.possuiNotaFiscal}
+                onCheckedChange={(checked) => setField('possuiNotaFiscal')(checked === true)}
+              />
+              Esta solicitação terá nota fiscal
+            </label>
+            {!form.possuiNotaFiscal && (
+              <p className="mt-2 flex items-start gap-2 text-sm text-amber-700">
+                <FileWarning className="mt-0.5 h-4 w-4 shrink-0" />
+                Sem nota fiscal prevista — o financeiro será avisado que este pagamento não terá
+                NF anexada (ex.: reembolso, suprimento de caixa).
+              </p>
+            )}
           </div>
 
           <div className="space-y-3 rounded-md border border-border p-3">

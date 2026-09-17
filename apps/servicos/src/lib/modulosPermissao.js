@@ -19,10 +19,17 @@ export const PAPEIS_MODULO_FINANCEIRO = [
   { value: 'nenhum', label: 'Sem acesso' },
 ];
 
+export const PAPEIS_MODULO_OFICINA = [
+  { value: 'usuario', label: 'Usuário' },
+  { value: 'inspetor', label: 'Inspetor' },
+  { value: 'gestor', label: 'Gestor' },
+  { value: 'nenhum', label: 'Sem acesso' },
+];
+
 export const MODULOS_PERMISSAO = [
   { key: 'financeiro', label: 'Financeiro', ativo: true, papeis: PAPEIS_MODULO_FINANCEIRO },
   { key: 'atendimento', label: 'Atendimento', ativo: false },
-  { key: 'oficina', label: 'Oficina', ativo: false },
+  { key: 'oficina', label: 'Oficina', ativo: true, papeis: PAPEIS_MODULO_OFICINA },
   { key: 'estoque', label: 'Estoque', ativo: false },
   { key: 'compras', label: 'Compras', ativo: false },
   { key: 'rh', label: 'RH', ativo: false },

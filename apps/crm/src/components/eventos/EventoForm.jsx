@@ -42,14 +42,16 @@ function leadToEvento(lead, base = {}) {
   };
 }
 
-function createInitialData(evento, leads) {
+function createInitialData(evento, leads, initialLeadId) {
   if (evento) {
     const linkedLead = leads.find((lead) => lead.id === evento.lead_id)
       || leads.find((lead) => lead.telefone_normalizado && lead.telefone_normalizado === evento.telefone_normalizado);
     return leadToEvento(linkedLead, evento);
   }
 
-  const firstLead = leads.find((lead) => ACTIVE_LEAD_STATUSES.has(lead.status));
+  const firstLead = initialLeadId
+    ? leads.find((lead) => lead.id === initialLeadId)
+    : leads.find((lead) => ACTIVE_LEAD_STATUSES.has(lead.status));
 
   return leadToEvento(firstLead, {
     lead_id: '',
@@ -76,7 +78,7 @@ function createInitialData(evento, leads) {
   });
 }
 
-export default function EventoForm({ open, onOpenChange, evento, leads = [], atendimentos = [], motivosStatus = [], onSave, onDelete }) {
+export default function EventoForm({ open, onOpenChange, evento, leads = [], atendimentos = [], motivosStatus = [], initialLeadId, onSave, onDelete }) {
   const availableLeads = useMemo(() => {
     const hasOpenAttendance = (leadId) => atendimentos.some((atendimento) => (
       atendimento.lead_id === leadId &&
@@ -94,7 +96,7 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
     return leads.filter((lead) => ACTIVE_LEAD_STATUSES.has(lead.status) && !hasOpenAttendance(lead.id));
   }, [atendimentos, evento?.id, evento?.lead_id, leads]);
 
-  const [data, setData] = useState(() => createInitialData(evento, availableLeads.length ? availableLeads : leads));
+  const [data, setData] = useState(() => createInitialData(evento, availableLeads.length ? availableLeads : leads, initialLeadId));
   const selectedLead = leads.find((lead) => lead.id === data.lead_id);
   const isClosed = ['concluida', 'cancelada'].includes(evento?.status);
   const needsResult = data.status === 'concluida';
@@ -173,7 +175,7 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
         <form onSubmit={(event) => { event.preventDefault(); if (canSave) onSave(data); }} className="space-y-4 p-6">
           <Field label="Lead vinculado *">
             {availableLeads.length > 0 ? (
-              <Select value={data.lead_id} onValueChange={selectLead} disabled={Boolean(evento)}>
+              <Select value={data.lead_id} onValueChange={selectLead} disabled={Boolean(evento) || Boolean(initialLeadId)}>
                 <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione um lead" /></SelectTrigger>
                 <SelectContent className="rounded-none">
                   {availableLeads.map((lead) => (

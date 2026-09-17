@@ -219,14 +219,69 @@ reais (só adicionar coluna `mod_<novo>` na tabela, seguindo o mesmo padrão).
   e no histórico do plano que originou essa migration — importação de dados históricos do
   AppSheet continua fora de escopo.
 
+## Oficina — Checklist de inspeção de veículos
+
+Primeira funcionalidade real do módulo Oficina: checklist digital feito na entrada/saída do
+veículo (itens de documentação/segurança/pneus, avarias marcadas num diagrama do veículo,
+fotos, assinatura do cliente na entrega). Schema adaptado de um app standalone (Lovable,
+"estrutura-banco-macom.sql") para reaproveitar entidades já centralizadas do monorepo em vez de
+duplicar cadastro: `funcionario` (do app original) não existe aqui — quem faz o checklist é um
+`public.colaboradores` normal; cliente e veículo são `public.clientes`/`public.veiculos` (as
+mesmas tabelas usadas pelo CRM, extraídas propositalmente pra esse reuso — ver comentários em
+`20260910130000_extract_public_veiculos.sql` e `20260915120000_extract_public_clientes.sql`).
+
+- Tabelas (schema `gestao_servicos`): `checklist_avaliacoes` (registro principal — cliente_id,
+  veiculo_id, colaborador_id, status `em_andamento|finalizado`), `checklist_avarias` (marcas de
+  dano posicionadas em % sobre o diagrama do veículo) e `checklist_itens` (itens verificados por
+  categoria). Migration `20260917020000_add_gestao_servicos_oficina_checklist.sql`.
+- Papéis (Camada 2, módulo `oficina`): `usuario` (só lê), `inspetor` (realiza o checklist),
+  `gestor` (gerencia o módulo), `nenhum` — sem hierarquia de aprovação como o Financeiro.
+  Migration `20260917030000_add_servicos_oficina_papel.sql` (alarga o `CHECK` de
+  `permissoes_modulo.papel` e estende `auto_create_servicos_permissoes` pra provisionar a linha
+  `oficina` também).
+- Assinatura do cliente é capturada ad hoc na tela (campo `assinatura_cliente`, base64/data URL).
+  Assinatura do colaborador **não** é recapturada — lê-se `public.colaboradores.assinatura_url`
+  (a mesma que a pessoa já cadastrou uma vez no Perfil da intranet).
+- Fotos: bucket privado `oficina-checklist-fotos` (migration
+  `20260917040000_add_servicos_oficina_checklist_fotos_storage.sql`), upload direto do client
+  (RLS gated por `servicos_oficina_pode_editar()`), metadados guardados em `checklist_avaliacoes.fotos`
+  (jsonb) via `checklist_foto_registrar`.
+
+### Decisão de arquitetura: Oficina tem edge function própria (`servicos-oficina-api`)
+
+Diferente do Financeiro (dentro de `servicos-api/index.ts`), as actions de Oficina vivem numa
+function separada: `supabase/functions/servicos-oficina-api/index.ts`. Motivo: `servicos-api` já
+tinha ~3600 linhas só de Financeiro e é deployada como uma unidade só — um erro de sintaxe ao
+editar esse arquivo derrubaria a function inteira, inclusive o Financeiro (já em produção). Com
+functions separadas, um bug em Oficina nunca afeta o deploy do Financeiro, e o arquivo de cada
+módulo fica do tamanho do próprio domínio. **Este é o padrão a seguir para os próximos módulos
+reais do `servicos`** (Estoque, Compras, RH, Atendimento): cada um ganha sua própria
+`servicos-<modulo>-api`, em vez de crescer dentro de `servicos-api`.
+
+**Dívida técnica registrada — auth duplicada entre `servicos-api` e `servicos-oficina-api`:** a
+lógica de autenticação/autorização (`getAuthenticatedUser`, `getAuthContext`,
+`getCurrentCollaborator`, `getServicosAccess`, `getServicosModuleRole`) foi **copiada** para
+`supabase/functions/_shared/servicos-auth.ts` em vez de extraída de `servicos-api` — editar
+`servicos-api/index.ts` na mesma entrega que criava Oficina arriscaria o deploy do Financeiro sem
+necessidade. `servicos-api` continua com sua cópia local intacta. Isso deixa duas implementações
+que podem divergir com o tempo. Migrar `servicos-api` para importar de `servicos-auth.ts`
+(removendo a cópia local) fica para um follow-up separado, testado isoladamente com um smoke test
+do Financeiro — mesmo padrão da dívida técnica de unificação de auth (`@macom/auth`) já registrada
+no `CLAUDE.md` raiz. Nota: `servicos-auth.ts` já diverge da cópia de `servicos-api` num ponto —
+o bypass de admin (Camada 1) retorna `'admin'` genérico, não o literal `'financeiro'` hardcoded
+que só fazia sentido enquanto só existia um módulo — quem for migrar `servicos-api` precisa
+ajustar `isFinanceiro`/`isPagador` lá para tratar `'admin'` também.
+
 ## Convenções (sistema Servicos)
 
 - Novo módulo real ⇒ adicionar entrada em `src/lib/navigation.js` (tirar `comingSoon`), criar
   schema/tabelas próprias (pode reaproveitar `gestao_servicos` ou criar um schema novo se o
-  domínio for muito distinto), e registrar o módulo na Camada 2 de permissão (ver seção
+  domínio for muito distinto), registrar o módulo na Camada 2 de permissão (ver seção
   "Papéis" acima) com o conjunto de `papeis` que fizer sentido pro fluxo dele — não precisa
   reaproveitar a hierarquia de aprovação do Financeiro nem migrar pro padrão `view/edit` da
-  intranet, o modelo atual já suporta um vocabulário de papéis por módulo.
+  intranet, o modelo atual já suporta um vocabulário de papéis por módulo — e criar sua própria
+  edge function `servicos-<modulo>-api` (ver decisão de arquitetura na seção Oficina acima), não
+  acrescentar dentro de `servicos-api`.
 - Sobreposição com `apps/rh`: o módulo "RH" aqui é só operacional (reembolsos/férias da equipe
   da oficina); RH corporativo completo continua sendo escopo do app `rh` (hoje placeholder) —
   não duplicar funcionalidade quando `rh` sair do placeholder.

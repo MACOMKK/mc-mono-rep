@@ -31,7 +31,19 @@ const RESULT_LABELS = {
   lead_perdido: 'Lead perdido',
 };
 
-export default function EventoCard({ evento, onClick }) {
+const STATUS_LABELS = {
+  planejada: 'Planejada',
+  concluida: 'Concluida',
+  cancelada: 'Cancelada',
+};
+
+const STATUS_BADGE = {
+  planejada: 'bg-blue-100 text-blue-700',
+  concluida: 'bg-emerald-100 text-emerald-700',
+  cancelada: 'bg-slate-200 text-slate-600',
+};
+
+export default function EventoCard({ evento, onClick, compact = false }) {
   const contactDate = evento.proximo_contato
     ? new Date(`${String(evento.proximo_contato).slice(0, 10)}T00:00:00`)
     : null;
@@ -44,6 +56,32 @@ export default function EventoCard({ evento, onClick }) {
     && contactDate
     && !Number.isNaN(contactDate.getTime())
     && contactDate < today;
+
+  if (compact) {
+    return (
+      <button
+        onClick={onClick}
+        className={cn(
+          'w-full flex items-center gap-2 border-l-4 bg-white px-3 py-2 text-left transition-colors hover:bg-slate-50',
+          isOverdue ? 'border-red-600 bg-red-50/40' : 'border-primary'
+        )}
+      >
+        <span className={cn('shrink-0 rounded-sm px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider', TIPO_COLORS[evento.tipo_evento] || 'bg-muted text-muted-foreground')}>
+          {evento.tipo_evento?.replace('_', ' ')}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800">{evento.titulo}</span>
+        {formattedContactDate ? (
+          <span className={cn('flex shrink-0 items-center gap-1 text-[10px] font-semibold', isOverdue ? 'text-red-700' : 'text-muted-foreground')}>
+            <Calendar className="h-3 w-3" />
+            {formattedContactDate}
+          </span>
+        ) : null}
+        <span className={cn('shrink-0 rounded-sm px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider', STATUS_BADGE[evento.status] || 'bg-muted text-muted-foreground')}>
+          {STATUS_LABELS[evento.status] || evento.status}
+        </span>
+      </button>
+    );
+  }
 
   return (
     <button

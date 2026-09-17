@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -32,20 +33,30 @@ function Item({ label, children }) {
   );
 }
 
-function Section({ icon: Icon, title, children }) {
+function Section({ icon: Icon, title, children, action }) {
   return (
     <div className="space-y-3 border-t pt-4 first:border-t-0 first:pt-0">
-      <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
-        {title}
+      <div className="flex items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+          <Icon className="h-3.5 w-3.5" />
+          {title}
+        </div>
+        {action}
       </div>
       <div className="grid gap-3 md:grid-cols-2">{children}</div>
     </div>
   );
 }
 
-export default function LeadViewer({ open, onOpenChange, lead, onEdit }) {
+const ATIVIDADES_VISIVEIS = 4;
+
+export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity }) {
   const veiculo = lead?.veiculo_interesse || null;
+  const [showAllAtividades, setShowAllAtividades] = useState(false);
+
+  useEffect(() => {
+    setShowAllAtividades(false);
+  }, [lead?.id]);
 
   const { data: categoriasVeiculo = [] } = useQuery({
     queryKey: ['crm-categorias-veiculo'],
@@ -101,13 +112,46 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit }) {
             ) : null}
           </Section>
 
-          <Section icon={AlarmClock} title="Atividades">
-            <div className="space-y-2 md:col-span-2">
+          <Section
+            icon={AlarmClock}
+            title="Atividades"
+            action={onCreateActivity ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 rounded-none text-[10px] font-bold uppercase tracking-wider"
+                onClick={onCreateActivity}
+              >
+                Nova atividade
+              </Button>
+            ) : null}
+          >
+            <div className="space-y-1.5 md:col-span-2">
               {atividades.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nenhuma atividade registrada.</p>
-              ) : atividades.map((atividade) => (
-                <EventoCard key={atividade.id} evento={atividade} onClick={() => {}} />
-              ))}
+              ) : (
+                <>
+                  {(showAllAtividades ? atividades : atividades.slice(0, ATIVIDADES_VISIVEIS)).map((atividade) => (
+                    <EventoCard
+                      key={atividade.id}
+                      evento={atividade}
+                      compact
+                      onClick={() => onSelectActivity?.(atividade)}
+                    />
+                  ))}
+                  {atividades.length > ATIVIDADES_VISIVEIS ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-7 w-full rounded-none text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowAllAtividades((current) => !current)}
+                    >
+                      {showAllAtividades ? 'Mostrar menos' : `Mostrar todas (${atividades.length})`}
+                    </Button>
+                  ) : null}
+                </>
+              )}
             </div>
           </Section>
 

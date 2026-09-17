@@ -39,6 +39,9 @@ const SERVICOS_SYSTEM_SLUG = 'servicos';
 // papel que ainda nao esta no CHECK de gestao_servicos.permissoes_modulo.papel.
 const SERVICOS_MODULOS_CONFIG = {
   financeiro: { papeis: ['nenhum', 'usuario', 'aprovador', 'financeiro', 'contas_a_pagar'] },
+  // Checklist de inspecao (servicos-oficina-api, edge function separada) usa esses
+  // papeis; sem hierarquia de aprovacao como o Financeiro (ver apps/servicos/CLAUDE.md).
+  oficina: { papeis: ['nenhum', 'usuario', 'inspetor', 'gestor'] },
 } as const;
 const SERVICOS_MODULOS = Object.keys(SERVICOS_MODULOS_CONFIG) as (keyof typeof SERVICOS_MODULOS_CONFIG)[];
 const COMPROVANTES_STORAGE_BUCKET = 'comprovantes-pagamento';
@@ -61,6 +64,7 @@ const CREATE_FIELDS = [
   'departamento_id',
   'observacao',
   'aprovador_destino_id',
+  'possui_nota_fiscal',
 ] as const;
 const UPDATE_FIELDS = CREATE_FIELDS;
 const UPDATE_FIELD_LABELS: Record<(typeof CREATE_FIELDS)[number], string> = {
@@ -79,6 +83,7 @@ const UPDATE_FIELD_LABELS: Record<(typeof CREATE_FIELDS)[number], string> = {
   departamento_id: 'Departamento',
   observacao: 'Observacao',
   aprovador_destino_id: 'Aprovador responsavel',
+  possui_nota_fiscal: 'Nota fiscal esperada',
 };
 const FORMAS_PAGAMENTO = [
   'pix',
@@ -594,8 +599,15 @@ async function getServicosModuleRole(
   return rows[0]?.papel || 'usuario';
 }
 
-function ensureHasAccess(access: Record<string, unknown> | null) {
+// moduleRole so e' checado quando explicitamente passado (mesmo comportamento de antes quando
+// omitido) -- a acao 'me' precisa continuar liberada so com a Camada 1 pra poder informar o
+// papel 'nenhum' de volta ao front, em vez de estourar 403 antes do front saber o motivo (mesmo
+// padrao do 'me' de servicos-oficina-api, que tambem nao chama ensurePodeVer).
+function ensureHasAccess(access: Record<string, unknown> | null, moduleRole?: string | null) {
   if (!access || !['admin', 'gestor', 'usuario'].includes(getAccessLevel(access))) {
+    throw Object.assign(new Error('Seu usuario nao possui acesso liberado ao modulo financeiro.'), { status: 403 });
+  }
+  if (moduleRole !== undefined && (!moduleRole || moduleRole === 'nenhum')) {
     throw Object.assign(new Error('Seu usuario nao possui acesso liberado ao modulo financeiro.'), { status: 403 });
   }
 }
@@ -1061,7 +1073,7 @@ Deno.serve(async (request) => {
       return json({ success: true });
     }
 
-    ensureHasAccess(access);
+    ensureHasAccess(access, moduleRole);
 
     if (action === 'obter_aviso_ativo') {
       const { aviso, aceite } = await obterAvisoAtivo(sql, {
@@ -1785,7 +1797,8 @@ Deno.serve(async (request) => {
               case when pp.parcelas_total > 0 then pp.vencimento_parcela end,
               sp.data_vencimento
             ) as vencimento_efetivo,
-            coalesce(an.anexos_total, 0) as anexos_total
+            coalesce(an.anexos_total, 0) as anexos_total,
+            coalesce(an.nota_fiscal_total, 0) as nota_fiscal_total
           from ${SERVICOS_SCHEMA}.solicitacoes_pagamento sp
           join public.colaboradores c on c.id = sp.solicitante_id
           left join public.colaboradores ac on ac.id = sp.aprovador_destino_id
@@ -1795,8 +1808,11 @@ Deno.serve(async (request) => {
           left join public.departamentos d on d.id = sp.departamento_id
           left join lateral (
             -- usado pra sinalizar no frontend, sem ida extra ao servidor, quando falta anexo
-            -- antes de aprovar (ver validacao espelhada em set_status/confirmar_sem_anexo).
-            select count(*) as anexos_total
+            -- antes de aprovar (ver validacao espelhada em set_status/confirmar_sem_anexo), e
+            -- quando falta a nota fiscal prevista (possui_nota_fiscal = true).
+            select
+              count(*) as anexos_total,
+              count(*) filter (where tipo_anexo = 'nota_fiscal') as nota_fiscal_total
             from ${SERVICOS_SCHEMA}.anexos_solicitacao
             where solicitacao_id = sp.id
           ) an on true

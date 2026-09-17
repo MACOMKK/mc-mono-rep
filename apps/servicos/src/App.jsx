@@ -18,6 +18,8 @@ import Categorias from '@/pages/Categorias';
 import Relatorios from '@/pages/Relatorios';
 import Configuracoes from '@/pages/Configuracoes';
 import ModuloEmBreve from '@/pages/ModuloEmBreve';
+import AcessoRestrito from '@/pages/AcessoRestrito';
+import ChecklistList from '@/pages/oficina/ChecklistList';
 
 const getFromPath = (search) => {
   const params = new URLSearchParams(search);
@@ -66,12 +68,25 @@ const ServicosRoutes = () => {
     );
   }
 
+  // Destino padrao de '/' e de rotas desconhecidas: prioriza Financeiro (modulo historico), cai
+  // pra Oficina se so essa liberacao existir, e volta pra /solicitacoes como ultimo fallback --
+  // seguro mesmo sem nenhum modulo liberado, pois a rota agora sempre mostra <AcessoRestrito />
+  // nesse caso (nunca mais tela vazia ou loop).
+  const defaultRoute = user?.hasFinanceiroAccess
+    ? '/solicitacoes'
+    : user?.hasOficinaAccess
+      ? '/oficina/checklists'
+      : '/solicitacoes';
+
   return (
     <PushProvider>
     <Routes>
       <Route element={<AppLayout />}>
-        <Route path="/" element={<Navigate replace to="/solicitacoes" />} />
-        <Route path="/solicitacoes" element={<MinhasSolicitacoes />} />
+        <Route path="/" element={<Navigate replace to={defaultRoute} />} />
+        <Route
+          path="/solicitacoes"
+          element={user?.hasFinanceiroAccess ? <MinhasSolicitacoes /> : <AcessoRestrito modulo="Financeiro" />}
+        />
         {user?.isAprovador && <Route path="/aprovacoes" element={<Aprovacoes />} />}
         {user?.isPagador && <Route path="/pagamentos" element={<Pagamentos />} />}
         {user?.isPagador && <Route path="/calendario-vencimentos" element={<CalendarioVencimentos />} />}
@@ -85,9 +100,10 @@ const ServicosRoutes = () => {
           element={<ModuloEmBreve titulo="Atendimento" descricao="Recepcao de clientes, abertura de OS, agendamento e historico de veiculos." />}
         />
         <Route
-          path="/oficina"
-          element={<ModuloEmBreve titulo="Oficina" descricao="Servicos executados, mecanicos responsaveis, checklist e controle de pecas." />}
+          path="/oficina/checklists"
+          element={user?.hasOficinaAccess ? <ChecklistList /> : <AcessoRestrito modulo="Oficina" />}
         />
+        <Route path="/oficina" element={<Navigate replace to="/oficina/checklists" />} />
         <Route
           path="/estoque"
           element={<ModuloEmBreve titulo="Estoque" descricao="Pecas, pneus, oleos e entradas/saidas." />}
@@ -100,7 +116,7 @@ const ServicosRoutes = () => {
           path="/rh"
           element={<ModuloEmBreve titulo="RH" descricao="Funcionarios, ferias e reembolsos." />}
         />
-        <Route path="*" element={<Navigate replace to="/solicitacoes" />} />
+        <Route path="*" element={<Navigate replace to={defaultRoute} />} />
       </Route>
     </Routes>
     </PushProvider>

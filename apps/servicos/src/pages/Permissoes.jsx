@@ -93,6 +93,9 @@ export default function Permissoes() {
     alterarMutation.variables?.modulo === modulo;
 
   const modulosEmBreve = useMemo(() => MODULOS_PERMISSAO.filter((modulo) => !modulo.ativo), []);
+  // Cabecalho precisa seguir a MESMA ordem das celulas do corpo (ativos primeiro, depois em breve --
+  // ver MODULOS_ATIVOS.map/modulosEmBreve.map abaixo), senao o header desalinha das colunas reais.
+  const modulosColunas = useMemo(() => [...MODULOS_ATIVOS, ...modulosEmBreve], [modulosEmBreve]);
 
   const perfilQuery = useQuery({
     queryKey: ['servicos', 'colaborador-profile', perfilColaboradorId],
@@ -146,7 +149,7 @@ export default function Permissoes() {
               <TableRow>
                 <TableHead>Colaborador</TableHead>
                 <TableHead>Acesso ao sistema</TableHead>
-                {MODULOS_PERMISSAO.map((modulo) => (
+                {modulosColunas.map((modulo) => (
                   <TableHead key={modulo.key} className={modulo.ativo ? undefined : 'text-muted-foreground'}>
                     {modulo.label}
                     {!modulo.ativo && (

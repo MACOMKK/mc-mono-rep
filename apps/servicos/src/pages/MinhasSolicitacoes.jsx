@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Pencil, Plus, RefreshCw, X } from 'lucide-react';
+import { AlertTriangle, FileWarning, Pencil, Plus, RefreshCw, X } from 'lucide-react';
 
 import { financeiroApi } from '@macom/api-client/financeiroApi';
 import {
@@ -621,6 +621,15 @@ export default function MinhasSolicitacoes() {
                             Teste
                           </Badge>
                         )}
+                        {row.possui_nota_fiscal === true && Number(row.nota_fiscal_total || 0) === 0 && (
+                          <Badge
+                            variant="outline"
+                            className="gap-1 border-amber-500/50 bg-amber-500/10 text-amber-600"
+                          >
+                            <FileWarning className="h-3 w-3" />
+                            Aguardando NF
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -650,6 +659,12 @@ export default function MinhasSolicitacoes() {
                     {row.eh_teste && (
                       <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-600">
                         Teste
+                      </Badge>
+                    )}
+                    {row.possui_nota_fiscal === true && Number(row.nota_fiscal_total || 0) === 0 && (
+                      <Badge variant="outline" className="gap-1 border-amber-500/50 bg-amber-500/10 text-amber-600">
+                        <FileWarning className="h-3 w-3" />
+                        Aguardando NF
                       </Badge>
                     )}
                     {!row.aprovador_destino_nome && row.tipo_beneficiario === 'colaborador' && (

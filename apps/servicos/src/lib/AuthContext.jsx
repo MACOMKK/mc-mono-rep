@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { financeiroApi } from '@macom/api-client/financeiroApi';
+import { oficinaApi } from '@macom/api-client/oficinaApi';
 import {
   assertSupabaseConfigured,
   checkLoginLock,
@@ -13,7 +14,7 @@ import {
 
 const AuthContext = createContext(null);
 
-function normalizeServicosUser(authUser, authPayload = {}) {
+function normalizeServicosUser(authUser, authPayload = {}, oficinaRole = null) {
   const collaborator = authPayload.row || null;
   const access = authPayload.access || null;
   // Papel efetivo no modulo Financeiro (Camada 2, gestao_servicos.permissoes_modulo):
@@ -34,6 +35,9 @@ function normalizeServicosUser(authUser, authPayload = {}) {
     photoUrl: collaborator?.foto_url || null,
     signatureUrl: collaborator?.assinatura_url || null,
     role,
+    // 'nenhum' = sem acesso liberado ao modulo (usado pra esconder o modulo do menu/rotas, ver
+    // apps/servicos/src/lib/navigation.js e App.jsx).
+    hasFinanceiroAccess: role !== 'nenhum',
     isAprovador: role === 'aprovador' || role === 'financeiro',
     isFinanceiro: role === 'financeiro',
     isPagador: role === 'contas_a_pagar' || role === 'financeiro',
@@ -42,6 +46,13 @@ function normalizeServicosUser(authUser, authPayload = {}) {
     // calcula em `me`, ver servicos-api/index.ts). Nao tem relacao com reprovar pendente
     // (Aprovacoes), que continua so isAprovador/isFinanceiro.
     canReprovarAprovada: Boolean(authPayload.pode_reprovar_aprovada),
+    // Papel efetivo no modulo Oficina (Camada 2), resolvido via servicos-oficina-api
+    // (edge function separada, ver apps/servicos/CLAUDE.md) -- nao vem de authPayload
+    // porque financeiro/oficina sao papeis independentes em modulos diferentes.
+    oficinaRole,
+    hasOficinaAccess: Boolean(oficinaRole) && oficinaRole !== 'nenhum',
+    isOficinaInspetor: oficinaRole === 'inspetor' || oficinaRole === 'gestor' || oficinaRole === 'admin',
+    isOficinaGestor: oficinaRole === 'gestor' || oficinaRole === 'admin',
     active: collaborator?.status !== 'inativo' && access?.ativo === true,
     system_access_id: access?.id || null,
     system_access_level: access?.nivel_acesso || null,
@@ -114,8 +125,11 @@ export function AuthProvider({ children }) {
     }
 
     try {
-      const authPayload = await financeiroApi.auth.me(nextSession.access_token);
-      const currentUser = normalizeServicosUser(nextSession.user, authPayload);
+      const [authPayload, oficinaPayload] = await Promise.all([
+        financeiroApi.auth.me(nextSession.access_token),
+        oficinaApi.auth.me(nextSession.access_token).catch(() => ({ role: null })),
+      ]);
+      const currentUser = normalizeServicosUser(nextSession.user, authPayload, oficinaPayload.role);
 
       if (!currentUser.active) {
         const accessError = new Error('Seu usuario nao possui acesso ativo ao sistema Servicos.');

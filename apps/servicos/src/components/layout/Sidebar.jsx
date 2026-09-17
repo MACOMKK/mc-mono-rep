@@ -43,6 +43,13 @@ function ModuleNavItem({ mod, user, collapsed, onNavigate }) {
   const childActive = visibleChildren.some((child) => location.pathname.startsWith(child.path));
   const [open, setOpen] = useState(childActive);
 
+  // Modulo real (declara `children`) mas o usuario perdeu acesso a todos eles -- some do menu por
+  // completo, em vez de cair no fallback abaixo (que e' so pros modulos `comingSoon`, sem `children`).
+  const definesChildren = Array.isArray(mod.children) && mod.children.length > 0;
+  if (definesChildren && !hasChildren) {
+    return null;
+  }
+
   if (!hasChildren) {
     return (
       <NavLink

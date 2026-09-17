@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Banknote, Paperclip, Plus, RefreshCw, Trash2, Unlock, X } from 'lucide-react';
+import { AlertTriangle, Banknote, FileWarning, Paperclip, Plus, RefreshCw, Trash2, Unlock, X } from 'lucide-react';
 
 import { financeiroApi } from '@macom/api-client/financeiroApi';
 import { supabase } from '@macom/api-client/supabaseClient';
@@ -947,6 +947,15 @@ export default function Pagamentos() {
                           Teste
                         </Badge>
                       )}
+                      {row.possui_nota_fiscal === true && Number(row.nota_fiscal_total || 0) === 0 && (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 border-amber-500/50 bg-amber-500/10 text-amber-600"
+                        >
+                          <FileWarning className="h-3 w-3" />
+                          Aguardando NF
+                        </Badge>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -1054,6 +1063,12 @@ export default function Pagamentos() {
                     {row.eh_teste && (
                       <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-600">
                         Teste
+                      </Badge>
+                    )}
+                    {row.possui_nota_fiscal === true && Number(row.nota_fiscal_total || 0) === 0 && (
+                      <Badge variant="outline" className="gap-1 border-amber-500/50 bg-amber-500/10 text-amber-600">
+                        <FileWarning className="h-3 w-3" />
+                        Aguardando NF
                       </Badge>
                     )}
                     {!row.aprovador_destino_nome && row.tipo_beneficiario === 'colaborador' && (
