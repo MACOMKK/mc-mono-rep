@@ -203,13 +203,18 @@ export default function ChecklistForm() {
   };
 
   const handleSalvarCategoria = async (categoria) => {
+    const valores = itensPorCategoria[categoria] || {};
+    const todosItens = CATEGORIA_ITENS[categoria] || [];
+    const itensArray = todosItens.filter((item) => valores[item]).map((item) => ({ item, status: valores[item] }));
+
+    if (itensArray.length < todosItens.length) {
+      setErro(`Selecione um tipo para todos os itens em "${ETAPAS[etapa]}" antes de avançar.`);
+      return;
+    }
+
     setSalvando(true);
     setErro(null);
     try {
-      const valores = itensPorCategoria[categoria] || {};
-      const itensArray = (CATEGORIA_ITENS[categoria] || [])
-        .filter((item) => valores[item])
-        .map((item) => ({ item, status: valores[item] }));
       await oficinaApi.itens.upsert(avaliacaoId, categoria, itensArray);
       setEtapa((atual) => atual + 1);
     } catch (error) {
