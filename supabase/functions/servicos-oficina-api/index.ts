@@ -44,7 +44,27 @@ function getErrorStatus(error: unknown) {
 }
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Falha ao consultar o modulo oficina.';
+  const message = error instanceof Error ? error.message : 'Falha ao consultar o modulo oficina.';
+  return mapDatabaseError(message);
+}
+
+function mapDatabaseError(message: string) {
+  if (message.includes('idx_clientes_telefone_unique')) {
+    return 'Ja existe outro cliente com este telefone.';
+  }
+  if (message.includes('idx_clientes_email_unique')) {
+    return 'Ja existe outro cliente com este e-mail.';
+  }
+  if (message.includes('idx_clientes_cpf_cnpj_unique')) {
+    return 'Ja existe outro cliente com este CPF/CNPJ.';
+  }
+  if (message.includes('veiculos_chassi_key')) {
+    return 'Ja existe um veiculo com este chassi.';
+  }
+  if (message.includes('idx_veiculos_placa_unique')) {
+    return 'Ja existe um veiculo com esta placa.';
+  }
+  return message;
 }
 
 function podeVer(moduleRole: string | null) {
@@ -133,6 +153,7 @@ Deno.serve(async (request) => {
       const status = body.status ? String(body.status) : null;
       const colaboradorId = body.colaborador_id ? String(body.colaborador_id) : null;
       const busca = body.busca ? String(body.busca).trim() : null;
+      const incluirFotos = Boolean(body.incluir_fotos);
       const limit = Math.min(Math.max(Number(body.limit) || 200, 1), 200);
       const offset = Math.max(Number(body.offset) || 0, 0);
 
@@ -159,17 +180,35 @@ Deno.serve(async (request) => {
       const rows = await sql.unsafe(
         `
           select ca.*, cl.nome as cliente_nome, v.placa as veiculo_placa, v.chassi as veiculo_chassi,
-            c.nome as colaborador_nome
+            mv.nome as veiculo_modelo, c.nome as colaborador_nome, foto.storage_path as foto_thumbnail_path
           from ${SERVICOS_SCHEMA}.checklist_avaliacoes ca
           left join public.clientes cl on cl.id = ca.cliente_id
           left join public.veiculos v on v.id = ca.veiculo_id
+          left join public.modelos_veiculo mv on mv.id = v.modelo_id
           left join public.colaboradores c on c.id = ca.colaborador_id
+          left join lateral (
+            select cf.storage_path
+            from ${SERVICOS_SCHEMA}.checklist_fotos cf
+            where cf.avaliacao_id = ca.id
+            order by cf.criado_em
+            limit 1
+          ) foto on true
           ${whereClause}
           order by ca.data_entrada desc
           limit $${params.length - 1} offset $${params.length};
         `,
         params,
       );
+
+      if (incluirFotos) {
+        const rowsComFoto = await Promise.all(
+          rows.map(async (row: Record<string, unknown>) => ({
+            ...row,
+            foto_thumbnail_url: await createFotoSignedUrl(row.foto_thumbnail_path ? String(row.foto_thumbnail_path) : null),
+          })),
+        );
+        return json({ rows: rowsComFoto });
+      }
 
       return json({ rows });
     }
@@ -467,14 +506,17 @@ Deno.serve(async (request) => {
       const telefoneNormalizado = telefone.replace(/\D/g, '');
       const email = body.email ? String(body.email).trim() : null;
       const emailNormalizado = email ? email.toLowerCase() : null;
+      const cpfCnpj = body.cpf_cnpj ? String(body.cpf_cnpj).trim() : null;
+      const cpfCnpjNormalizado = cpfCnpj ? cpfCnpj.replace(/\D/g, '') : null;
 
       const rows = await sql.unsafe(
         `
-          insert into public.clientes (nome, telefone, telefone_normalizado, email, email_normalizado, cpf_cnpj)
-          values ($1, $2, $3, $4, $5, $6)
+          insert into public.clientes
+            (nome, telefone, telefone_normalizado, email, email_normalizado, cpf_cnpj, cpf_cnpj_normalizado)
+          values ($1, $2, $3, $4, $5, $6, $7)
           returning id, nome, telefone, email, cpf_cnpj;
         `,
-        [nome, telefone, telefoneNormalizado, email, emailNormalizado, body.cpf_cnpj ? String(body.cpf_cnpj) : null],
+        [nome, telefone, telefoneNormalizado, email, emailNormalizado, cpfCnpj, cpfCnpjNormalizado],
       );
 
       return json({ row: rows[0] }, 201);
@@ -503,8 +545,10 @@ Deno.serve(async (request) => {
     if (action === 'veiculo_criar') {
       ensurePodeEditar(moduleRole);
       const modeloId = String(body.modelo_id || '');
-      const chassi = String(body.chassi || '').trim();
+      const chassi = String(body.chassi || '').trim().toUpperCase();
       if (!modeloId || !chassi) return json({ error: 'modelo_id e chassi sao obrigatorios.' }, 400);
+
+      const placa = body.placa ? String(body.placa).trim().toUpperCase().replace(/\s+/g, '') : null;
 
       const rows = await sql.unsafe(
         `
@@ -516,7 +560,7 @@ Deno.serve(async (request) => {
           modeloId,
           body.versao_id ? String(body.versao_id) : null,
           chassi,
-          body.placa ? String(body.placa).trim() : null,
+          placa,
           body.cor ? String(body.cor).trim() : null,
           body.km != null ? Number(body.km) : null,
         ],

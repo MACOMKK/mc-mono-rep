@@ -283,6 +283,12 @@ function validateContactFields(entity: EntityName, payload: Record<string, unkno
     payload.email = email;
     payload.email_normalizado = email.toLowerCase();
   }
+
+  if (typeof payload.cpf_cnpj === 'string' && payload.cpf_cnpj.trim()) {
+    const cpfCnpj = payload.cpf_cnpj.trim();
+    payload.cpf_cnpj = cpfCnpj;
+    payload.cpf_cnpj_normalizado = cpfCnpj.replace(/\D/g, '');
+  }
 }
 
 function mapDatabaseError(error: unknown) {
@@ -338,6 +344,10 @@ function mapDatabaseError(error: unknown) {
 
   if (message.includes('veiculos_chassi_key')) {
     return 'Ja existe um veiculo com este chassi.';
+  }
+
+  if (message.includes('idx_veiculos_placa_unique')) {
+    return 'Ja existe um veiculo com esta placa.';
   }
 
   if (message.includes('pipelines_nome_key')) {
@@ -475,6 +485,12 @@ function sanitizeVeiculoPayload(payload: Record<string, unknown> = {}) {
       sanitized[field] = payload[field];
     }
   }
+  if (typeof sanitized.chassi === 'string') {
+    sanitized.chassi = sanitized.chassi.trim().toUpperCase();
+  }
+  if (typeof sanitized.placa === 'string') {
+    sanitized.placa = sanitized.placa.trim().toUpperCase().replace(/\s+/g, '') || null;
+  }
   return sanitized;
 }
 
@@ -488,6 +504,7 @@ const CLIENTE_IDENTITY_FIELDS = [
   'email',
   'email_normalizado',
   'cpf_cnpj',
+  'cpf_cnpj_normalizado',
 ] as const;
 
 const CLIENTE_EXTENSAO_FIELDS = [

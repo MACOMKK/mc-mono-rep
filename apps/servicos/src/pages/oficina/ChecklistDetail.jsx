@@ -99,7 +99,7 @@ export default function ChecklistDetail() {
         <Badge variant={STATUS_VARIANT[row.status] || 'default'}>{STATUS_LABEL[row.status] || row.status}</Badge>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm">
+      <div className="grid grid-cols-2 gap-4 rounded-lg border border-border bg-card p-4 text-sm">
         <div>
           <p className="text-xs text-muted-foreground">Cliente</p>
           <p>{row.cliente_nome || '—'}</p>
@@ -132,7 +132,7 @@ export default function ChecklistDetail() {
       ))}
 
       {row.observacoes && (
-        <div className="rounded-lg border p-4">
+        <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground">Observações</p>
           <p className="text-sm">{row.observacoes}</p>
         </div>
@@ -141,7 +141,7 @@ export default function ChecklistDetail() {
       <FotoUploadGrid avaliacaoId={id} fotos={row.fotos || []} readOnly />
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-lg border p-3">
+        <div className="rounded-lg border border-border bg-card p-3">
           <p className="text-xs text-muted-foreground">Assinatura do responsável</p>
           {row.colaborador_assinatura_url ? (
             <img src={row.colaborador_assinatura_url} alt="Assinatura do responsável" className="mt-2 h-16 object-contain" />
@@ -149,7 +149,7 @@ export default function ChecklistDetail() {
             <p className="mt-1 text-sm text-muted-foreground">—</p>
           )}
         </div>
-        <div className="rounded-lg border p-3">
+        <div className="rounded-lg border border-border bg-card p-3">
           <p className="text-xs text-muted-foreground">Assinatura do cliente</p>
           {row.assinatura_cliente ? (
             <img src={row.assinatura_cliente} alt="Assinatura do cliente" className="mt-2 h-16 object-contain" />

@@ -258,7 +258,7 @@ export default function ChecklistForm() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
       <div>
         <h1 className="text-xl font-bold">{idParam ? 'Editar checklist' : 'Nova avaliação'}</h1>
-        <div className="mt-3 flex flex-nowrap items-center justify-between gap-1.5 rounded-xl border bg-card p-3">
+        <div className="mt-3 flex gap-1.5 overflow-x-auto rounded-xl border bg-card p-3 md:flex-wrap md:overflow-visible">
           {ETAPAS.map((nome, index) => {
             const concluida = index < etapa;
             const atual = index === etapa;
@@ -269,7 +269,7 @@ export default function ChecklistForm() {
                 type="button"
                 disabled={!habilitada}
                 onClick={() => habilitada && setEtapa(index)}
-                className={`flex-1 rounded-full px-2 py-1.5 text-center text-[11px] font-medium whitespace-nowrap transition-colors xl:text-xs ${
+                className={`shrink-0 rounded-full px-2.5 py-1.5 text-center text-[11px] font-medium whitespace-nowrap transition-colors md:flex-1 xl:text-xs ${
                   atual
                     ? 'bg-primary text-primary-foreground'
                     : concluida
@@ -417,7 +417,7 @@ export default function ChecklistForm() {
 
       {etapa === 7 && (
         <div className="flex flex-col gap-4">
-          <div className="rounded-lg border p-3">
+          <div className="rounded-lg border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Assinatura do responsável</p>
             {user?.signatureUrl ? (
               <img src={user.signatureUrl} alt="Assinatura do responsável" className="mt-2 h-16 object-contain" />
@@ -426,7 +426,7 @@ export default function ChecklistForm() {
             )}
           </div>
 
-          <div className="rounded-lg border p-3">
+          <div className="rounded-lg border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Assinatura do cliente</p>
             {assinaturaCliente ? (
               <img src={assinaturaCliente} alt="Assinatura do cliente" className="mt-2 h-16 object-contain" />
@@ -460,7 +460,7 @@ export default function ChecklistForm() {
 
       {etapa === 8 && (
         <div className="flex flex-col gap-4">
-          <div className="rounded-lg border p-4">
+          <div className="rounded-lg border border-border bg-card p-4">
             <h2 className="font-semibold">Resumo</h2>
             <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
               <dt className="text-muted-foreground">Cliente</dt>

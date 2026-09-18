@@ -65,7 +65,7 @@ export const oficinaApi = {
     bucket: 'oficina-checklist-fotos',
   },
   checklists: {
-    async list({ status, colaboradorId, busca, limit, offset } = {}) {
+    async list({ status, colaboradorId, busca, limit, offset, incluirFotos } = {}) {
       const result = await invokeOficina({
         action: 'checklist_listar',
         status,
@@ -73,6 +73,7 @@ export const oficinaApi = {
         busca,
         limit,
         offset,
+        incluir_fotos: incluirFotos,
       });
       return result.rows || [];
     },

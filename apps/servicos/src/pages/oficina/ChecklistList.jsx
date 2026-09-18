@@ -1,14 +1,10 @@
-import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { ArrowRight, Car, History, Plus } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
-import { Badge, Button, Spinner, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@macom/ui';
+import { Badge, Spinner } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
-import Pagination from '@/components/Pagination';
-import SearchInput from '@/components/SearchInput';
-import { usePagination } from '@/hooks/usePagination';
 
 const STATUS_LABEL = {
   em_andamento: 'Em andamento',
@@ -20,98 +16,134 @@ const STATUS_VARIANT = {
   finalizado: 'success',
 };
 
+function AcaoCard({ icone: Icone, titulo, descricao, destaque, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-1 items-center gap-4 rounded-2xl border border-border bg-white p-5 text-left shadow-sm transition hover:shadow-md"
+    >
+      <span
+        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${
+          destaque ? 'bg-primary text-primary-foreground' : 'bg-foreground text-background'
+        }`}
+      >
+        <Icone className="h-5 w-5" />
+      </span>
+      <div>
+        <p className="font-semibold">{titulo}</p>
+        <p className="text-sm text-muted-foreground">{descricao}</p>
+      </div>
+    </button>
+  );
+}
+
+function ChecklistThumbnail({ item }) {
+  if (item.foto_thumbnail_url) {
+    return (
+      <img
+        src={item.foto_thumbnail_url}
+        alt={item.cliente_nome || 'Veículo'}
+        className="h-14 w-14 shrink-0 rounded-lg object-cover"
+      />
+    );
+  }
+  return (
+    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+      <Car className="h-5 w-5" />
+    </span>
+  );
+}
+
 export default function ChecklistList() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [busca, setBusca] = useState('');
 
-  const { data: checklists = [], isLoading, isError } = useQuery({
-    queryKey: ['oficina', 'checklists'],
-    queryFn: () => oficinaApi.checklists.list(),
+  const { data: recentes = [], isLoading, isError } = useQuery({
+    queryKey: ['oficina', 'checklists', 'recentes'],
+    queryFn: () => oficinaApi.checklists.list({ limit: 5, incluirFotos: true }),
   });
 
-  const filtrados = useMemo(() => {
-    if (!busca.trim()) return checklists;
-    const termo = busca.trim().toLowerCase();
-    return checklists.filter((item) =>
-      [item.cliente_nome, item.veiculo_placa, item.veiculo_chassi, item.colaborador_nome]
-        .filter(Boolean)
-        .some((campo) => campo.toLowerCase().includes(termo)),
-    );
-  }, [checklists, busca]);
-
-  const { page, setPage, pageItems, total, pageSize } = usePagination(filtrados, 15);
+  const subtitulo = (item) =>
+    [item.veiculo_placa || item.veiculo_chassi, item.veiculo_modelo, item.os ? `O.S. ${item.os}` : null, item.colaborador_nome]
+      .filter(Boolean)
+      .join(' · ');
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-xl font-bold">Checklists de inspeção</h1>
-          <p className="text-sm text-muted-foreground">Vistorias de veículos realizadas na oficina.</p>
-        </div>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3 sm:flex-row">
         {user?.isOficinaInspetor && (
-          <Button onClick={() => navigate('/oficina/checklists/novo')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo checklist
-          </Button>
+          <AcaoCard
+            icone={Plus}
+            titulo="Nova avaliação"
+            descricao="Abrir formulário de inspeção"
+            destaque
+            onClick={() => navigate('/oficina/checklists/novo')}
+          />
         )}
+        <AcaoCard
+          icone={History}
+          titulo="Histórico de avaliações"
+          descricao="Consultar e imprimir checklists"
+          onClick={() => navigate('/oficina/checklists/historico')}
+        />
       </div>
 
-      <SearchInput value={busca} onChange={setBusca} placeholder="Buscar por cliente, placa ou chassi..." className="md:max-w-sm" />
-
-      {isLoading && (
-        <div className="flex items-center justify-center py-12">
-          <Spinner />
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">Histórico recente</h2>
+          <button
+            type="button"
+            onClick={() => navigate('/oficina/checklists/historico')}
+            className="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+          >
+            Ver tudo
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
         </div>
-      )}
 
-      {isError && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-          Não foi possível carregar os checklists.
-        </p>
-      )}
+        {isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <Spinner />
+          </div>
+        )}
 
-      {!isLoading && !isError && (
-        <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nº</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Veículo</TableHead>
-                <TableHead>Responsável</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Entrada</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pageItems.map((item) => (
-                <TableRow key={item.id} className="cursor-pointer" onClick={() => navigate(`/oficina/checklists/${item.id}`)}>
-                  <TableCell>{item.numero}</TableCell>
-                  <TableCell>{item.cliente_nome || '—'}</TableCell>
-                  <TableCell>{item.veiculo_placa || item.veiculo_chassi || '—'}</TableCell>
-                  <TableCell>{item.colaborador_nome || '—'}</TableCell>
-                  <TableCell>
-                    <Badge variant={STATUS_VARIANT[item.status] || 'default'}>
-                      {STATUS_LABEL[item.status] || item.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{new Date(item.data_entrada).toLocaleDateString('pt-BR')}</TableCell>
-                </TableRow>
-              ))}
-              {pageItems.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
-                    Nenhum checklist encontrado.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+        {isError && (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+            Não foi possível carregar os checklists.
+          </p>
+        )}
 
-          <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} itemLabel="checklist(s)" />
-        </>
-      )}
+        {!isLoading && !isError && (
+          <div className="flex flex-col divide-y divide-border rounded-xl border border-border bg-white">
+            {recentes.map((item) => (
+              <div
+                key={item.id}
+                className="flex cursor-pointer items-center gap-3 p-3 hover:bg-muted/50"
+                onClick={() => navigate(`/oficina/checklists/${item.id}`)}
+              >
+                <ChecklistThumbnail item={item} />
+                <span className="w-10 shrink-0 text-sm font-semibold text-muted-foreground">Nº {item.numero}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{item.cliente_nome || '—'}</p>
+                  <p className="truncate text-xs text-muted-foreground">{subtitulo(item) || '—'}</p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(item.data_entrada).toLocaleDateString('pt-BR')}
+                  </span>
+                  <Badge variant={STATUS_VARIANT[item.status] || 'default'}>
+                    {STATUS_LABEL[item.status] || item.status}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+            {recentes.length === 0 && (
+              <p className="p-4 text-center text-sm text-muted-foreground">Nenhum checklist encontrado.</p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

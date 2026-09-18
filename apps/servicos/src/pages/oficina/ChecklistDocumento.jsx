@@ -67,12 +67,12 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
 
   return (
     <div>
-      <div className="no-print mb-4 flex justify-between">
-        <Button type="button" variant="ghost" size="sm" onClick={onVoltar}>
+      <div className="no-print mb-4 flex justify-between rounded-lg border border-border bg-card p-3">
+        <Button type="button" variant="outline" size="sm" onClick={onVoltar}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Voltar
         </Button>
-        <Button type="button" size="sm" onClick={() => window.print()}>
+        <Button type="button" variant="default" size="sm" onClick={() => window.print()}>
           <Printer className="mr-2 h-4 w-4" />
           Imprimir / salvar PDF
         </Button>

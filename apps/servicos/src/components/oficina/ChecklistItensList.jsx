@@ -17,7 +17,7 @@ export default function ChecklistItensList({ categoria, valores = {}, onChange, 
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {itens.map((item) => (
-            <div key={item} className="flex flex-col items-center gap-3 rounded-lg border p-3">
+            <div key={item} className="flex flex-col items-center gap-3 rounded-lg border border-border bg-background p-3">
               <span className="text-sm font-bold">{item}</span>
               <div className="flex w-full flex-col gap-2">
                 {opcoesStatus.map((opcao) => (
@@ -53,7 +53,7 @@ export default function ChecklistItensList({ categoria, valores = {}, onChange, 
     <div className="flex flex-col gap-3">
       <h3 className="text-sm font-semibold">{CATEGORIA_LABEL[categoria] || categoria}</h3>
 
-      <div className="flex flex-col divide-y rounded-lg border">
+      <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
         {itens.map((item) => (
           <div key={item} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-sm">{item}</span>
