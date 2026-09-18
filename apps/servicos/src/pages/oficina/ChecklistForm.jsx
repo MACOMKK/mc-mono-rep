@@ -294,7 +294,7 @@ export default function ChecklistForm() {
           {ETAPAS.map((nome, index) => {
             const concluida = index < etapa;
             const atual = index === etapa;
-            const habilitada = Boolean(avaliacaoId) || index === 0;
+            const habilitada = index <= etapa;
             return (
               <button
                 key={nome}
