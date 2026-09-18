@@ -20,5 +20,6 @@ export async function uploadChecklistFoto({ file, avaliacaoId, categoria, legend
     .upload(path, file, { upsert: false, contentType: file.type });
   if (uploadError) throw uploadError;
 
-  return oficinaApi.fotos.registrar(avaliacaoId, { storagePath: path, categoria, legenda });
+  const { url } = await oficinaApi.fotos.registrar(avaliacaoId, { storagePath: path, categoria, legenda });
+  return { storagePath: path, categoria, legenda: legenda || null, url };
 }

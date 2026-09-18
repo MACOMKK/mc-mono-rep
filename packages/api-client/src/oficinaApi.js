@@ -148,6 +148,16 @@ export const oficinaApi = {
       });
       return result.row || null;
     },
+    async atualizar(avaliacaoId, { storagePath, categoria, legenda }) {
+      const result = await invokeOficina({
+        action: 'checklist_foto_atualizar',
+        avaliacao_id: avaliacaoId,
+        storage_path: storagePath,
+        categoria,
+        legenda,
+      });
+      return result.row || null;
+    },
   },
   clientes: {
     async buscar(busca) {

@@ -205,7 +205,10 @@ Deno.serve(async (request) => {
         [id],
       );
 
-      const fotos = Array.isArray(row.fotos) ? row.fotos : [];
+      const fotos = await sql.unsafe(
+        `select * from ${SERVICOS_SCHEMA}.checklist_fotos where avaliacao_id = $1 order by criado_em;`,
+        [id],
+      );
       const fotosComUrl = await Promise.all(
         fotos.map(async (foto: Record<string, unknown>) => ({
           ...foto,
@@ -374,27 +377,41 @@ Deno.serve(async (request) => {
       if (!avaliacaoId || !storagePath) {
         return json({ error: 'avaliacao_id e storage_path sao obrigatorios.' }, 400);
       }
-      const avaliacao = await getAvaliacao(avaliacaoId);
-
-      const fotos = Array.isArray(avaliacao.fotos) ? avaliacao.fotos : [];
-      const novaFoto = {
-        storage_path: storagePath,
-        categoria: body.categoria ? String(body.categoria) : null,
-        legenda: body.legenda ? String(body.legenda) : null,
-      };
-      fotos.push(novaFoto);
+      await getAvaliacao(avaliacaoId);
 
       const rows = await sql.unsafe(
         `
-          update ${SERVICOS_SCHEMA}.checklist_avaliacoes
-          set fotos = $2::jsonb
-          where id = $1
+          insert into ${SERVICOS_SCHEMA}.checklist_fotos (avaliacao_id, storage_path, categoria, legenda)
+          values ($1, $2, $3, $4)
           returning *;
         `,
-        [avaliacaoId, JSON.stringify(fotos)],
+        [avaliacaoId, storagePath, body.categoria ? String(body.categoria) : null, body.legenda ? String(body.legenda) : null],
       );
 
       return json({ row: rows[0], url: await createFotoSignedUrl(storagePath) }, 201);
+    }
+
+    if (action === 'checklist_foto_atualizar') {
+      ensurePodeEditar(moduleRole);
+      const avaliacaoId = String(body.avaliacao_id || '');
+      const storagePath = String(body.storage_path || '');
+      if (!avaliacaoId || !storagePath) {
+        return json({ error: 'avaliacao_id e storage_path sao obrigatorios.' }, 400);
+      }
+      await getAvaliacao(avaliacaoId);
+
+      const rows = await sql.unsafe(
+        `
+          update ${SERVICOS_SCHEMA}.checklist_fotos
+          set categoria = $3, legenda = $4
+          where avaliacao_id = $1 and storage_path = $2
+          returning *;
+        `,
+        [avaliacaoId, storagePath, body.categoria ? String(body.categoria) : null, body.legenda ? String(body.legenda) : null],
+      );
+      if (!rows[0]) return json({ error: 'Foto nao encontrada.' }, 404);
+
+      return json({ row: rows[0] });
     }
 
     if (action === 'checklist_foto_remover') {
@@ -404,20 +421,15 @@ Deno.serve(async (request) => {
       if (!avaliacaoId || !storagePath) {
         return json({ error: 'avaliacao_id e storage_path sao obrigatorios.' }, 400);
       }
-      const avaliacao = await getAvaliacao(avaliacaoId);
-
-      const fotos = (Array.isArray(avaliacao.fotos) ? avaliacao.fotos : []).filter(
-        (foto: Record<string, unknown>) => String(foto.storage_path) !== storagePath,
-      );
+      await getAvaliacao(avaliacaoId);
 
       const rows = await sql.unsafe(
         `
-          update ${SERVICOS_SCHEMA}.checklist_avaliacoes
-          set fotos = $2::jsonb
-          where id = $1
+          delete from ${SERVICOS_SCHEMA}.checklist_fotos
+          where avaliacao_id = $1 and storage_path = $2
           returning *;
         `,
-        [avaliacaoId, JSON.stringify(fotos)],
+        [avaliacaoId, storagePath],
       );
 
       const storageClient = createStorageAdminClient();
@@ -425,7 +437,7 @@ Deno.serve(async (request) => {
         await storageClient.storage.from(FOTOS_STORAGE_BUCKET).remove([storagePath]);
       }
 
-      return json({ row: rows[0] });
+      return json({ row: rows[0] || null });
     }
 
     if (action === 'cliente_buscar') {

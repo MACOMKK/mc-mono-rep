@@ -20,6 +20,8 @@ import Configuracoes from '@/pages/Configuracoes';
 import ModuloEmBreve from '@/pages/ModuloEmBreve';
 import AcessoRestrito from '@/pages/AcessoRestrito';
 import ChecklistList from '@/pages/oficina/ChecklistList';
+import ChecklistForm from '@/pages/oficina/ChecklistForm';
+import ChecklistDetail from '@/pages/oficina/ChecklistDetail';
 
 const getFromPath = (search) => {
   const params = new URLSearchParams(search);
@@ -102,6 +104,18 @@ const ServicosRoutes = () => {
         <Route
           path="/oficina/checklists"
           element={user?.hasOficinaAccess ? <ChecklistList /> : <AcessoRestrito modulo="Oficina" />}
+        />
+        <Route
+          path="/oficina/checklists/novo"
+          element={user?.isOficinaInspetor ? <ChecklistForm /> : <AcessoRestrito modulo="Oficina" />}
+        />
+        <Route
+          path="/oficina/checklists/:id"
+          element={user?.hasOficinaAccess ? <ChecklistDetail /> : <AcessoRestrito modulo="Oficina" />}
+        />
+        <Route
+          path="/oficina/checklists/:id/editar"
+          element={user?.isOficinaInspetor ? <ChecklistForm /> : <AcessoRestrito modulo="Oficina" />}
         />
         <Route path="/oficina" element={<Navigate replace to="/oficina/checklists" />} />
         <Route

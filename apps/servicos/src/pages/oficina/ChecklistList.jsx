@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 
@@ -21,6 +22,7 @@ const STATUS_VARIANT = {
 
 export default function ChecklistList() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [busca, setBusca] = useState('');
 
   const { data: checklists = [], isLoading, isError } = useQuery({
@@ -48,7 +50,7 @@ export default function ChecklistList() {
           <p className="text-sm text-muted-foreground">Vistorias de veículos realizadas na oficina.</p>
         </div>
         {user?.isOficinaInspetor && (
-          <Button disabled>
+          <Button onClick={() => navigate('/oficina/checklists/novo')}>
             <Plus className="mr-2 h-4 w-4" />
             Novo checklist
           </Button>
@@ -84,7 +86,7 @@ export default function ChecklistList() {
             </TableHeader>
             <TableBody>
               {pageItems.map((item) => (
-                <TableRow key={item.id} className="cursor-pointer">
+                <TableRow key={item.id} className="cursor-pointer" onClick={() => navigate(`/oficina/checklists/${item.id}`)}>
                   <TableCell>{item.numero}</TableCell>
                   <TableCell>{item.cliente_nome || '—'}</TableCell>
                   <TableCell>{item.veiculo_placa || item.veiculo_chassi || '—'}</TableCell>
