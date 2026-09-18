@@ -100,7 +100,7 @@ export default function ChecklistHistorico() {
 
       {!isLoading && !isError && (
         <>
-          <div className="flex flex-col divide-y divide-border rounded-xl border border-border bg-white">
+          <div className="flex flex-col divide-y divide-border rounded-xl border border-border bg-card">
             {pageItems.map((item) => (
               <div
                 key={item.id}

@@ -21,7 +21,7 @@ function AcaoCard({ icone: Icone, titulo, descricao, destaque, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex flex-1 items-center gap-4 rounded-2xl border border-border bg-white p-5 text-left shadow-sm transition hover:shadow-md"
+      className="flex flex-1 items-center gap-4 rounded-2xl border border-border bg-card p-5 text-left shadow-sm transition hover:shadow-md"
     >
       <span
         className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${
@@ -115,7 +115,7 @@ export default function ChecklistList() {
         )}
 
         {!isLoading && !isError && (
-          <div className="flex flex-col divide-y divide-border rounded-xl border border-border bg-white">
+          <div className="flex flex-col divide-y divide-border rounded-xl border border-border bg-card">
             {recentes.map((item) => (
               <div
                 key={item.id}
