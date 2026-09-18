@@ -144,7 +144,9 @@ export default function ChecklistDetail() {
         <div className="rounded-lg border border-border bg-card p-3">
           <p className="text-xs text-muted-foreground">Assinatura do responsável</p>
           {row.colaborador_assinatura_url ? (
-            <img src={row.colaborador_assinatura_url} alt="Assinatura do responsável" className="mt-2 h-16 object-contain" />
+            <div className="mt-2 inline-block rounded-md bg-white p-1">
+              <img src={row.colaborador_assinatura_url} alt="Assinatura do responsável" className="h-16 object-contain" />
+            </div>
           ) : (
             <p className="mt-1 text-sm text-muted-foreground">—</p>
           )}
@@ -152,7 +154,9 @@ export default function ChecklistDetail() {
         <div className="rounded-lg border border-border bg-card p-3">
           <p className="text-xs text-muted-foreground">Assinatura do cliente</p>
           {row.assinatura_cliente ? (
-            <img src={row.assinatura_cliente} alt="Assinatura do cliente" className="mt-2 h-16 object-contain" />
+            <div className="mt-2 inline-block rounded-md bg-white p-1">
+              <img src={row.assinatura_cliente} alt="Assinatura do cliente" className="h-16 object-contain" />
+            </div>
           ) : (
             <p className="mt-1 text-sm text-muted-foreground">—</p>
           )}

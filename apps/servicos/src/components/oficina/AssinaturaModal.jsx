@@ -17,6 +17,8 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
     const context = canvas?.getContext('2d');
     if (!context) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
     context.lineWidth = 2.5;
     context.lineCap = 'round';
     context.lineJoin = 'round';
@@ -69,6 +71,8 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
     const context = canvas?.getContext('2d');
     if (!context) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
     setIsEmpty(true);
   };
 
