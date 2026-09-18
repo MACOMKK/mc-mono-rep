@@ -83,7 +83,7 @@ export default function ChecklistDetail() {
         <div className="flex gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => setImprimindo(true)}>
             <Printer className="mr-2 h-4 w-4" />
-            Imprimir
+            Visualizar PDF
           </Button>
           {row.status === 'em_andamento' && user?.isOficinaInspetor && (
             <Button type="button" size="sm" onClick={() => navigate(`/oficina/checklists/${id}/editar`)}>

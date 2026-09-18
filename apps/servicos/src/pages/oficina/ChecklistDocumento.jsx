@@ -68,7 +68,7 @@ function FuelGauge({ nivel }) {
   const needleEnd = toXY(v, r - strokeWidth - 2);
 
   return (
-    <svg viewBox="0 0 100 58" className="h-[76px] w-[130px] shrink-0">
+    <svg viewBox="-8 -9 116 67" className="h-[87px] w-[151px] shrink-0">
       <path
         d={`M ${start.x} ${start.y} A ${r} ${r} 0 0 1 ${end.x} ${end.y}`}
         fill="none"
@@ -135,7 +135,7 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
         </Button>
         <Button type="button" variant="default" size="sm" onClick={() => window.print()}>
           <Printer className="mr-2 h-4 w-4" />
-          Imprimir / salvar PDF
+          Salvar PDF
         </Button>
       </div>
 

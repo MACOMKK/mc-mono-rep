@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Trash2, Upload } from 'lucide-react';
 
-import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@macom/ui';
+import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Spinner } from '@macom/ui';
 import { isAllowedChecklistFotoMimeType, uploadChecklistFoto } from '@/lib/checklistFotoUpload';
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { FOTO_CATEGORIAS, MAX_FOTOS } from '@/lib/checklistItens';
@@ -24,33 +24,54 @@ async function comprimirFoto(file, maxDimensao = 1600, qualidade = 0.8) {
 
 export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdicionada, onFotoAtualizada, onFotoRemovida, readOnly = false }) {
   const inputRef = useRef(null);
-  const [enviando, setEnviando] = useState(false);
+  const [pendentes, setPendentes] = useState([]);
   const [erro, setErro] = useState(null);
 
-  const handleSelecionarArquivos = async (event) => {
+  const removerPendente = (id) => {
+    setPendentes((atual) => {
+      const alvo = atual.find((item) => item._id === id);
+      if (alvo?.url) URL.revokeObjectURL(alvo.url);
+      return atual.filter((item) => item._id !== id);
+    });
+  };
+
+  const processarArquivo = async (arquivo, id) => {
+    try {
+      const comprimido = await comprimirFoto(arquivo);
+      const foto = await uploadChecklistFoto({ file: comprimido, avaliacaoId, categoria: FOTO_CATEGORIAS[0], legenda: '' });
+      onFotoAdicionada?.(foto);
+      removerPendente(id);
+    } catch (error) {
+      setErro(error.message || 'Não foi possível enviar a foto.');
+      setPendentes((atual) => atual.map((item) => (item._id === id ? { ...item, _status: 'erro' } : item)));
+    }
+  };
+
+  const handleSelecionarArquivos = (event) => {
     const arquivos = Array.from(event.target.files || []);
     event.target.value = '';
     if (arquivos.length === 0) return;
 
-    if (fotos.length + arquivos.length > MAX_FOTOS) {
+    if (fotos.length + pendentes.length + arquivos.length > MAX_FOTOS) {
       setErro(`Máximo de ${MAX_FOTOS} fotos por checklist.`);
       return;
     }
 
-    setEnviando(true);
     setErro(null);
-    try {
-      for (const arquivo of arquivos) {
-        if (!isAllowedChecklistFotoMimeType(arquivo)) continue;
-        const comprimido = await comprimirFoto(arquivo);
-        const foto = await uploadChecklistFoto({ file: comprimido, avaliacaoId, categoria: FOTO_CATEGORIAS[0], legenda: '' });
-        onFotoAdicionada?.(foto);
-      }
-    } catch (error) {
-      setErro(error.message || 'Não foi possível enviar a foto.');
-    } finally {
-      setEnviando(false);
-    }
+    arquivos.forEach((arquivo) => {
+      if (!isAllowedChecklistFotoMimeType(arquivo)) return;
+      const id = crypto.randomUUID();
+      const otimista = {
+        _id: id,
+        _status: 'enviando',
+        storage_path: `temp-${id}`,
+        categoria: FOTO_CATEGORIAS[0],
+        legenda: '',
+        url: URL.createObjectURL(arquivo),
+      };
+      setPendentes((atual) => [...atual, otimista]);
+      processarArquivo(arquivo, id);
+    });
   };
 
   const handleAtualizarCampo = async (foto, campo, valor) => {
@@ -92,10 +113,10 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
             type="button"
             variant="outline"
             onClick={() => inputRef.current?.click()}
-            disabled={enviando || fotos.length >= MAX_FOTOS}
+            disabled={fotos.length + pendentes.length >= MAX_FOTOS}
           >
             <Upload className="mr-2 h-4 w-4" />
-            {enviando ? 'Enviando...' : `Adicionar fotos (${fotos.length}/${MAX_FOTOS})`}
+            {`Adicionar fotos (${fotos.length + pendentes.length}/${MAX_FOTOS})`}
           </Button>
         </div>
       )}
@@ -150,6 +171,38 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
             )}
           </div>
         ))}
+
+        {!readOnly &&
+          pendentes.map((foto) => (
+            <div key={foto._id} className="flex flex-col gap-3 rounded-xl border p-3">
+              <div className="relative">
+                <img src={foto.url} alt="Enviando foto" className="aspect-video w-full rounded-lg object-cover" />
+                {foto._status === 'enviando' && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40">
+                    <Spinner className="text-white" />
+                  </div>
+                )}
+              </div>
+
+              {foto._status === 'erro' ? (
+                <>
+                  <p className="text-xs text-destructive">Falha ao enviar esta foto.</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="self-center text-destructive hover:text-destructive"
+                    onClick={() => removerPendente(foto._id)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Remover
+                  </Button>
+                </>
+              ) : (
+                <p className="text-center text-xs text-muted-foreground">Enviando...</p>
+              )}
+            </div>
+          ))}
       </div>
     </div>
   );

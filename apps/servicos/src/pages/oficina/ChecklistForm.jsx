@@ -148,21 +148,29 @@ export default function ChecklistForm() {
       setErro('Selecione ou cadastre o veículo.');
       return;
     }
+
+    if (avaliacaoId) {
+      setErro(null);
+      setEtapa((atual) => atual + 1);
+      oficinaApi.checklists
+        .atualizar(avaliacaoId, { os: os || null, km: km ? Number(km) : null })
+        .catch((error) => {
+          setErro(error.message || 'Não foi possível salvar os dados do veículo automaticamente. Volte a esta etapa e clique em Avançar novamente.');
+        });
+      return;
+    }
+
     setSalvando(true);
     setErro(null);
     try {
-      if (!avaliacaoId) {
-        const { row, avisoDonoDiferente: aviso } = await oficinaApi.checklists.iniciar({
-          veiculoId: veiculo.id,
-          clienteId: cliente?.id,
-          os: os || undefined,
-          km: km ? Number(km) : undefined,
-        });
-        setAvaliacaoId(row.id);
-        if (aviso) setAvisoDonoDiferente(aviso);
-      } else {
-        await oficinaApi.checklists.atualizar(avaliacaoId, { os: os || null, km: km ? Number(km) : null });
-      }
+      const { row, avisoDonoDiferente: aviso } = await oficinaApi.checklists.iniciar({
+        veiculoId: veiculo.id,
+        clienteId: cliente?.id,
+        os: os || undefined,
+        km: km ? Number(km) : undefined,
+      });
+      setAvaliacaoId(row.id);
+      if (aviso) setAvisoDonoDiferente(aviso);
       setEtapa((atual) => atual + 1);
     } catch (error) {
       setErro(error.message || 'Não foi possível salvar os dados do veículo.');
@@ -171,17 +179,14 @@ export default function ChecklistForm() {
     }
   };
 
-  const handleSalvarInspecaoGeral = async () => {
-    setSalvando(true);
+  const handleSalvarInspecaoGeral = () => {
     setErro(null);
-    try {
-      await oficinaApi.checklists.atualizar(avaliacaoId, { nivel_combustivel: nivelCombustivel, pintura_suja: pinturaSuja });
-      setEtapa((atual) => atual + 1);
-    } catch (error) {
-      setErro(error.message || 'Não foi possível salvar a inspeção geral.');
-    } finally {
-      setSalvando(false);
-    }
+    setEtapa((atual) => atual + 1);
+    oficinaApi.checklists
+      .atualizar(avaliacaoId, { nivel_combustivel: nivelCombustivel, pintura_suja: pinturaSuja })
+      .catch((error) => {
+        setErro(error.message || 'Não foi possível salvar a inspeção geral automaticamente. Volte a esta etapa e clique em Avançar novamente.');
+      });
   };
 
   const handleAdicionarAvaria = async ({ tipo, pos_x, pos_y }) => {
@@ -202,7 +207,7 @@ export default function ChecklistForm() {
     }
   };
 
-  const handleSalvarCategoria = async (categoria) => {
+  const handleSalvarCategoria = (categoria) => {
     const valores = itensPorCategoria[categoria] || {};
     const todosItens = CATEGORIA_ITENS[categoria] || [];
     const itensArray = todosItens.filter((item) => valores[item]).map((item) => ({ item, status: valores[item] }));
@@ -212,33 +217,25 @@ export default function ChecklistForm() {
       return;
     }
 
-    setSalvando(true);
     setErro(null);
-    try {
-      await oficinaApi.itens.upsert(avaliacaoId, categoria, itensArray);
-      setEtapa((atual) => atual + 1);
-    } catch (error) {
-      setErro(error.message || 'Não foi possível salvar os itens.');
-    } finally {
-      setSalvando(false);
-    }
+    setEtapa((atual) => atual + 1);
+    oficinaApi.itens.upsert(avaliacaoId, categoria, itensArray).catch((error) => {
+      setErro(error.message || 'Não foi possível salvar os itens automaticamente. Volte a esta etapa e clique em Avançar novamente.');
+    });
   };
 
   const toggleComunicacao = (key) => {
     setComunicacoes((atual) => (atual.includes(key) ? atual.filter((item) => item !== key) : [...atual, key]));
   };
 
-  const handleSalvarObservacoes = async () => {
-    setSalvando(true);
+  const handleSalvarObservacoes = () => {
     setErro(null);
-    try {
-      await oficinaApi.checklists.atualizar(avaliacaoId, { observacoes: observacoes || null, comunicacoes });
-      setEtapa((atual) => atual + 1);
-    } catch (error) {
-      setErro(error.message || 'Não foi possível salvar as observações.');
-    } finally {
-      setSalvando(false);
-    }
+    setEtapa((atual) => atual + 1);
+    oficinaApi.checklists
+      .atualizar(avaliacaoId, { observacoes: observacoes || null, comunicacoes })
+      .catch((error) => {
+        setErro(error.message || 'Não foi possível salvar as observações automaticamente. Volte a esta etapa e clique em Avançar novamente.');
+      });
   };
 
   const handleFinalizar = async () => {
@@ -362,8 +359,8 @@ export default function ChecklistForm() {
             <Button type="button" variant="outline" onClick={() => setEtapa((atual) => atual - 1)}>
               Voltar
             </Button>
-            <Button type="button" onClick={handleSalvarInspecaoGeral} disabled={salvando}>
-              {salvando ? 'Salvando...' : 'Avançar'}
+            <Button type="button" onClick={handleSalvarInspecaoGeral}>
+              Avançar
             </Button>
           </div>
         </div>
@@ -383,8 +380,8 @@ export default function ChecklistForm() {
                 <Button type="button" variant="outline" onClick={() => setEtapa((atual) => atual - 1)}>
                   Voltar
                 </Button>
-                <Button type="button" onClick={() => handleSalvarCategoria(categoria)} disabled={salvando}>
-                  {salvando ? 'Salvando...' : 'Avançar'}
+                <Button type="button" onClick={() => handleSalvarCategoria(categoria)}>
+                  Avançar
                 </Button>
               </div>
             </div>
@@ -440,8 +437,8 @@ export default function ChecklistForm() {
             <Button type="button" variant="outline" onClick={() => setEtapa((atual) => atual - 1)}>
               Voltar
             </Button>
-            <Button type="button" onClick={handleSalvarObservacoes} disabled={salvando}>
-              {salvando ? 'Salvando...' : 'Avançar'}
+            <Button type="button" onClick={handleSalvarObservacoes}>
+              Avançar
             </Button>
           </div>
         </div>
@@ -474,7 +471,9 @@ export default function ChecklistForm() {
           <div className="rounded-lg border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Assinatura do responsável</p>
             {user?.signatureUrl ? (
-              <img src={user.signatureUrl} alt="Assinatura do responsável" className="mt-2 h-16 object-contain" />
+              <div className="mt-2 inline-block rounded-md bg-white p-1">
+                <img src={user.signatureUrl} alt="Assinatura do responsável" className="h-16 object-contain" />
+              </div>
             ) : (
               <p className="mt-1 text-sm text-muted-foreground">Nenhuma assinatura cadastrada no perfil.</p>
             )}
@@ -483,7 +482,9 @@ export default function ChecklistForm() {
           <div className="rounded-lg border border-border bg-card p-3">
             <p className="text-xs text-muted-foreground">Assinatura do cliente</p>
             {assinaturaCliente ? (
-              <img src={assinaturaCliente} alt="Assinatura do cliente" className="mt-2 h-16 object-contain" />
+              <div className="mt-2 inline-block rounded-md bg-white p-1">
+                <img src={assinaturaCliente} alt="Assinatura do cliente" className="h-16 object-contain" />
+              </div>
             ) : (
               <p className="mt-1 text-sm text-muted-foreground">Ainda não capturada.</p>
             )}

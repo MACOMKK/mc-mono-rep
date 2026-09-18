@@ -64,7 +64,7 @@ export default function CombustivelGauge({ value = 0.5, onChange, readOnly = fal
         type="range"
         min="0"
         max="1"
-        step="0.25"
+        step="0.05"
         value={value}
         disabled={readOnly}
         onChange={(event) => onChange?.(parseFloat(event.target.value))}

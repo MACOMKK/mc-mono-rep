@@ -100,7 +100,7 @@ export default function AppLayout() {
         <InstallPromptBanner />
       </div>
 
-      <div className={`transition-all duration-300 ${collapsed ? 'lg:ml-[88px]' : 'lg:ml-64'}`}>
+      <div className={`app-shell-content transition-all duration-300 ${collapsed ? 'lg:ml-[88px]' : 'lg:ml-64'}`}>
         <Header onOpenMobileMenu={() => setMobileOpen(true)} />
 
         <main className="min-w-0 flex-1 px-4 py-6 pb-safe-bottom-nav md:px-6 lg:px-8 lg:pb-8">
