@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button, Checkbox, Input, Spinner, Textarea } from '@macom/ui';
+import { Button, Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Spinner, Textarea } from '@macom/ui';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { useAuth } from '@/lib/AuthContext';
@@ -59,6 +59,8 @@ export default function ChecklistForm() {
   const [fotos, setFotos] = useState([]);
   const [assinaturaCliente, setAssinaturaCliente] = useState(null);
   const [modalAssinaturaAberto, setModalAssinaturaAberto] = useState(false);
+  const [avisoDonoDiferente, setAvisoDonoDiferente] = useState(null);
+  const [transferindo, setTransferindo] = useState(false);
 
   useEffect(() => {
     if (!idParam) {
@@ -140,13 +142,14 @@ export default function ChecklistForm() {
     setErro(null);
     try {
       if (!avaliacaoId) {
-        const row = await oficinaApi.checklists.iniciar({
+        const { row, avisoDonoDiferente: aviso } = await oficinaApi.checklists.iniciar({
           veiculoId: veiculo.id,
           clienteId: cliente?.id,
           os: os || undefined,
           km: km ? Number(km) : undefined,
         });
         setAvaliacaoId(row.id);
+        if (aviso) setAvisoDonoDiferente(aviso);
       } else {
         await oficinaApi.checklists.atualizar(avaliacaoId, { os: os || null, km: km ? Number(km) : null });
       }
@@ -234,6 +237,19 @@ export default function ChecklistForm() {
       setErro(error.message || 'Não foi possível finalizar o checklist.');
     } finally {
       setSalvando(false);
+    }
+  };
+
+  const handleTransferirVeiculo = async () => {
+    if (!veiculo?.id || !cliente?.id) return;
+    setTransferindo(true);
+    try {
+      await oficinaApi.veiculos.transferir({ veiculoId: veiculo.id, clienteId: cliente.id });
+      setAvisoDonoDiferente(null);
+    } catch (error) {
+      setErro(error.message || 'Não foi possível transferir o veículo.');
+    } finally {
+      setTransferindo(false);
     }
   };
 
@@ -488,6 +504,27 @@ export default function ChecklistForm() {
           </div>
         </div>
       )}
+
+      <Dialog open={Boolean(avisoDonoDiferente)} onOpenChange={(open) => !open && setAvisoDonoDiferente(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Veículo cadastrado para outro cliente</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Este veículo está cadastrado para <strong>{avisoDonoDiferente?.atual_nome}</strong>. Deseja transferir para{' '}
+            <strong>{cliente?.nome}</strong>, ou apenas manter {avisoDonoDiferente?.atual_nome} como dono (alguém trouxe o
+            carro em nome dele)?
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setAvisoDonoDiferente(null)} disabled={transferindo}>
+              Manter dono atual
+            </Button>
+            <Button type="button" onClick={handleTransferirVeiculo} disabled={transferindo}>
+              {transferindo ? 'Transferindo...' : 'Transferir para ' + (cliente?.nome || 'este cliente')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { supabase } from '@macom/api-client/supabaseClient';
 import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@macom/ui';
 
-function useDebouncedValue(value, delay = 300) {
+function useDebouncedValue(value, delay = 200) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
     const timeout = setTimeout(() => setDebounced(value), delay);
@@ -14,7 +14,7 @@ function useDebouncedValue(value, delay = 300) {
   return debounced;
 }
 
-function ClienteForm({ onCriado, onCancelar }) {
+export function ClienteForm({ onCriado, onCancelar }) {
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [email, setEmail] = useState('');
@@ -58,7 +58,7 @@ function ClienteForm({ onCriado, onCancelar }) {
   );
 }
 
-function VeiculoForm({ onCriado, onCancelar }) {
+export function VeiculoForm({ onCriado, onCancelar }) {
   const [marcas, setMarcas] = useState([]);
   const [modelos, setModelos] = useState([]);
   const [marcaId, setMarcaId] = useState('');
@@ -169,15 +169,25 @@ export default function ClienteVeiculoPicker({ tipo, value, onChange, label }) {
   const [busca, setBusca] = useState('');
   const [resultados, setResultados] = useState([]);
   const [mostrarForm, setMostrarForm] = useState(false);
+  const [erroBusca, setErroBusca] = useState(null);
   const buscaDebounced = useDebouncedValue(busca);
 
   useEffect(() => {
     if (!buscaDebounced.trim()) {
       setResultados([]);
+      setErroBusca(null);
       return;
     }
     const buscar = tipo === 'cliente' ? oficinaApi.clientes.buscar : oficinaApi.veiculos.buscar;
-    buscar(buscaDebounced).then(setResultados).catch(() => setResultados([]));
+    buscar(buscaDebounced)
+      .then((rows) => {
+        setResultados(rows);
+        setErroBusca(null);
+      })
+      .catch((error) => {
+        setResultados([]);
+        setErroBusca(error.message || 'Falha ao buscar.');
+      });
   }, [buscaDebounced, tipo]);
 
   if (value) {
@@ -210,6 +220,8 @@ export default function ClienteVeiculoPicker({ tipo, value, onChange, label }) {
           className="pl-9"
         />
       </div>
+
+      {erroBusca && <p className="text-xs text-destructive">{erroBusca}</p>}
 
       {resultados.length > 0 && (
         <div className="flex flex-col divide-y rounded-lg border">

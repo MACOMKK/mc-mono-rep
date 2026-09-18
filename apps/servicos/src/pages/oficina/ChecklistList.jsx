@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, Car, History, Plus } from 'lucide-react';
+import { ArrowRight, Car, History, Plus, Search } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { Badge, Spinner } from '@macom/ui';
@@ -86,6 +86,12 @@ export default function ChecklistList() {
           titulo="Histórico de avaliações"
           descricao="Consultar e imprimir checklists"
           onClick={() => navigate('/oficina/checklists/historico')}
+        />
+        <AcaoCard
+          icone={Search}
+          titulo="Veículos cadastrados"
+          descricao="Ver ou cadastrar sem abrir um checklist"
+          onClick={() => navigate('/oficina/veiculos')}
         />
       </div>
 

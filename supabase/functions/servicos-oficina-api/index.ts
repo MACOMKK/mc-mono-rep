@@ -269,6 +269,24 @@ Deno.serve(async (request) => {
       const os = body.os ? String(body.os).trim() : null;
       const km = body.km != null ? Number(body.km) : null;
 
+      let avisoDonoDiferente = null;
+      if (clienteId) {
+        const veiculoRows = await sql.unsafe(
+          `
+            select v.cliente_atual_id, c.nome as cliente_atual_nome
+            from public.veiculos v
+            left join public.clientes c on c.id = v.cliente_atual_id
+            where v.id = $1
+            limit 1;
+          `,
+          [veiculoId],
+        );
+        const veiculoAtual = veiculoRows[0];
+        if (veiculoAtual?.cliente_atual_id && veiculoAtual.cliente_atual_id !== clienteId) {
+          avisoDonoDiferente = { atual_id: veiculoAtual.cliente_atual_id, atual_nome: veiculoAtual.cliente_atual_nome };
+        }
+      }
+
       const rows = await sql.unsafe(
         `
           insert into ${SERVICOS_SCHEMA}.checklist_avaliacoes
@@ -279,7 +297,7 @@ Deno.serve(async (request) => {
         [veiculoId, clienteId, colaboradorId, os, km],
       );
 
-      return json({ row: rows[0] }, 201);
+      return json({ row: rows[0], aviso_dono_diferente: avisoDonoDiferente }, 201);
     }
 
     if (action === 'checklist_atualizar') {
@@ -528,10 +546,12 @@ Deno.serve(async (request) => {
 
       const rows = await sql.unsafe(
         `
-          select v.id, v.placa, v.chassi, v.cor, v.km, mv.nome as modelo_nome, ma.nome as marca_nome
+          select v.id, v.placa, v.chassi, v.cor, v.km, mv.nome as modelo_nome, ma.nome as marca_nome,
+            v.cliente_atual_id, c.nome as cliente_atual_nome
           from public.veiculos v
           left join public.modelos_veiculo mv on mv.id = v.modelo_id
           left join public.marcas_veiculo ma on ma.id = mv.marca_id
+          left join public.clientes c on c.id = v.cliente_atual_id
           where v.placa ilike $1 or v.chassi ilike $1
           order by v.placa
           limit 20;
@@ -540,6 +560,56 @@ Deno.serve(async (request) => {
       );
 
       return json({ rows });
+    }
+
+    if (action === 'veiculo_listar') {
+      const busca = String(body.busca || '').trim();
+
+      const rows = await sql.unsafe(
+        `
+          select
+            v.id, v.placa, v.chassi, v.cor, v.km,
+            mv.nome as modelo_nome, ma.nome as marca_nome,
+            v.cliente_atual_id, c.nome as cliente_atual_nome,
+            (select count(*) from gestao_servicos.checklist_avaliacoes ca where ca.veiculo_id = v.id) as total_checklists
+          from public.veiculos v
+          left join public.modelos_veiculo mv on mv.id = v.modelo_id
+          left join public.marcas_veiculo ma on ma.id = mv.marca_id
+          left join public.clientes c on c.id = v.cliente_atual_id
+          where $1 = '' or v.placa ilike '%' || $1 || '%' or v.chassi ilike '%' || $1 || '%'
+          order by v.atualizado_em desc
+          limit 500;
+        `,
+        [busca],
+      );
+
+      return json({ rows });
+    }
+
+    if (action === 'veiculo_transferir') {
+      ensurePodeEditar(moduleRole);
+      const veiculoId = String(body.veiculo_id || '');
+      const clienteId = String(body.cliente_id || '');
+      if (!veiculoId || !clienteId) return json({ error: 'veiculo_id e cliente_id sao obrigatorios.' }, 400);
+
+      const row = await sql.begin(async (trx) => {
+        await trx.unsafe(
+          `update public.veiculos_proprietarios set ate = now() where veiculo_id = $1 and ate is null;`,
+          [veiculoId],
+        );
+        await trx.unsafe(
+          `insert into public.veiculos_proprietarios (veiculo_id, cliente_id) values ($1, $2);`,
+          [veiculoId, clienteId],
+        );
+        const rows = await trx.unsafe(
+          `update public.veiculos set cliente_atual_id = $2 where id = $1 returning id, cliente_atual_id;`,
+          [veiculoId, clienteId],
+        );
+        return rows[0];
+      });
+
+      if (!row) return json({ error: 'Veiculo nao encontrado.' }, 404);
+      return json({ row });
     }
 
     if (action === 'veiculo_criar') {

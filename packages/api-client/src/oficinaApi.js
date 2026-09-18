@@ -90,7 +90,7 @@ export const oficinaApi = {
         os,
         km,
       });
-      return result.row || null;
+      return { row: result.row || null, avisoDonoDiferente: result.aviso_dono_diferente || null };
     },
     async atualizar(id, dados) {
       const result = await invokeOficina({ action: 'checklist_atualizar', id, ...dados });
@@ -175,6 +175,10 @@ export const oficinaApi = {
       const result = await invokeOficina({ action: 'veiculo_buscar', busca });
       return result.rows || [];
     },
+    async listar(busca) {
+      const result = await invokeOficina({ action: 'veiculo_listar', busca });
+      return result.rows || [];
+    },
     async criar({ modeloId, versaoId, chassi, placa, cor, km }) {
       const result = await invokeOficina({
         action: 'veiculo_criar',
@@ -185,6 +189,10 @@ export const oficinaApi = {
         cor,
         km,
       });
+      return result.row || null;
+    },
+    async transferir({ veiculoId, clienteId }) {
+      const result = await invokeOficina({ action: 'veiculo_transferir', veiculo_id: veiculoId, cliente_id: clienteId });
       return result.row || null;
     },
   },
