@@ -13,6 +13,11 @@ import ChecklistDocumento from '@/pages/oficina/ChecklistDocumento';
 const STATUS_LABEL = { em_andamento: 'Em andamento', finalizado: 'Finalizado' };
 const STATUS_VARIANT = { em_andamento: 'warning', finalizado: 'success' };
 const CATEGORIAS = ['documentacao', 'seguranca', 'pneus'];
+const COMUNICACOES_LABEL = {
+  concessionarias: 'Das concessionárias Mitsubishi e/ou reparadores autorizados Mitsubishi',
+  grupo: 'De qualquer empresa pertencente ao grupo Mitsubishi',
+  parceiro: 'De qualquer parceiro Mitsubishi',
+};
 
 function itensParaMapa(itensArray) {
   const mapa = {};
@@ -135,6 +140,17 @@ export default function ChecklistDetail() {
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground">Observações</p>
           <p className="text-sm">{row.observacoes}</p>
+        </div>
+      )}
+
+      {Array.isArray(row.comunicacoes) && row.comunicacoes.length > 0 && (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground">Comunicações eletrônicas autorizadas</p>
+          <ul className="mt-1 list-disc pl-5 text-sm">
+            {row.comunicacoes.map((chave) => (
+              <li key={chave}>{COMUNICACOES_LABEL[chave] || chave}</li>
+            ))}
+          </ul>
         </div>
       )}
 

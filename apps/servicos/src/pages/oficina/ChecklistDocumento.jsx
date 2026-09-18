@@ -50,20 +50,81 @@ const NIVEIS_LEGENDA = [
   { valor: 1, label: 'C' },
 ];
 
+function FuelGauge({ nivel }) {
+  const v = Math.max(0, Math.min(1, nivel ?? 0.5));
+  const cx = 50;
+  const cy = 48;
+  const r = 38;
+  const strokeWidth = 7;
+
+  const angleFor = (val) => 180 - val * 180;
+  const toXY = (val, radius) => {
+    const rad = (angleFor(val) * Math.PI) / 180;
+    return { x: cx + radius * Math.cos(rad), y: cy - radius * Math.sin(rad) };
+  };
+
+  const start = toXY(0, r);
+  const end = toXY(1, r);
+  const needleEnd = toXY(v, r - strokeWidth - 2);
+
+  return (
+    <svg viewBox="0 0 100 58" className="h-[76px] w-[130px] shrink-0">
+      <path
+        d={`M ${start.x} ${start.y} A ${r} ${r} 0 0 1 ${end.x} ${end.y}`}
+        fill="none"
+        stroke="#F5A623"
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+      />
+      {NIVEIS_LEGENDA.map((nivelItem) => {
+        const tickInner = toXY(nivelItem.valor, r - strokeWidth / 2 - 1);
+        const tickOuter = toXY(nivelItem.valor, r + strokeWidth / 2 + 1);
+        const labelPos = toXY(nivelItem.valor, r + strokeWidth / 2 + 8);
+        return (
+          <g key={nivelItem.valor}>
+            <line
+              x1={tickInner.x}
+              y1={tickInner.y}
+              x2={tickOuter.x}
+              y2={tickOuter.y}
+              stroke="#000"
+              strokeWidth={0.8}
+            />
+            <text
+              x={labelPos.x}
+              y={labelPos.y}
+              fontSize="7"
+              fontWeight="bold"
+              textAnchor="middle"
+              dominantBaseline="middle"
+            >
+              {nivelItem.label}
+            </text>
+          </g>
+        );
+      })}
+      <line x1={cx} y1={cy} x2={needleEnd.x} y2={needleEnd.y} stroke="#E30613" strokeWidth={1.6} />
+      <circle cx={cx} cy={cy} r={2.4} fill="#000" />
+    </svg>
+  );
+}
+
 const PNEU_LINHAS = [
   { key: 'ok', label: 'Dentro das especs.', cor: '#00A651' },
   { key: 'atencao', label: 'Atenção', cor: '#FFF200' },
   { key: 'risco', label: 'Risco à Segurança', cor: '#E30613' },
 ];
 
+const COMUNICACOES_OPCOES = [
+  { key: 'concessionarias', label: 'Das concessionárias Mitsubishi e/ou reparadores autorizados Mitsubishi' },
+  { key: 'grupo', label: 'De qualquer empresa pertencente ao grupo Mitsubishi' },
+  { key: 'parceiro', label: 'De qualquer parceiro Mitsubishi' },
+];
+
 export default function ChecklistDocumento({ row, avarias = [], itensPorCategoria = {}, onVoltar }) {
   const documentacao = itensPorCategoria.documentacao || {};
   const seguranca = itensPorCategoria.seguranca || {};
   const pneus = itensPorCategoria.pneus || {};
-
-  const nivelAtual = NIVEIS_LEGENDA.reduce((mais, atual) =>
-    Math.abs(atual.valor - (row.nivel_combustivel ?? 0.5)) < Math.abs(mais.valor - (row.nivel_combustivel ?? 0.5)) ? atual : mais,
-  );
 
   return (
     <div>
@@ -158,18 +219,7 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
                   <br />
                   combustível
                 </span>
-                <div className="flex gap-1">
-                  {NIVEIS_LEGENDA.map((nivel) => (
-                    <span
-                      key={nivel.valor}
-                      className={`flex h-4 w-6 items-center justify-center border border-black text-[7pt] font-bold ${
-                        nivel.valor === nivelAtual.valor ? 'bg-[#E30613] text-white' : ''
-                      }`}
-                    >
-                      {nivel.label}
-                    </span>
-                  ))}
-                </div>
+                <FuelGauge nivel={row.nivel_combustivel} />
               </div>
             </div>
             <div className="mt-2 bg-[#D9E7F5] px-1 py-[2px] text-[8pt] font-bold">
@@ -227,35 +277,50 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
           <span className="ml-6 text-[#E30613]">AV</span> = avariado
         </div>
 
-        <div className="mt-1">
-          <div className="flex bg-[#BFE0EF] text-[8pt] font-bold">
-            <span className="w-[22px] border border-black px-1">03</span>
-            <span className="flex-1 border border-l-0 border-black px-1">Checagem dos Pneus*</span>
-          </div>
-          <table className="w-full border-collapse text-center text-[8pt]">
-            <thead>
-              <tr>
-                <th className="w-[38%] border border-t-0 border-black" />
-                {PNEUS.map((p) => (
-                  <th key={p} className="border border-t-0 border-black font-bold">
-                    {p}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {PNEU_LINHAS.map((linha) => (
-                <tr key={linha.key}>
-                  <td className="border border-black pr-1 text-right">{linha.label}</td>
+        <div className="mt-1 flex gap-2">
+          <div className="w-[58%]">
+            <div className="flex bg-[#BFE0EF] text-[8pt] font-bold">
+              <span className="w-[22px] border border-black px-1">03</span>
+              <span className="flex-1 border border-l-0 border-black px-1">Checagem dos Pneus*</span>
+            </div>
+            <table className="w-full border-collapse text-center text-[8pt]">
+              <thead>
+                <tr>
+                  <th className="w-[38%] border border-t-0 border-black" />
                   {PNEUS.map((p) => (
-                    <td key={p} className="border border-black" style={{ backgroundColor: linha.cor }}>
-                      {pneus[p] === linha.key ? <b>X</b> : ''}
-                    </td>
+                    <th key={p} className="border border-t-0 border-black font-bold">
+                      {p}
+                    </th>
                   ))}
                 </tr>
+              </thead>
+              <tbody>
+                {PNEU_LINHAS.map((linha) => (
+                  <tr key={linha.key}>
+                    <td className="border border-black pr-1 text-right">{linha.label}</td>
+                    {PNEUS.map((p) => (
+                      <td key={p} className="border border-black" style={{ backgroundColor: linha.cor }}>
+                        {pneus[p] === linha.key ? <b>X</b> : ''}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex-1 border border-black p-1">
+            <div className="text-center text-[7.5pt] font-bold">
+              Estou de acordo em receber informações / comunicações eletrônicas provindas:
+            </div>
+            <div className="mt-1 space-y-[2px] text-[7.5pt]">
+              {COMUNICACOES_OPCOES.map((opcao) => (
+                <div key={opcao.key} className="flex items-center">
+                  <Check marcado={(row.comunicacoes || []).includes(opcao.key)} />
+                  {opcao.label}
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </div>
         </div>
 
         <p className="mt-1 text-[6.5pt] font-bold">
@@ -274,6 +339,7 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
         <div className="mt-1 text-[8pt]">
           Observações: <span className="font-bold">{row.entrega_observacoes}</span>
         </div>
+
         <div className="doc-line mt-[2px]" />
         <div className="mt-2 flex items-end justify-between text-[8pt]">
           <div>

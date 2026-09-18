@@ -12,6 +12,12 @@ import FotoUploadGrid from '@/components/oficina/FotoUploadGrid';
 import AssinaturaModal from '@/components/oficina/AssinaturaModal';
 import { CATEGORIA_ITENS } from '@/lib/checklistItens';
 
+const COMUNICACOES_OPCOES = [
+  { key: 'concessionarias', label: 'Das concessionárias Mitsubishi e/ou reparadores autorizados Mitsubishi' },
+  { key: 'grupo', label: 'De qualquer empresa pertencente ao grupo Mitsubishi' },
+  { key: 'parceiro', label: 'De qualquer parceiro Mitsubishi' },
+];
+
 const DRAFT_KEY = 'macom-oficina-checklist-draft';
 const ETAPAS = [
   'Dados do veículo',
@@ -54,6 +60,7 @@ export default function ChecklistForm() {
   const [avarias, setAvarias] = useState([]);
   const [itensPorCategoria, setItensPorCategoria] = useState({ documentacao: {}, seguranca: {}, pneus: {} });
   const [observacoes, setObservacoes] = useState('');
+  const [comunicacoes, setComunicacoes] = useState([]);
   const [entregaObservacoes, setEntregaObservacoes] = useState('');
   const [entregaConferida, setEntregaConferida] = useState(false);
   const [fotos, setFotos] = useState([]);
@@ -76,6 +83,7 @@ export default function ChecklistForm() {
           setNivelCombustivel(draft.nivelCombustivel ?? 0.5);
           setPinturaSuja(Boolean(draft.pinturaSuja));
           setObservacoes(draft.observacoes || '');
+          setComunicacoes(Array.isArray(draft.comunicacoes) ? draft.comunicacoes : []);
           setEntregaObservacoes(draft.entregaObservacoes || '');
           setEntregaConferida(Boolean(draft.entregaConferida));
           setEtapa(draft.etapa || 0);
@@ -101,6 +109,7 @@ export default function ChecklistForm() {
         setNivelCombustivel(row.nivel_combustivel ?? 0.5);
         setPinturaSuja(Boolean(row.pintura_suja));
         setObservacoes(row.observacoes || '');
+        setComunicacoes(Array.isArray(row.comunicacoes) ? row.comunicacoes : []);
         setEntregaObservacoes(row.entrega_observacoes || '');
         setEntregaConferida(Boolean(row.entrega_conferida));
         setFotos(row.fotos || []);
@@ -124,12 +133,13 @@ export default function ChecklistForm() {
         nivelCombustivel,
         pinturaSuja,
         observacoes,
+        comunicacoes,
         entregaObservacoes,
         entregaConferida,
         etapa,
       }),
     );
-  }, [idParam, avaliacaoId, cliente, veiculo, os, km, nivelCombustivel, pinturaSuja, observacoes, entregaObservacoes, entregaConferida, etapa]);
+  }, [idParam, avaliacaoId, cliente, veiculo, os, km, nivelCombustivel, pinturaSuja, observacoes, comunicacoes, entregaObservacoes, entregaConferida, etapa]);
 
   const limparRascunho = () => localStorage.removeItem(DRAFT_KEY);
 
@@ -209,11 +219,15 @@ export default function ChecklistForm() {
     }
   };
 
+  const toggleComunicacao = (key) => {
+    setComunicacoes((atual) => (atual.includes(key) ? atual.filter((item) => item !== key) : [...atual, key]));
+  };
+
   const handleSalvarObservacoes = async () => {
     setSalvando(true);
     setErro(null);
     try {
-      await oficinaApi.checklists.atualizar(avaliacaoId, { observacoes: observacoes || null });
+      await oficinaApi.checklists.atualizar(avaliacaoId, { observacoes: observacoes || null, comunicacoes });
       setEtapa((atual) => atual + 1);
     } catch (error) {
       setErro(error.message || 'Não foi possível salvar as observações.');
@@ -397,6 +411,25 @@ export default function ChecklistForm() {
             <Checkbox id="entregaConferida" checked={entregaConferida} onCheckedChange={(checked) => setEntregaConferida(checked === true)} />
             Entrega conferida com o cliente.
           </label>
+
+          <div className="rounded-xl border bg-card p-4">
+            <h2 className="text-sm font-semibold">Comunicações eletrônicas</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Estou de acordo em receber informações / comunicações eletrônicas provindas:
+            </p>
+            <div className="mt-3 flex flex-col gap-2">
+              {COMUNICACOES_OPCOES.map((opcao) => (
+                <label key={opcao.key} htmlFor={`comunicacao-${opcao.key}`} className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Checkbox
+                    id={`comunicacao-${opcao.key}`}
+                    checked={comunicacoes.includes(opcao.key)}
+                    onCheckedChange={() => toggleComunicacao(opcao.key)}
+                  />
+                  {opcao.label}
+                </label>
+              ))}
+            </div>
+          </div>
 
           <div className="flex justify-between">
             <Button type="button" variant="outline" onClick={() => setEtapa((atual) => atual - 1)}>

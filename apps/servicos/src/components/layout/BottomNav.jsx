@@ -22,7 +22,7 @@ export default function BottomNav({ onOpenMore }) {
   const isPrimaryActive = primaryItems.some((item) => location.pathname.startsWith(item.path));
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-sidebar-border bg-sidebar pb-safe will-change-transform [transform:translateZ(0)] lg:hidden">
+    <nav className="no-print fixed inset-x-0 bottom-0 z-40 border-t border-sidebar-border bg-sidebar pb-safe will-change-transform [transform:translateZ(0)] lg:hidden">
       <div className="grid" style={{ gridTemplateColumns: `repeat(${primaryItems.length + 1}, minmax(0, 1fr))` }}>
         {primaryItems.map((item) => {
           const isActive = location.pathname.startsWith(item.path);

@@ -312,11 +312,16 @@ Deno.serve(async (request) => {
       if (body.pintura_suja != null) campos.pintura_suja = Boolean(body.pintura_suja);
       if (body.observacoes !== undefined) campos.observacoes = body.observacoes ? String(body.observacoes) : null;
       if (body.os !== undefined) campos.os = body.os ? String(body.os) : null;
+      if (body.comunicacoes !== undefined) {
+        campos.comunicacoes = JSON.stringify(Array.isArray(body.comunicacoes) ? body.comunicacoes : []);
+      }
 
       const fields = Object.keys(campos);
       if (!fields.length) return json({ error: 'Nada para atualizar.' }, 400);
 
-      const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ');
+      const setClause = fields
+        .map((field, index) => `${field} = $${index + 2}${field === 'comunicacoes' ? '::jsonb' : ''}`)
+        .join(', ');
       const rows = await sql.unsafe(
         `
           update ${SERVICOS_SCHEMA}.checklist_avaliacoes

@@ -59,7 +59,7 @@ export default function Header({ onOpenMobileMenu }) {
   const showPushButton = canShowPushButton && permission !== 'denied';
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between border-b border-border bg-card px-4 pt-safe will-change-transform [transform:translateZ(0)] sm:px-6 lg:px-8">
+    <header className="no-print sticky top-0 z-30 flex min-h-16 items-center justify-between border-b border-border bg-card px-4 pt-safe will-change-transform [transform:translateZ(0)] sm:px-6 lg:px-8">
       <Button variant="ghost" size="icon" className="lg:hidden" onClick={onOpenMobileMenu}>
         <Menu className="h-5 w-5" />
       </Button>
