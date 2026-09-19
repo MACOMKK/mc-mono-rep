@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button, Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Spinner, Textarea } from '@macom/ui';
+import { ArrowLeft } from 'lucide-react';
+import { Button, CarLoader, Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Textarea } from '@macom/ui';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { useAuth } from '@/lib/AuthContext';
@@ -68,6 +69,7 @@ export default function ChecklistForm() {
   const [modalAssinaturaAberto, setModalAssinaturaAberto] = useState(false);
   const [avisoDonoDiferente, setAvisoDonoDiferente] = useState(null);
   const [transferindo, setTransferindo] = useState(false);
+  const [dadosCarregados, setDadosCarregados] = useState(null);
 
   useEffect(() => {
     if (!idParam) {
@@ -98,6 +100,7 @@ export default function ChecklistForm() {
       .obter(idParam)
       .then(({ row, itens, avarias: avariasCarregadas }) => {
         if (!row) return;
+        setDadosCarregados({ row, itens, avarias: avariasCarregadas });
         setCliente(row.cliente_id ? { id: row.cliente_id, nome: row.cliente_nome, telefone: row.cliente_telefone } : null);
         setVeiculo(
           row.veiculo_id
@@ -142,6 +145,17 @@ export default function ChecklistForm() {
   }, [idParam, avaliacaoId, cliente, veiculo, os, km, nivelCombustivel, pinturaSuja, observacoes, comunicacoes, entregaObservacoes, entregaConferida, etapa]);
 
   const limparRascunho = () => localStorage.removeItem(DRAFT_KEY);
+
+  const handleCancelar = () => {
+    if (idParam) {
+      navigate(`/oficina/checklists/${idParam}`, { state: dadosCarregados ? { checklistCarregado: dadosCarregados } : undefined });
+      return;
+    }
+    if (!avaliacaoId) {
+      limparRascunho();
+    }
+    navigate('/oficina/checklists');
+  };
 
   const handleIniciarOuAtualizarDados = async () => {
     if (!veiculo) {
@@ -279,16 +293,24 @@ export default function ChecklistForm() {
   const progresso = useMemo(() => Math.round(((etapa + 1) / ETAPAS.length) * 100), [etapa]);
 
   if (carregando) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Spinner />
-      </div>
-    );
+    return <CarLoader inline />;
   }
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
       <div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-ml-2 gap-1 text-muted-foreground"
+            onClick={handleCancelar}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Voltar
+          </Button>
+        </div>
         <h1 className="text-xl font-bold">{idParam ? 'Editar checklist' : 'Nova avaliação'}</h1>
         <div className="mt-3 flex gap-1.5 overflow-x-auto rounded-xl border bg-card p-3 md:flex-wrap md:overflow-visible">
           {ETAPAS.map((nome, index) => {

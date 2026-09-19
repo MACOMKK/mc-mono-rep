@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, Car, History, Plus, Search } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
-import { Badge, Spinner } from '@macom/ui';
+import { Badge, CarLoader } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
 
 const STATUS_LABEL = {
@@ -108,11 +108,7 @@ export default function ChecklistList() {
           </button>
         </div>
 
-        {isLoading && (
-          <div className="flex items-center justify-center py-12">
-            <Spinner />
-          </div>
-        )}
+        {isLoading && <CarLoader inline />}
 
         {isError && (
           <p className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Car, Plus } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
-import { Badge, Button, Spinner } from '@macom/ui';
+import { Badge, Button, CarLoader } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
 import Pagination from '@/components/Pagination';
 import SearchInput from '@/components/SearchInput';
@@ -86,11 +86,7 @@ export default function ChecklistHistorico() {
 
       <SearchInput value={busca} onChange={setBusca} placeholder="Buscar por cliente, placa ou chassi..." className="md:max-w-sm" />
 
-      {isLoading && (
-        <div className="flex items-center justify-center py-12">
-          <Spinner />
-        </div>
-      )}
+      {isLoading && <CarLoader inline />}
 
       {isError && (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">

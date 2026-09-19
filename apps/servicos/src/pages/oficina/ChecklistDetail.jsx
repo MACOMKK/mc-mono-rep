@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Pencil, Printer } from 'lucide-react';
 
-import { Badge, Button, Spinner } from '@macom/ui';
+import { Badge, Button, CarLoader } from '@macom/ui';
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { useAuth } from '@/lib/AuthContext';
 import AvariaMap from '@/components/oficina/AvariaMap';
@@ -31,12 +31,17 @@ function itensParaMapa(itensArray) {
 export default function ChecklistDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
 
-  const [carregando, setCarregando] = useState(true);
-  const [row, setRow] = useState(null);
-  const [avarias, setAvarias] = useState([]);
-  const [itensPorCategoria, setItensPorCategoria] = useState({});
+  const checklistCarregado = location.state?.checklistCarregado;
+
+  const [carregando, setCarregando] = useState(!checklistCarregado);
+  const [row, setRow] = useState(checklistCarregado?.row || null);
+  const [avarias, setAvarias] = useState(checklistCarregado?.avarias || []);
+  const [itensPorCategoria, setItensPorCategoria] = useState(
+    checklistCarregado ? itensParaMapa(checklistCarregado.itens || []) : {},
+  );
   const [imprimindo, setImprimindo] = useState(false);
 
   useEffect(() => {
@@ -51,11 +56,7 @@ export default function ChecklistDetail() {
   }, [id]);
 
   if (carregando) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Spinner />
-      </div>
-    );
+    return <CarLoader inline />;
   }
 
   if (!row) {
