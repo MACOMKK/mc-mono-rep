@@ -10,12 +10,14 @@ import Pagination from '@/components/Pagination';
 import SearchInput from '@/components/SearchInput';
 import { usePagination } from '@/hooks/usePagination';
 import ClienteVeiculoPicker, { VeiculoForm } from '@/components/oficina/ClienteVeiculoPicker';
+import VeiculoDetalheSheet from '@/components/oficina/VeiculoDetalheSheet';
 
 export default function VeiculosHistorico() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [busca, setBusca] = useState('');
   const [cadastrarAberto, setCadastrarAberto] = useState(false);
+  const [veiculoDetalheId, setVeiculoDetalheId] = useState(null);
   const [veiculoTransferir, setVeiculoTransferir] = useState(null);
   const [novoCliente, setNovoCliente] = useState(null);
   const [transferindo, setTransferindo] = useState(false);
@@ -98,7 +100,11 @@ export default function VeiculosHistorico() {
         <>
           <div className="flex flex-col divide-y divide-border rounded-xl border border-border bg-card">
             {pageItems.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 p-3">
+              <div
+                key={item.id}
+                className="flex cursor-pointer items-center gap-3 p-3 hover:bg-muted/50"
+                onClick={() => setVeiculoDetalheId(item.id)}
+              >
                 <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                   <Car className="h-5 w-5" />
                 </span>
@@ -119,7 +125,14 @@ export default function VeiculosHistorico() {
                     : 'Sem checklists'}
                 </span>
                 {user?.isOficinaInspetor && (
-                  <Button variant="outline" size="sm" onClick={() => setVeiculoTransferir(item)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setVeiculoTransferir(item);
+                    }}
+                  >
                     Transferir
                   </Button>
                 )}
@@ -178,6 +191,13 @@ export default function VeiculosHistorico() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <VeiculoDetalheSheet
+        veiculoId={veiculoDetalheId}
+        onOpenChange={(open) => {
+          if (!open) setVeiculoDetalheId(null);
+        }}
+      />
     </div>
   );
 }

@@ -158,6 +158,13 @@ const ENTITY_CONFIG = {
     orderDirection: 'asc',
     allowedFields: ['modelo_id', 'nome', 'ativo'],
   },
+  cores_veiculo: {
+    table: 'cores_veiculo',
+    schema: 'public',
+    orderBy: 'nome',
+    orderDirection: 'asc',
+    allowedFields: ['nome'],
+  },
   veiculos_estoque: {
     table: 'veiculos_estoque',
     orderBy: 'criado_em',
@@ -474,7 +481,7 @@ const VEICULO_ALLOWED_FIELDS = [
   'versao_id',
   'chassi',
   'placa',
-  'cor',
+  'cor_id',
   'km',
 ] as const;
 
@@ -674,7 +681,7 @@ function buildSearchFilter(entity: EntityName, search: string, startIndex: numbe
   } else if (entity === 'veiculos_estoque') {
     pushText('v.chassi');
     pushText('v.placa');
-    pushText('v.cor');
+    pushText('cv.nome');
   }
 
   return {
@@ -824,9 +831,11 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
 
   if (entity === 'veiculos_estoque') {
     return `
-      select ${countExpr}ve.*, row_to_json(v) as veiculo
+      select ${countExpr}ve.*,
+        (row_to_json(v)::jsonb || jsonb_build_object('cor', cv.nome))::json as veiculo
       from ${CRM_SCHEMA}.veiculos_estoque ve
       join public.veiculos v on v.id = ve.veiculo_id
+      left join public.cores_veiculo cv on cv.id = v.cor_id
     `;
   }
 
@@ -1552,6 +1561,16 @@ Deno.serve(async (request) => {
           estoqueRow = rows[0];
         }
 
+        if (veiculoRow.cor_id) {
+          const corRows = await transaction.unsafe(
+            `select nome from public.cores_veiculo where id = $1 limit 1;`,
+            [veiculoRow.cor_id],
+          );
+          veiculoRow.cor = corRows[0]?.nome ?? null;
+        } else {
+          veiculoRow.cor = null;
+        }
+
         return { estoque: estoqueRow, veiculo: veiculoRow };
       });
 
@@ -1635,7 +1654,7 @@ Deno.serve(async (request) => {
     }
 
     if (
-      ['categorias_veiculo', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'veiculos_estoque', 'pipelines', 'etapas_pipeline'].includes(entity)
+      ['categorias_veiculo', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'cores_veiculo', 'veiculos_estoque', 'pipelines', 'etapas_pipeline'].includes(entity)
       && ['create', 'update', 'delete'].includes(action)
     ) {
       ensureCanConfigure(access);

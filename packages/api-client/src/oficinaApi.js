@@ -96,13 +96,13 @@ export const oficinaApi = {
       const result = await invokeOficina({ action: 'checklist_atualizar', id, ...dados });
       return result.row || null;
     },
-    async finalizar(id, { entregaConferida, entregaObservacoes, assinaturaCliente } = {}) {
+    async finalizar(id, { entregaConferida, entregaObservacoes, assinaturaSaida } = {}) {
       const result = await invokeOficina({
         action: 'checklist_finalizar',
         id,
         entrega_conferida: entregaConferida,
         entrega_observacoes: entregaObservacoes,
-        assinatura_cliente: assinaturaCliente,
+        assinatura_saida: assinaturaSaida,
       });
       return result.row || null;
     },
@@ -179,20 +179,34 @@ export const oficinaApi = {
       const result = await invokeOficina({ action: 'veiculo_listar', busca });
       return result.rows || [];
     },
-    async criar({ modeloId, versaoId, chassi, placa, cor, km }) {
+    async criar({ modeloId, versaoId, chassi, placa, corId, km }) {
       const result = await invokeOficina({
         action: 'veiculo_criar',
         modelo_id: modeloId,
         versao_id: versaoId,
         chassi,
         placa,
-        cor,
+        cor_id: corId,
         km,
       });
       return result.row || null;
     },
+    async obter(veiculoId) {
+      const result = await invokeOficina({ action: 'veiculo_obter', id: veiculoId });
+      return result;
+    },
     async transferir({ veiculoId, clienteId }) {
       const result = await invokeOficina({ action: 'veiculo_transferir', veiculo_id: veiculoId, cliente_id: clienteId });
+      return result.row || null;
+    },
+  },
+  cores: {
+    async listar() {
+      const result = await invokeOficina({ action: 'cores_listar' });
+      return result.rows || [];
+    },
+    async criar(nome) {
+      const result = await invokeOficina({ action: 'cores_criar', nome });
       return result.row || null;
     },
   },

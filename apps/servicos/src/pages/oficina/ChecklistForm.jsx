@@ -28,8 +28,8 @@ const ETAPAS = [
   'Pneus',
   'Observações',
   'Fotos',
-  'Assinatura',
-  'Finalização',
+  'Assinatura (Entrada)',
+  'Entrega e Saída',
 ];
 
 function itensParaMapa(itensArray) {
@@ -65,8 +65,10 @@ export default function ChecklistForm() {
   const [entregaObservacoes, setEntregaObservacoes] = useState('');
   const [entregaConferida, setEntregaConferida] = useState(false);
   const [fotos, setFotos] = useState([]);
-  const [assinaturaCliente, setAssinaturaCliente] = useState(null);
-  const [modalAssinaturaAberto, setModalAssinaturaAberto] = useState(false);
+  const [assinaturaEntrada, setAssinaturaEntrada] = useState(null);
+  const [assinaturaSaida, setAssinaturaSaida] = useState(null);
+  const [modalAssinaturaEntradaAberto, setModalAssinaturaEntradaAberto] = useState(false);
+  const [modalAssinaturaSaidaAberto, setModalAssinaturaSaidaAberto] = useState(false);
   const [avisoDonoDiferente, setAvisoDonoDiferente] = useState(null);
   const [transferindo, setTransferindo] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(null);
@@ -116,9 +118,13 @@ export default function ChecklistForm() {
         setEntregaObservacoes(row.entrega_observacoes || '');
         setEntregaConferida(Boolean(row.entrega_conferida));
         setFotos(row.fotos || []);
-        setAssinaturaCliente(row.assinatura_cliente || null);
+        setAssinaturaEntrada(row.assinatura_entrada || null);
+        setAssinaturaSaida(row.assinatura_saida || null);
         setAvarias(avariasCarregadas || []);
         setItensPorCategoria((prev) => ({ ...prev, ...itensParaMapa(itens || []) }));
+        if (row.assinatura_entrada) {
+          setEtapa(ETAPAS.length - 1);
+        }
       })
       .finally(() => setCarregando(false));
   }, [idParam]);
@@ -259,7 +265,7 @@ export default function ChecklistForm() {
       await oficinaApi.checklists.finalizar(avaliacaoId, {
         entregaConferida,
         entregaObservacoes: entregaObservacoes || undefined,
-        assinaturaCliente: assinaturaCliente || undefined,
+        assinaturaSaida: assinaturaSaida || undefined,
       });
       limparRascunho();
       navigate(`/oficina/checklists/${avaliacaoId}`);
@@ -316,7 +322,10 @@ export default function ChecklistForm() {
           {ETAPAS.map((nome, index) => {
             const concluida = index < etapa;
             const atual = index === etapa;
-            const habilitada = index <= etapa;
+            // Uma vez na etapa final (assinatura de entrada já validada pelo cliente),
+            // trava a navegação para as etapas anteriores — não é mais possível alterar
+            // a inspeção/dados de entrada, só a entrega e a assinatura de saída.
+            const habilitada = etapa >= ETAPAS.length - 1 ? index === etapa : index <= etapa;
             return (
               <button
                 key={nome}
@@ -419,23 +428,6 @@ export default function ChecklistForm() {
             <Textarea id="observacoes" rows={6} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} />
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium" htmlFor="entregaObservacoes">
-              Observações da entrega
-            </label>
-            <Textarea
-              id="entregaObservacoes"
-              rows={3}
-              value={entregaObservacoes}
-              onChange={(e) => setEntregaObservacoes(e.target.value)}
-            />
-          </div>
-
-          <label htmlFor="entregaConferida" className="flex cursor-pointer items-center gap-2 text-sm">
-            <Checkbox id="entregaConferida" checked={entregaConferida} onCheckedChange={(checked) => setEntregaConferida(checked === true)} />
-            Entrega conferida com o cliente.
-          </label>
-
           <div className="rounded-xl border bg-card p-4">
             <h2 className="text-sm font-semibold">Comunicações eletrônicas</h2>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -502,16 +494,16 @@ export default function ChecklistForm() {
           </div>
 
           <div className="rounded-lg border border-border bg-card p-3">
-            <p className="text-xs text-muted-foreground">Assinatura do cliente</p>
-            {assinaturaCliente ? (
+            <p className="text-xs text-muted-foreground">Assinatura do cliente (Entrada)</p>
+            {assinaturaEntrada ? (
               <div className="mt-2 inline-block rounded-md bg-white p-1">
-                <img src={assinaturaCliente} alt="Assinatura do cliente" className="h-16 object-contain" />
+                <img src={assinaturaEntrada} alt="Assinatura do cliente na entrada" className="h-16 object-contain" />
               </div>
             ) : (
               <p className="mt-1 text-sm text-muted-foreground">Ainda não capturada.</p>
             )}
-            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setModalAssinaturaAberto(true)}>
-              {assinaturaCliente ? 'Refazer assinatura' : 'Capturar assinatura'}
+            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setModalAssinaturaEntradaAberto(true)}>
+              {assinaturaEntrada ? 'Refazer assinatura' : 'Capturar assinatura'}
             </Button>
           </div>
 
@@ -519,17 +511,33 @@ export default function ChecklistForm() {
             <Button type="button" variant="outline" onClick={() => setEtapa((atual) => atual - 1)}>
               Voltar
             </Button>
-            <Button type="button" onClick={() => setEtapa((atual) => atual + 1)}>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!assinaturaEntrada) {
+                  setErro('Capture a assinatura do cliente na entrada antes de avançar.');
+                  return;
+                }
+                setErro(null);
+                setEtapa((atual) => atual + 1);
+                oficinaApi.checklists
+                  .atualizar(avaliacaoId, { assinatura_entrada: assinaturaEntrada })
+                  .catch((error) => {
+                    setErro(error.message || 'Não foi possível salvar a assinatura automaticamente. Volte a esta etapa e clique em Avançar novamente.');
+                  });
+              }}
+            >
               Avançar
             </Button>
           </div>
 
           <AssinaturaModal
-            open={modalAssinaturaAberto}
-            onCancel={() => setModalAssinaturaAberto(false)}
+            open={modalAssinaturaEntradaAberto}
+            titulo="Assinatura do cliente na entrada"
+            onCancel={() => setModalAssinaturaEntradaAberto(false)}
             onConfirm={(dataUrl) => {
-              setAssinaturaCliente(dataUrl);
-              setModalAssinaturaAberto(false);
+              setAssinaturaEntrada(dataUrl);
+              setModalAssinaturaEntradaAberto(false);
             }}
           />
         </div>
@@ -555,14 +563,52 @@ export default function ChecklistForm() {
             </dl>
           </div>
 
-          <div className="flex justify-between">
-            <Button type="button" variant="outline" onClick={() => setEtapa((atual) => atual - 1)}>
-              Voltar
+          <div>
+            <label className="mb-1 block text-sm font-medium" htmlFor="entregaObservacoes">
+              Observações da entrega
+            </label>
+            <Textarea
+              id="entregaObservacoes"
+              rows={3}
+              value={entregaObservacoes}
+              onChange={(e) => setEntregaObservacoes(e.target.value)}
+            />
+          </div>
+
+          <label htmlFor="entregaConferida" className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox id="entregaConferida" checked={entregaConferida} onCheckedChange={(checked) => setEntregaConferida(checked === true)} />
+            Entrega conferida com o cliente.
+          </label>
+
+          <div className="rounded-lg border border-border bg-card p-3">
+            <p className="text-xs text-muted-foreground">Assinatura do cliente (Saída)</p>
+            {assinaturaSaida ? (
+              <div className="mt-2 inline-block rounded-md bg-white p-1">
+                <img src={assinaturaSaida} alt="Assinatura do cliente na saída" className="h-16 object-contain" />
+              </div>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">Ainda não capturada.</p>
+            )}
+            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setModalAssinaturaSaidaAberto(true)}>
+              {assinaturaSaida ? 'Refazer assinatura' : 'Capturar assinatura'}
             </Button>
-            <Button type="button" onClick={handleFinalizar} disabled={salvando}>
+          </div>
+
+          <div className="flex justify-end">
+            <Button type="button" onClick={handleFinalizar} disabled={salvando || !assinaturaSaida}>
               {salvando ? 'Finalizando...' : 'Finalizar avaliação'}
             </Button>
           </div>
+
+          <AssinaturaModal
+            open={modalAssinaturaSaidaAberto}
+            titulo="Assinatura do cliente na saída"
+            onCancel={() => setModalAssinaturaSaidaAberto(false)}
+            onConfirm={(dataUrl) => {
+              setAssinaturaSaida(dataUrl);
+              setModalAssinaturaSaidaAberto(false);
+            }}
+          />
         </div>
       )}
 

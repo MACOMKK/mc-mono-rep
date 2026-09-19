@@ -1,20 +1,11 @@
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, Car, History, Plus, Search } from 'lucide-react';
+import { ArrowRight, History, Plus, Search } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
-import { Badge, CarLoader } from '@macom/ui';
+import { CarLoader } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
-
-const STATUS_LABEL = {
-  em_andamento: 'Em andamento',
-  finalizado: 'Finalizado',
-};
-
-const STATUS_VARIANT = {
-  em_andamento: 'warning',
-  finalizado: 'success',
-};
+import ChecklistRow from '@/components/oficina/ChecklistRow';
 
 function AcaoCard({ icone: Icone, titulo, descricao, destaque, onClick }) {
   return (
@@ -38,23 +29,6 @@ function AcaoCard({ icone: Icone, titulo, descricao, destaque, onClick }) {
   );
 }
 
-function ChecklistThumbnail({ item }) {
-  if (item.foto_thumbnail_url) {
-    return (
-      <img
-        src={item.foto_thumbnail_url}
-        alt={item.cliente_nome || 'Veículo'}
-        className="h-14 w-14 shrink-0 rounded-lg object-cover"
-      />
-    );
-  }
-  return (
-    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-      <Car className="h-5 w-5" />
-    </span>
-  );
-}
-
 export default function ChecklistList() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -63,11 +37,6 @@ export default function ChecklistList() {
     queryKey: ['oficina', 'checklists', 'recentes'],
     queryFn: () => oficinaApi.checklists.list({ limit: 5, incluirFotos: true }),
   });
-
-  const subtitulo = (item) =>
-    [item.veiculo_placa || item.veiculo_chassi, item.veiculo_modelo, item.os ? `O.S. ${item.os}` : null, item.colaborador_nome]
-      .filter(Boolean)
-      .join(' · ');
 
   return (
     <div className="flex flex-col gap-6">
@@ -119,26 +88,7 @@ export default function ChecklistList() {
         {!isLoading && !isError && (
           <div className="flex flex-col divide-y divide-border rounded-xl border border-border bg-card">
             {recentes.map((item) => (
-              <div
-                key={item.id}
-                className="flex cursor-pointer items-center gap-3 p-3 hover:bg-muted/50"
-                onClick={() => navigate(`/oficina/checklists/${item.id}`)}
-              >
-                <ChecklistThumbnail item={item} />
-                <span className="w-10 shrink-0 text-sm font-semibold text-muted-foreground">Nº {item.numero}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{item.cliente_nome || '—'}</p>
-                  <p className="truncate text-xs text-muted-foreground">{subtitulo(item) || '—'}</p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(item.data_entrada).toLocaleDateString('pt-BR')}
-                  </span>
-                  <Badge variant={STATUS_VARIANT[item.status] || 'default'}>
-                    {STATUS_LABEL[item.status] || item.status}
-                  </Badge>
-                </div>
-              </div>
+              <ChecklistRow key={item.id} item={item} onClick={() => navigate(`/oficina/checklists/${item.id}`)} />
             ))}
             {recentes.length === 0 && (
               <p className="p-4 text-center text-sm text-muted-foreground">Nenhum checklist encontrado.</p>

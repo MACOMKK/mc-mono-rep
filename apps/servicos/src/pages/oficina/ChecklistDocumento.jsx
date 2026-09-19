@@ -369,8 +369,8 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
               declarados/relacionados na ocasião do preenchimento deste Check List.
             </div>
             <div className="flex-1 text-center text-[8pt]">
-              {row.assinatura_cliente ? (
-                <img src={row.assinatura_cliente} alt="Assinatura do cliente" className="mx-auto h-8 object-contain" />
+              {row.assinatura_entrada ? (
+                <img src={row.assinatura_entrada} alt="Assinatura do cliente na entrada" className="mx-auto h-8 object-contain" />
               ) : (
                 <div className="h-8" />
               )}
@@ -389,10 +389,10 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
               condições em que foi deixado na oficina da Concessionária.
             </div>
             <div className="flex-1 text-center text-[8pt]">
-              {row.assinatura_cliente ? (
+              {row.assinatura_saida ? (
                 <img
-                  src={row.assinatura_cliente}
-                  alt="Assinatura do cliente na entrega"
+                  src={row.assinatura_saida}
+                  alt="Assinatura do cliente na saída"
                   className="mx-auto h-8 object-contain"
                 />
               ) : (

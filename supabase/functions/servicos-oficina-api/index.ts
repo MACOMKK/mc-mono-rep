@@ -220,11 +220,12 @@ Deno.serve(async (request) => {
       const rows = await sql.unsafe(
         `
           select ca.*, cl.nome as cliente_nome, cl.telefone as cliente_telefone,
-            v.placa as veiculo_placa, v.chassi as veiculo_chassi, v.cor as veiculo_cor,
+            v.placa as veiculo_placa, v.chassi as veiculo_chassi, cv.nome as veiculo_cor,
             mv.nome as veiculo_modelo, c.nome as colaborador_nome, c.assinatura_url as colaborador_assinatura_url
           from ${SERVICOS_SCHEMA}.checklist_avaliacoes ca
           left join public.clientes cl on cl.id = ca.cliente_id
           left join public.veiculos v on v.id = ca.veiculo_id
+          left join public.cores_veiculo cv on cv.id = v.cor_id
           left join public.modelos_veiculo mv on mv.id = v.modelo_id
           left join public.colaboradores c on c.id = ca.colaborador_id
           where ca.id = $1
@@ -315,6 +316,9 @@ Deno.serve(async (request) => {
       if (body.comunicacoes !== undefined) {
         campos.comunicacoes = JSON.stringify(Array.isArray(body.comunicacoes) ? body.comunicacoes : []);
       }
+      if (body.assinatura_entrada !== undefined) {
+        campos.assinatura_entrada = body.assinatura_entrada ? String(body.assinatura_entrada) : null;
+      }
 
       const fields = Object.keys(campos);
       if (!fields.length) return json({ error: 'Nada para atualizar.' }, 400);
@@ -342,7 +346,7 @@ Deno.serve(async (request) => {
       await getAvaliacao(id);
 
       const entregaObservacoes = body.entrega_observacoes ? String(body.entrega_observacoes) : null;
-      const assinaturaCliente = body.assinatura_cliente ? String(body.assinatura_cliente) : null;
+      const assinaturaSaida = body.assinatura_saida ? String(body.assinatura_saida) : null;
       const entregaConferida = Boolean(body.entrega_conferida);
 
       const rows = await sql.unsafe(
@@ -352,11 +356,11 @@ Deno.serve(async (request) => {
             data_saida = now(),
             entrega_conferida = $2,
             entrega_observacoes = $3,
-            assinatura_cliente = coalesce($4, assinatura_cliente)
+            assinatura_saida = coalesce($4, assinatura_saida)
           where id = $1
           returning *;
         `,
-        [id, entregaConferida, entregaObservacoes, assinaturaCliente],
+        [id, entregaConferida, entregaObservacoes, assinaturaSaida],
       );
 
       return json({ row: rows[0] });
@@ -551,11 +555,12 @@ Deno.serve(async (request) => {
 
       const rows = await sql.unsafe(
         `
-          select v.id, v.placa, v.chassi, v.cor, v.km, mv.nome as modelo_nome, ma.nome as marca_nome,
+          select v.id, v.placa, v.chassi, cv.nome as cor, v.km, mv.nome as modelo_nome, ma.nome as marca_nome,
             v.cliente_atual_id, c.nome as cliente_atual_nome
           from public.veiculos v
           left join public.modelos_veiculo mv on mv.id = v.modelo_id
           left join public.marcas_veiculo ma on ma.id = mv.marca_id
+          left join public.cores_veiculo cv on cv.id = v.cor_id
           left join public.clientes c on c.id = v.cliente_atual_id
           where v.placa ilike $1 or v.chassi ilike $1
           order by v.placa
@@ -573,13 +578,14 @@ Deno.serve(async (request) => {
       const rows = await sql.unsafe(
         `
           select
-            v.id, v.placa, v.chassi, v.cor, v.km,
+            v.id, v.placa, v.chassi, cv.nome as cor, v.km,
             mv.nome as modelo_nome, ma.nome as marca_nome,
             v.cliente_atual_id, c.nome as cliente_atual_nome,
             (select count(*) from gestao_servicos.checklist_avaliacoes ca where ca.veiculo_id = v.id) as total_checklists
           from public.veiculos v
           left join public.modelos_veiculo mv on mv.id = v.modelo_id
           left join public.marcas_veiculo ma on ma.id = mv.marca_id
+          left join public.cores_veiculo cv on cv.id = v.cor_id
           left join public.clientes c on c.id = v.cliente_atual_id
           where $1 = '' or v.placa ilike '%' || $1 || '%' or v.chassi ilike '%' || $1 || '%'
           order by v.atualizado_em desc
@@ -589,6 +595,72 @@ Deno.serve(async (request) => {
       );
 
       return json({ rows });
+    }
+
+    if (action === 'veiculo_obter') {
+      const id = String(body.id || '');
+      if (!id) return json({ error: 'ID obrigatorio.' }, 400);
+
+      const veiculoRows = await sql.unsafe(
+        `
+          select
+            v.id, v.placa, v.chassi, cv.nome as cor, v.km,
+            mv.nome as modelo_nome, ma.nome as marca_nome,
+            v.cliente_atual_id, c.nome as cliente_atual_nome
+          from public.veiculos v
+          left join public.modelos_veiculo mv on mv.id = v.modelo_id
+          left join public.marcas_veiculo ma on ma.id = mv.marca_id
+          left join public.cores_veiculo cv on cv.id = v.cor_id
+          left join public.clientes c on c.id = v.cliente_atual_id
+          where v.id = $1;
+        `,
+        [id],
+      );
+
+      const veiculo = veiculoRows[0];
+      if (!veiculo) return json({ error: 'Veiculo nao encontrado.' }, 404);
+
+      const proprietarios = await sql.unsafe(
+        `
+          select vp.id, vp.cliente_id, cl.nome as cliente_nome, vp.desde, vp.ate
+          from public.veiculos_proprietarios vp
+          left join public.clientes cl on cl.id = vp.cliente_id
+          where vp.veiculo_id = $1
+          order by vp.desde desc;
+        `,
+        [id],
+      );
+
+      const checklists = await sql.unsafe(
+        `
+          select ca.*, cl.nome as cliente_nome, v.placa as veiculo_placa, v.chassi as veiculo_chassi,
+            mv.nome as veiculo_modelo, c.nome as colaborador_nome, foto.storage_path as foto_thumbnail_path
+          from ${SERVICOS_SCHEMA}.checklist_avaliacoes ca
+          left join public.clientes cl on cl.id = ca.cliente_id
+          left join public.veiculos v on v.id = ca.veiculo_id
+          left join public.modelos_veiculo mv on mv.id = v.modelo_id
+          left join public.colaboradores c on c.id = ca.colaborador_id
+          left join lateral (
+            select cf.storage_path
+            from ${SERVICOS_SCHEMA}.checklist_fotos cf
+            where cf.avaliacao_id = ca.id
+            order by cf.criado_em
+            limit 1
+          ) foto on true
+          where ca.veiculo_id = $1
+          order by ca.data_entrada desc;
+        `,
+        [id],
+      );
+
+      const checklistsComFoto = await Promise.all(
+        checklists.map(async (row: Record<string, unknown>) => ({
+          ...row,
+          foto_thumbnail_url: await createFotoSignedUrl(row.foto_thumbnail_path ? String(row.foto_thumbnail_path) : null),
+        })),
+      );
+
+      return json({ veiculo, proprietarios, checklists: checklistsComFoto });
     }
 
     if (action === 'veiculo_transferir') {
@@ -627,18 +699,40 @@ Deno.serve(async (request) => {
 
       const rows = await sql.unsafe(
         `
-          insert into public.veiculos (modelo_id, versao_id, chassi, placa, cor, km)
+          insert into public.veiculos (modelo_id, versao_id, chassi, placa, cor_id, km)
           values ($1, $2, $3, $4, $5, $6)
-          returning id, placa, chassi, cor, km;
+          returning id, placa, chassi, cor_id, km;
         `,
         [
           modeloId,
           body.versao_id ? String(body.versao_id) : null,
           chassi,
           placa,
-          body.cor ? String(body.cor).trim() : null,
+          body.cor_id ? String(body.cor_id) : null,
           body.km != null ? Number(body.km) : null,
         ],
+      );
+
+      return json({ row: rows[0] }, 201);
+    }
+
+    if (action === 'cores_listar') {
+      const rows = await sql.unsafe(`select id, nome from public.cores_veiculo order by nome;`);
+      return json({ rows });
+    }
+
+    if (action === 'cores_criar') {
+      ensurePodeEditar(moduleRole);
+      const nome = String(body.nome || '').trim();
+      if (!nome) return json({ error: 'nome obrigatorio.' }, 400);
+
+      const rows = await sql.unsafe(
+        `
+          insert into public.cores_veiculo (nome) values ($1)
+          on conflict (nome) do update set nome = excluded.nome
+          returning id, nome;
+        `,
+        [nome],
       );
 
       return json({ row: rows[0] }, 201);

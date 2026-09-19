@@ -61,11 +61,14 @@ export function ClienteForm({ onCriado, onCancelar }) {
 export function VeiculoForm({ onCriado, onCancelar }) {
   const [marcas, setMarcas] = useState([]);
   const [modelos, setModelos] = useState([]);
+  const [cores, setCores] = useState([]);
   const [marcaId, setMarcaId] = useState('');
   const [modeloId, setModeloId] = useState('');
   const [placa, setPlaca] = useState('');
   const [chassi, setChassi] = useState('');
-  const [cor, setCor] = useState('');
+  const [corId, setCorId] = useState('');
+  const [novaCorAberta, setNovaCorAberta] = useState(false);
+  const [novaCorNome, setNovaCorNome] = useState('');
   const [km, setKm] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -77,7 +80,20 @@ export function VeiculoForm({ onCriado, onCancelar }) {
       .eq('ativo', true)
       .order('nome')
       .then(({ data }) => setMarcas(data || []));
+    oficinaApi.cores.listar().then(setCores);
   }, []);
+
+  const handleCriarCor = async () => {
+    const nome = novaCorNome.trim();
+    if (!nome) return;
+    const cor = await oficinaApi.cores.criar(nome);
+    if (cor) {
+      setCores((prev) => [...prev, cor].sort((a, b) => a.nome.localeCompare(b.nome)));
+      setCorId(cor.id);
+    }
+    setNovaCorAberta(false);
+    setNovaCorNome('');
+  };
 
   useEffect(() => {
     if (!marcaId) {
@@ -106,7 +122,7 @@ export function VeiculoForm({ onCriado, onCancelar }) {
         modeloId,
         chassi,
         placa: placa || undefined,
-        cor: cor || undefined,
+        corId: corId || undefined,
         km: km ? Number(km) : undefined,
       });
       onCriado(veiculo);
@@ -149,9 +165,37 @@ export function VeiculoForm({ onCriado, onCancelar }) {
       <Input placeholder="Chassi *" value={chassi} onChange={(e) => setChassi(e.target.value)} />
       <div className="grid grid-cols-3 gap-2">
         <Input placeholder="Placa" value={placa} onChange={(e) => setPlaca(e.target.value)} />
-        <Input placeholder="Cor" value={cor} onChange={(e) => setCor(e.target.value)} />
+        <Select value={corId} onValueChange={setCorId}>
+          <SelectTrigger>
+            <SelectValue placeholder="Cor" />
+          </SelectTrigger>
+          <SelectContent>
+            {cores.map((item) => (
+              <SelectItem key={item.id} value={item.id}>
+                {item.nome}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Input placeholder="Km" type="number" value={km} onChange={(e) => setKm(e.target.value)} />
       </div>
+      {!novaCorAberta && (
+        <Button type="button" variant="ghost" size="sm" className="self-start" onClick={() => setNovaCorAberta(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Cor não encontrada
+        </Button>
+      )}
+      {novaCorAberta && (
+        <div className="flex gap-2">
+          <Input placeholder="Nome da nova cor" value={novaCorNome} onChange={(e) => setNovaCorNome(e.target.value)} />
+          <Button type="button" size="sm" onClick={handleCriarCor} disabled={!novaCorNome.trim()}>
+            Adicionar
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => { setNovaCorAberta(false); setNovaCorNome(''); }}>
+            Cancelar
+          </Button>
+        </div>
+      )}
       {erro && <p className="text-xs text-destructive">{erro}</p>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={onCancelar} disabled={salvando}>

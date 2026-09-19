@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Pencil, Printer } from 'lucide-react';
 
-import { Badge, Button, CarLoader } from '@macom/ui';
+import { Badge, Button, CarLoader, Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Textarea } from '@macom/ui';
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { useAuth } from '@/lib/AuthContext';
 import AvariaMap from '@/components/oficina/AvariaMap';
 import ChecklistItensList from '@/components/oficina/ChecklistItensList';
 import FotoUploadGrid from '@/components/oficina/FotoUploadGrid';
+import AssinaturaModal from '@/components/oficina/AssinaturaModal';
 import ChecklistDocumento from '@/pages/oficina/ChecklistDocumento';
 
 const STATUS_LABEL = { em_andamento: 'Em andamento', finalizado: 'Finalizado' };
@@ -44,6 +45,14 @@ export default function ChecklistDetail() {
   );
   const [imprimindo, setImprimindo] = useState(false);
 
+  const [entregaObservacoes, setEntregaObservacoes] = useState('');
+  const [entregaConferida, setEntregaConferida] = useState(false);
+  const [assinaturaSaida, setAssinaturaSaida] = useState(null);
+  const [modalAssinaturaAberto, setModalAssinaturaAberto] = useState(false);
+  const [modalEntregaAberto, setModalEntregaAberto] = useState(false);
+  const [finalizando, setFinalizando] = useState(false);
+  const [erroFinalizar, setErroFinalizar] = useState(null);
+
   useEffect(() => {
     oficinaApi.checklists
       .obter(id)
@@ -51,9 +60,30 @@ export default function ChecklistDetail() {
         setRow(rowCarregado);
         setAvarias(avariasCarregadas || []);
         setItensPorCategoria(itensParaMapa(itens || []));
+        setEntregaObservacoes(rowCarregado?.entrega_observacoes || '');
+        setEntregaConferida(Boolean(rowCarregado?.entrega_conferida));
+        setAssinaturaSaida(rowCarregado?.assinatura_saida || null);
       })
       .finally(() => setCarregando(false));
   }, [id]);
+
+  const handleFinalizar = async () => {
+    setFinalizando(true);
+    setErroFinalizar(null);
+    try {
+      const rowAtualizado = await oficinaApi.checklists.finalizar(id, {
+        entregaConferida,
+        entregaObservacoes: entregaObservacoes || undefined,
+        assinaturaSaida,
+      });
+      setRow(rowAtualizado);
+      setModalEntregaAberto(false);
+    } catch (error) {
+      setErroFinalizar(error.message || 'Não foi possível finalizar o checklist.');
+    } finally {
+      setFinalizando(false);
+    }
+  };
 
   if (carregando) {
     return <CarLoader inline />;
@@ -86,10 +116,15 @@ export default function ChecklistDetail() {
             <Printer className="mr-2 h-4 w-4" />
             Visualizar PDF
           </Button>
-          {row.status === 'em_andamento' && user?.isOficinaInspetor && (
+          {row.status === 'em_andamento' && !row.assinatura_entrada && user?.isOficinaInspetor && (
             <Button type="button" size="sm" onClick={() => navigate(`/oficina/checklists/${id}/editar`)}>
               <Pencil className="mr-2 h-4 w-4" />
               Editar
+            </Button>
+          )}
+          {row.status === 'em_andamento' && row.assinatura_entrada && user?.isOficinaInspetor && (
+            <Button type="button" size="sm" onClick={() => setModalEntregaAberto(true)}>
+              Registrar Saída
             </Button>
           )}
         </div>
@@ -157,7 +192,7 @@ export default function ChecklistDetail() {
 
       <FotoUploadGrid avaliacaoId={id} fotos={row.fotos || []} readOnly />
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="rounded-lg border border-border bg-card p-3">
           <p className="text-xs text-muted-foreground">Assinatura do responsável</p>
           {row.colaborador_assinatura_url ? (
@@ -169,16 +204,89 @@ export default function ChecklistDetail() {
           )}
         </div>
         <div className="rounded-lg border border-border bg-card p-3">
-          <p className="text-xs text-muted-foreground">Assinatura do cliente</p>
-          {row.assinatura_cliente ? (
+          <p className="text-xs text-muted-foreground">Assinatura do cliente (Entrada)</p>
+          {row.assinatura_entrada ? (
             <div className="mt-2 inline-block rounded-md bg-white p-1">
-              <img src={row.assinatura_cliente} alt="Assinatura do cliente" className="h-16 object-contain" />
+              <img src={row.assinatura_entrada} alt="Assinatura do cliente na entrada" className="h-16 object-contain" />
+            </div>
+          ) : (
+            <p className="mt-1 text-sm text-muted-foreground">—</p>
+          )}
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <p className="text-xs text-muted-foreground">Assinatura do cliente (Saída)</p>
+          {row.assinatura_saida ? (
+            <div className="mt-2 inline-block rounded-md bg-white p-1">
+              <img src={row.assinatura_saida} alt="Assinatura do cliente na saída" className="h-16 object-contain" />
             </div>
           ) : (
             <p className="mt-1 text-sm text-muted-foreground">—</p>
           )}
         </div>
       </div>
+
+      <Dialog open={modalEntregaAberto} onOpenChange={(open) => !open && setModalEntregaAberto(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Entrega e Saída</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-4">
+            {erroFinalizar && (
+              <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                {erroFinalizar}
+              </p>
+            )}
+
+            <div>
+              <label className="mb-1 block text-sm font-medium" htmlFor="entregaObservacoes">
+                Observações da entrega
+              </label>
+              <Textarea
+                id="entregaObservacoes"
+                rows={3}
+                value={entregaObservacoes}
+                onChange={(e) => setEntregaObservacoes(e.target.value)}
+              />
+            </div>
+
+            <label htmlFor="entregaConferida" className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox id="entregaConferida" checked={entregaConferida} onCheckedChange={(checked) => setEntregaConferida(checked === true)} />
+              Entrega conferida com o cliente.
+            </label>
+
+            <div className="rounded-lg border border-border bg-card p-3">
+              <p className="text-xs text-muted-foreground">Assinatura do cliente (Saída)</p>
+              {assinaturaSaida ? (
+                <div className="mt-2 inline-block rounded-md bg-white p-1">
+                  <img src={assinaturaSaida} alt="Assinatura do cliente na saída" className="h-16 object-contain" />
+                </div>
+              ) : (
+                <p className="mt-1 text-sm text-muted-foreground">Ainda não capturada.</p>
+              )}
+              <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setModalAssinaturaAberto(true)}>
+                {assinaturaSaida ? 'Refazer assinatura' : 'Capturar assinatura'}
+              </Button>
+            </div>
+
+            <div className="flex justify-end">
+              <Button type="button" onClick={handleFinalizar} disabled={finalizando || !assinaturaSaida}>
+                {finalizando ? 'Finalizando...' : 'Finalizar avaliação'}
+              </Button>
+            </div>
+          </div>
+
+          <AssinaturaModal
+            open={modalAssinaturaAberto}
+            titulo="Assinatura do cliente na saída"
+            onCancel={() => setModalAssinaturaAberto(false)}
+            onConfirm={(dataUrl) => {
+              setAssinaturaSaida(dataUrl);
+              setModalAssinaturaAberto(false);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

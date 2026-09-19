@@ -239,9 +239,17 @@ mesmas tabelas usadas pelo CRM, extraídas propositalmente pra esse reuso — ve
   Migration `20260917030000_add_servicos_oficina_papel.sql` (alarga o `CHECK` de
   `permissoes_modulo.papel` e estende `auto_create_servicos_permissoes` pra provisionar a linha
   `oficina` também).
-- Assinatura do cliente é capturada ad hoc na tela (campo `assinatura_cliente`, base64/data URL).
-  Assinatura do colaborador **não** é recapturada — lê-se `public.colaboradores.assinatura_url`
-  (a mesma que a pessoa já cadastrou uma vez no Perfil da intranet).
+- Assinatura do cliente é capturada ad hoc na tela, em dois momentos distintos (colunas
+  `assinatura_entrada` e `assinatura_saida`, base64/data URL): a de entrada na etapa "Assinatura
+  (Entrada)" do wizard (`ChecklistForm.jsx`, logo depois da inspeção/fotos), a de saída só na
+  etapa final "Entrega e Saída", junto de `entrega_conferida`/`entrega_observacoes`, no momento de
+  `checklist_finalizar` — evita reaproveitar a mesma assinatura para as duas declarações distintas
+  impressas no documento (`ChecklistDocumento.jsx`, blocos ENTRADA/SAÍDA). Uma vez que
+  `assinatura_entrada` existe, o wizard trava a volta às etapas anteriores (stepper e botão
+  "Voltar" da etapa final ficam desabilitados) — o cliente já validou aquele estado do veículo, só
+  a entrega/assinatura de saída ficam editáveis a partir daí. Assinatura do
+  colaborador **não** é recapturada — lê-se `public.colaboradores.assinatura_url` (a mesma que a
+  pessoa já cadastrou uma vez no Perfil da intranet).
 - Fotos: bucket privado `oficina-checklist-fotos` (migration
   `20260917040000_add_servicos_oficina_checklist_fotos_storage.sql`), upload direto do client
   (RLS gated por `servicos_oficina_pode_editar()`), metadados guardados em `checklist_avaliacoes.fotos`

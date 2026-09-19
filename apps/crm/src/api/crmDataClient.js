@@ -322,6 +322,14 @@ function mapVersaoVeiculoRow(row = {}) {
   };
 }
 
+function mapCorVeiculoRow(row = {}) {
+  return {
+    id: row.id,
+    nome: row.nome || '',
+    ...mapBaseDates(row),
+  };
+}
+
 function mapVeiculoEstoqueRow(row = {}) {
   const veiculo = row.veiculo || {};
   return {
@@ -331,6 +339,7 @@ function mapVeiculoEstoqueRow(row = {}) {
     versao_id: veiculo.versao_id || null,
     chassi: veiculo.chassi || '',
     placa: veiculo.placa || '',
+    cor_id: veiculo.cor_id || '',
     cor: veiculo.cor || '',
     km: veiculo.km ?? null,
     condicao: row.condicao || 'novo',
@@ -1016,6 +1025,15 @@ const VersaoVeiculoRepository = {
   },
 };
 
+const CorVeiculoRepository = {
+  ...createListRepository('CorVeiculo', crmApi.cores_veiculo, mapCorVeiculoRow),
+
+  async create(data) {
+    const row = await crmApi.cores_veiculo.create({ nome: data.nome });
+    return mapCorVeiculoRow(row);
+  },
+};
+
 const VeiculoEstoqueRepository = {
   ...createListRepository('VeiculoEstoque', crmApi.veiculos_estoque, mapVeiculoEstoqueRow),
 
@@ -1027,7 +1045,7 @@ const VeiculoEstoqueRepository = {
         versao_id: data.versao_id || null,
         chassi: data.chassi,
         placa: data.placa || null,
-        cor: data.cor || null,
+        cor_id: data.cor_id || null,
         km: data.km || null,
       },
       estoquePayload: {
@@ -1048,7 +1066,7 @@ const VeiculoEstoqueRepository = {
         versao_id: data.versao_id || null,
         chassi: data.chassi,
         placa: data.placa || null,
-        cor: data.cor || null,
+        cor_id: data.cor_id || null,
         km: data.km || null,
       },
       estoquePayload: {
@@ -1354,6 +1372,7 @@ export const crmDataClient = {
     MarcaVeiculo: MarcaVeiculoRepository,
     ModeloVeiculo: ModeloVeiculoRepository,
     VersaoVeiculo: VersaoVeiculoRepository,
+    CorVeiculo: CorVeiculoRepository,
     VeiculoEstoque: VeiculoEstoqueRepository,
     Proposta: PropostaRepository,
     Venda: VendaRepository,

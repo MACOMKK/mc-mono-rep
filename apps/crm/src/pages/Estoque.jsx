@@ -31,7 +31,7 @@ const emptyForm = {
   versao_id: '',
   chassi: '',
   placa: '',
-  cor: '',
+  cor_id: '',
   km: '',
   condicao: 'novo',
   status: 'disponivel',
@@ -49,6 +49,8 @@ export default function Estoque() {
   const [novoModelo, setNovoModelo] = useState(emptyNovoModelo);
   const [versaoDialogOpen, setVersaoDialogOpen] = useState(false);
   const [novaVersaoNome, setNovaVersaoNome] = useState('');
+  const [corDialogOpen, setCorDialogOpen] = useState(false);
+  const [novaCorNome, setNovaCorNome] = useState('');
 
   const { data: veiculos = [], isLoading, error } = useQuery({
     queryKey: ['crm-veiculos-estoque'],
@@ -74,6 +76,11 @@ export default function Estoque() {
     queryKey: ['crm-categorias-veiculo'],
     queryFn: () => crmDataClient.entities.CategoriaVeiculo.list('nome'),
     enabled: canConfigure,
+  });
+
+  const { data: cores = [] } = useQuery({
+    queryKey: ['crm-cores-veiculo'],
+    queryFn: () => crmDataClient.entities.CorVeiculo.list('nome'),
   });
 
   const marcaNomePorId = useMemo(() => Object.fromEntries(marcas.map((marca) => [marca.id, marca.nome])), [marcas]);
@@ -164,6 +171,22 @@ export default function Estoque() {
     }),
   });
 
+  const createCorMutation = useMutation({
+    mutationFn: (data) => crmDataClient.entities.CorVeiculo.create(data),
+    onSuccess: async (cor) => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-cores-veiculo'] });
+      setForm((prev) => ({ ...prev, cor_id: cor.id }));
+      setCorDialogOpen(false);
+      setNovaCorNome('');
+      toast({ title: 'Cor criada', variant: 'success' });
+    },
+    onError: (mutationError) => toast({
+      title: 'Nao foi possivel criar a cor',
+      description: mutationError.message,
+      variant: 'destructive',
+    }),
+  });
+
   const handleCreateModelo = (event) => {
     event.preventDefault();
     const nome = novoModelo.nome.trim();
@@ -185,6 +208,13 @@ export default function Estoque() {
     createVersaoMutation.mutate({ nome, modelo_id: form.modelo_id, ativo: true });
   };
 
+  const handleCreateCor = (event) => {
+    event.preventDefault();
+    const nome = novaCorNome.trim();
+    if (!nome) return;
+    createCorMutation.mutate({ nome });
+  };
+
   const handleCreate = (event) => {
     event.preventDefault();
     const chassi = form.chassi.trim();
@@ -194,7 +224,7 @@ export default function Estoque() {
       versao_id: form.versao_id || null,
       chassi,
       placa: form.placa.trim() || null,
-      cor: form.cor.trim() || null,
+      cor_id: form.cor_id || null,
       km: form.km ? Number(form.km) : null,
       condicao: form.condicao,
       status: form.status,
@@ -288,12 +318,28 @@ export default function Estoque() {
           </div>
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-wider">Cor</Label>
-            <Input
-              value={form.cor}
-              onChange={(event) => setForm((prev) => ({ ...prev, cor: event.target.value }))}
-              placeholder="Ex.: Cinza Londrino"
-              className="h-9 rounded-none"
-            />
+            <div className="flex gap-1">
+              <Select
+                value={form.cor_id}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, cor_id: value }))}
+              >
+                <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione a cor" /></SelectTrigger>
+                <SelectContent className="rounded-none">
+                  {cores.map((cor) => (
+                    <SelectItem key={cor.id} value={cor.id}>{cor.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 shrink-0 rounded-none px-2"
+                title="Nao encontrei a cor"
+                onClick={() => setCorDialogOpen(true)}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-wider">Km</Label>
@@ -574,6 +620,34 @@ export default function Estoque() {
                 className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
               >
                 {createVersaoMutation.isPending ? 'Criando...' : 'Criar versao'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={corDialogOpen} onOpenChange={(open) => { setCorDialogOpen(open); if (!open) setNovaCorNome(''); }}>
+        <DialogContent className="rounded-none sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nova cor</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateCor} className="space-y-3">
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Nome da cor</Label>
+              <Input
+                value={novaCorNome}
+                onChange={(event) => setNovaCorNome(event.target.value)}
+                placeholder="Ex.: Cinza Londrino"
+                className="h-9 rounded-none"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="submit"
+                disabled={!novaCorNome.trim() || createCorMutation.isPending}
+                className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
+              >
+                {createCorMutation.isPending ? 'Criando...' : 'Criar cor'}
               </Button>
             </DialogFooter>
           </form>
