@@ -20,6 +20,7 @@ const COMUNICACOES_OPCOES = [
 ];
 
 const DRAFT_KEY = 'macom-oficina-checklist-draft';
+const ATIVO_KEY = 'macom-oficina-checklist-ativo';
 const ETAPAS = [
   'Dados do veículo',
   'Inspeção geral',
@@ -75,10 +76,53 @@ export default function ChecklistForm() {
 
   useEffect(() => {
     if (!idParam) {
+      // Um rascunho só deve ser retomado quando a própria aba/página "/novo" é
+      // recarregada (F5) no meio do preenchimento. A Navigation Timing API
+      // (performance.getEntriesByType('navigation')) NÃO serve pra detectar isso:
+      // ela reflete como o documento inteiro foi carregado, não como esta rota do
+      // SPA foi acessada — se o usuário der F5 em QUALQUER página do app e depois
+      // navegar (client-side, sem novo load) até "Novo checklist", o tipo ainda
+      // aparece como "reload" e o rascunho antigo "sequestra" o clique, reabrindo
+      // o checklist anterior em vez de criar um novo.
+      //
+      // Em vez disso, usamos uma flag em sessionStorage que só sobrevive a um F5
+      // real desta mesma aba: ela é setada ao entrar aqui "do zero" e removida no
+      // cleanup do efeito (que roda ao desmontar/navegar pra outro lugar, mas NÃO
+      // roda num F5, já que o F5 destrói o JS inteiro sem disparar cleanup do
+      // React). Assim, se a flag já existir quando o componente monta, é porque a
+      // própria página "/novo" foi recarregada — e só nesse caso o rascunho é
+      // retomado. Qualquer outra forma de chegar aqui (lista/histórico, nova aba,
+      // digitar a URL) sempre abre em branco, mesmo com um checklist anterior
+      // ainda "em_andamento" (ele continua acessível via "Editar" na lista).
+      const jaAtivoNestaAba = sessionStorage.getItem(ATIVO_KEY) === '1';
+
+      if (!jaAtivoNestaAba) {
+        limparRascunho();
+        sessionStorage.setItem(ATIVO_KEY, '1');
+        return () => sessionStorage.removeItem(ATIVO_KEY);
+      }
+
       const draftBruto = localStorage.getItem(DRAFT_KEY);
       if (draftBruto) {
         try {
           const draft = JSON.parse(draftBruto);
+
+          // Rascunhos salvos antes da checagem abaixo existir podem apontar pra um
+          // checklist que já passou da entrada (ou já foi finalizado) — nesse caso o
+          // rascunho está obsoleto e não deve travar a criação de um novo checklist.
+          if (draft.avaliacaoId) {
+            oficinaApi.checklists
+              .obter(draft.avaliacaoId)
+              .then(({ row }) => {
+                if (!row || row.assinatura_entrada || row.status !== 'em_andamento') {
+                  localStorage.removeItem(DRAFT_KEY);
+                  setAvaliacaoId(null);
+                  setEtapa(0);
+                }
+              })
+              .catch(() => {});
+          }
+
           setAvaliacaoId(draft.avaliacaoId || null);
           setCliente(draft.cliente || null);
           setVeiculo(draft.veiculo || null);
@@ -95,7 +139,7 @@ export default function ChecklistForm() {
           // rascunho corrompido, ignora
         }
       }
-      return;
+      return () => sessionStorage.removeItem(ATIVO_KEY);
     }
 
     oficinaApi.checklists
@@ -520,6 +564,9 @@ export default function ChecklistForm() {
                 }
                 setErro(null);
                 setEtapa((atual) => atual + 1);
+                // A partir daqui o checklist não depende mais do rascunho local: futuras
+                // aberturas de "novo checklist" não podem reaproveitar este avaliacaoId.
+                limparRascunho();
                 oficinaApi.checklists
                   .atualizar(avaliacaoId, { assinatura_entrada: assinaturaEntrada })
                   .catch((error) => {
