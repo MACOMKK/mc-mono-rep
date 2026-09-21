@@ -144,6 +144,9 @@ function ModuleNavItem({ mod, user, collapsed, onNavigate }) {
 export default function Sidebar({ collapsed, onToggle, mobileOpen, setMobileOpen, theme, toggleTheme }) {
   const { user } = useAuth();
   const closeMobile = () => setMobileOpen(false);
+  // O drawer mobile nunca deve refletir o estado "recolhido" da sidebar desktop (persistido em
+  // localStorage) -- senao o menu mobile abre so com o icone, sem "MACOM SERVICOS - vX".
+  const effectiveCollapsed = collapsed && !mobileOpen;
 
   return (
     <>
@@ -155,12 +158,12 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, setMobileOpen
         className={`
           no-print fixed top-0 left-0 z-50 flex h-full flex-col border-r border-border bg-card
           transition-all duration-300 ease-in-out
-          ${collapsed ? 'w-[88px]' : 'w-64'}
+          ${effectiveCollapsed ? 'w-[88px]' : 'w-64'}
           ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
-        <div className={`relative flex min-h-16 items-center border-b border-border pt-safe ${collapsed ? 'justify-center px-3' : 'justify-between px-4'}`}>
-          {!collapsed ? (
+        <div className={`relative flex min-h-16 items-center border-b border-border pt-safe ${effectiveCollapsed ? 'justify-center px-3' : 'justify-between px-4'}`}>
+          {!effectiveCollapsed ? (
             <div className="flex items-center gap-2 pl-1">
               <img src={logoUrl} alt="MACOM" className="h-8 w-8 object-contain" />
               <div className="flex flex-col leading-none">
@@ -174,7 +177,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, setMobileOpen
             <img src={logoUrl} alt="MACOM" className="mx-auto h-8 w-8 object-contain" />
           )}
 
-          {!collapsed ? (
+          {!effectiveCollapsed ? (
             <div className="hidden items-center gap-1 lg:flex">
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onToggle} title="Recolher sidebar">
                 <PanelLeftClose className="h-4 w-4" />
@@ -185,7 +188,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, setMobileOpen
             <X className="h-4 w-4" />
           </Button>
 
-          {collapsed ? (
+          {effectiveCollapsed ? (
             <button
               type="button"
               onClick={onToggle}
@@ -200,13 +203,13 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, setMobileOpen
         <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-4">
           <div className="flex flex-col gap-1">
             {servicosModules.map((mod) => (
-              <ModuleNavItem key={mod.key} mod={mod} user={user} collapsed={collapsed} onNavigate={closeMobile} />
+              <ModuleNavItem key={mod.key} mod={mod} user={user} collapsed={effectiveCollapsed} onNavigate={closeMobile} />
             ))}
           </div>
         </nav>
 
         <div className="border-t border-border p-3">
-          <ThemeToggleButton theme={theme} onToggle={toggleTheme} collapsed={collapsed} />
+          <ThemeToggleButton theme={theme} onToggle={toggleTheme} collapsed={effectiveCollapsed} />
         </div>
       </aside>
     </>
