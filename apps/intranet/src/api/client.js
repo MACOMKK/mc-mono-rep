@@ -1,18 +1,19 @@
 import { intranetApi } from '@macom/api-client/intranetApi';
+import {
+  removerArquivoAssinatura as sharedRemoverArquivoAssinatura,
+  uploadAssinatura as sharedUploadAssinatura,
+} from '@macom/api-client/signatureStorage';
 
 import { assertSupabaseConfigured, checkLoginLock, reportFailedLogin, reportLoginSuccess, supabase } from '@/api/supabaseClient';
 
 const DOCUMENT_STORAGE_BUCKET = 'documentos';
 const ANNOUNCEMENT_IMAGE_STORAGE_BUCKET = 'avisos';
 const AVATAR_STORAGE_BUCKET = 'avatares';
-const SIGNATURE_STORAGE_BUCKET = 'assinaturas';
 const ALLOWED_ANNOUNCEMENT_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const ALLOWED_AVATAR_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const ALLOWED_SIGNATURE_IMAGE_TYPES = new Set(['image/png']);
 const MAX_ANNOUNCEMENT_IMAGE_FILE_SIZE = 2 * 1024 * 1024;
 const MAX_DOCUMENT_FILE_SIZE = 5 * 1024 * 1024;
 const MAX_AVATAR_FILE_SIZE = 2 * 1024 * 1024;
-const MAX_SIGNATURE_FILE_SIZE = 512 * 1024;
 
 function normalizeFunctionError(error, fallbackMessage) {
   if (!error) {
@@ -178,58 +179,16 @@ async function deleteAvatar(filePath) {
   return true;
 }
 
+// Upload/remocao em si sao genericos e vivem em @macom/api-client/signatureStorage (usados
+// tambem pelo servicos) -- aqui so adapta pro formato snake_case que o resto deste arquivo/o
+// Profile.jsx ja espera.
 async function uploadSignature(file, collaboratorId) {
-  assertSupabaseConfigured();
-
-  if (!collaboratorId) {
-    throw new Error('Colaborador nao encontrado para enviar assinatura.');
-  }
-
-  if (file?.type && !ALLOWED_SIGNATURE_IMAGE_TYPES.has(file.type)) {
-    throw new Error('Formato de assinatura nao suportado. Use PNG.');
-  }
-
-  if (Number.isFinite(file?.size) && file.size > MAX_SIGNATURE_FILE_SIZE) {
-    throw new Error('A assinatura deve ter no maximo 512 KB.');
-  }
-
-  const filePath = `colaboradores/${collaboratorId}/${Date.now()}-${crypto.randomUUID()}.png`;
-  const { error: uploadError } = await supabase.storage
-    .from(SIGNATURE_STORAGE_BUCKET)
-    .upload(filePath, file, {
-      cacheControl: '3600',
-      contentType: 'image/png',
-      upsert: false,
-    });
-
-  if (uploadError) {
-    throw normalizeFunctionError(uploadError, 'Falha ao enviar assinatura.');
-  }
-
-  const { data } = supabase.storage
-    .from(SIGNATURE_STORAGE_BUCKET)
-    .getPublicUrl(filePath);
-
-  return {
-    signature_url: data?.publicUrl || '',
-    signature_path: filePath,
-  };
+  const result = await sharedUploadAssinatura(file, collaboratorId);
+  return { signature_url: result.signatureUrl, signature_path: result.signaturePath };
 }
 
 async function deleteSignature(filePath) {
-  assertSupabaseConfigured();
-  const normalizedPath = String(filePath || '').trim();
-  if (!normalizedPath) return true;
-
-  const { error } = await supabase.storage
-    .from(SIGNATURE_STORAGE_BUCKET)
-    .remove([normalizedPath]);
-
-  if (error) {
-    throw normalizeFunctionError(error, 'Falha ao remover assinatura enviada.');
-  }
-
-  return true;
+  return sharedRemoverArquivoAssinatura(filePath);
 }
 
 function buildEntityApi(entityName) {

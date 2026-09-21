@@ -6,6 +6,7 @@ import { proximaDataUtil } from '../_shared/diasUteis.ts';
 import { CLEAR_MUST_CHANGE_PASSWORD_SQL, mapMustChangePassword } from '../_shared/auth.ts';
 import { enqueueEmail } from '../_shared/email.ts';
 import { obterAvisoAtivo, aceitarAviso, criarOuAtualizarAviso, listarAvisos } from '../_shared/avisos.ts';
+import { updateColaboradorSignature } from '../_shared/signature.ts';
 import {
   criarFornecedorBodySchema,
   atualizarFornecedorBodySchema,
@@ -1071,6 +1072,33 @@ Deno.serve(async (request) => {
       const token = getBearerToken(request);
       if (token) authContextCache.delete(token);
       return json({ success: true });
+    }
+
+    // Assinatura e' um dado de identidade do colaborador (compartilhado com a intranet, ver
+    // migration 20260831120000_add_assinatura_colaborador.sql), nao especifico do modulo
+    // Financeiro -- por isso fica antes do ensureHasAccess abaixo, igual 'me'.
+    if (action === 'atualizar_assinatura') {
+      if (!collaborator?.id) {
+        return json({ error: 'Nao autenticado.', code: 'auth_required' }, 401);
+      }
+      const signatureUrl = typeof body.signature_url === 'string' ? body.signature_url.trim() : '';
+      const signaturePath = typeof body.signature_path === 'string' ? body.signature_path.trim() : '';
+      if (!signatureUrl || !signaturePath) {
+        return json({ error: 'Assinatura obrigatoria.' }, 400);
+      }
+
+      const result = await updateColaboradorSignature(
+        (query, values) => sql!.unsafe(query, values),
+        createStorageAdminClient(),
+        String(collaborator.id),
+        signatureUrl,
+        signaturePath,
+      );
+
+      const token = getBearerToken(request);
+      if (token) authContextCache.delete(token);
+
+      return json({ success: true, signature_url: result.signatureUrl, signature_path: result.signaturePath });
     }
 
     ensureHasAccess(access, moduleRole);

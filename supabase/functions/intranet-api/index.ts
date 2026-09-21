@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
 import { buildCorsHeaders } from '../_shared/cors.ts';
+import { updateColaboradorSignature } from '../_shared/signature.ts';
 
 const databaseUrl = Deno.env.get('DATABASE_URL');
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -25,7 +26,6 @@ const INTRANET_SYSTEM_SLUG = 'intranet';
 const ANNOUNCEMENT_IMAGES_STORAGE_BUCKET = 'avisos';
 const DOCUMENTS_STORAGE_BUCKET = 'documentos';
 const AVATARS_STORAGE_BUCKET = 'avatares';
-const SIGNATURES_STORAGE_BUCKET = 'assinaturas';
 const ANNOUNCEMENT_IMAGE_SIGNED_URL_TTL_SECONDS = 10 * 60;
 const DOCUMENT_SIGNED_URL_TTL_SECONDS = 10 * 60;
 const MAX_ANNOUNCEMENT_IMAGE_FILE_SIZE = 2 * 1024 * 1024;
@@ -3076,24 +3076,6 @@ async function updateCurrentAvatar(user: Record<string, unknown>, payload: Recor
   return getCurrentProfile(user);
 }
 
-async function deletePreviousSignature(previousPath: unknown, nextPath: unknown) {
-  const oldPath = typeof previousPath === 'string' ? previousPath.trim() : '';
-  const newPath = typeof nextPath === 'string' ? nextPath.trim() : '';
-  if (!oldPath || oldPath === newPath) return;
-
-  try {
-    const storageClient = createStorageAdminClient();
-    if (!storageClient) return;
-    const { error } = await storageClient.storage.from(SIGNATURES_STORAGE_BUCKET).remove([oldPath]);
-    if (error) throw error;
-  } catch (error) {
-    console.error('Failed to delete previous signature:', {
-      path: oldPath,
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
 async function updateCurrentSignature(user: Record<string, unknown>, payload: Record<string, unknown>) {
   const collaboratorId = String(user.collaborator_id || user.id || '');
   if (!collaboratorId) {
@@ -3106,28 +3088,7 @@ async function updateCurrentSignature(user: Record<string, unknown>, payload: Re
     throw new Error('Assinatura obrigatoria.');
   }
 
-  const previousRows = await runSql<Record<string, unknown>>(
-    `
-      select assinatura_path
-      from public.colaboradores
-      where id = $1
-      limit 1;
-    `,
-    [collaboratorId],
-  );
-
-  await runSql(
-    `
-      update public.colaboradores
-      set assinatura_url = $2,
-          assinatura_path = $3,
-          atualizado_em = now()
-      where id = $1;
-    `,
-    [collaboratorId, signatureUrl, signaturePath],
-  );
-
-  await deletePreviousSignature(previousRows[0]?.assinatura_path, signaturePath);
+  await updateColaboradorSignature(runSql, createStorageAdminClient(), collaboratorId, signatureUrl, signaturePath);
 
   return getCurrentProfile(user);
 }

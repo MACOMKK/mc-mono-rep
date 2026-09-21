@@ -1,4 +1,5 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
+import { removerArquivoAssinatura, uploadAssinatura } from './signatureStorage';
 
 function toError(message, status = 500, code, details, hint) {
   const normalizedMessage =
@@ -135,6 +136,19 @@ export const financeiroApi = {
     async getProfile(colaboradorId) {
       const result = await invokeServicos({ action: 'get_colaborador_profile', colaboradorId });
       return result.row || null;
+    },
+    // Upload em si e' generico (ver signatureStorage.js) -- so o registro em
+    // colaboradores.assinatura_url/path que passa pela edge function (acao 'atualizar_assinatura'
+    // em servicos-api), especifica desse app.
+    uploadAssinatura,
+    removerArquivoAssinatura,
+    async atualizarAssinatura({ signatureUrl, signaturePath }) {
+      const result = await invokeServicos({
+        action: 'atualizar_assinatura',
+        signature_url: signatureUrl,
+        signature_path: signaturePath,
+      });
+      return { signatureUrl: result.signature_url || '', signaturePath: result.signature_path || '' };
     },
   },
   avisos: {

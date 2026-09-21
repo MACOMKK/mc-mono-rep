@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { BellRing, Download, Headset, Menu, Settings, UserRound } from 'lucide-react';
 
@@ -13,6 +13,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   ProfileViewDialog,
+  SignaturePadModal,
   useToast,
 } from '@macom/ui';
 import NotificationsBell from '@/components/NotificationsBell';
@@ -39,21 +40,50 @@ function buildWhatsAppLink(telefone) {
 }
 
 export default function Header({ onOpenMobileMenu }) {
-  const { user, logout } = useAuth();
+  const { user, logout, checkUserAuth } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { canInstall, promptInstall } = useInstallPrompt();
   const { canShowBanner: canShowPushButton, permission, loading, error: pushError, subscribe } = usePushBanner();
   const { toast } = useToast();
   const [showProfile, setShowProfile] = useState(false);
+  const [showSignaturePad, setShowSignaturePad] = useState(false);
 
   useEffect(() => {
     if (pushError) toast({ title: 'Erro', description: pushError.message, variant: 'destructive' });
   }, [pushError, toast]);
 
+  const profileQueryKey = ['servicos', 'colaborador-profile', user?.id];
   const profileQuery = useQuery({
-    queryKey: ['servicos', 'colaborador-profile', user?.id],
+    queryKey: profileQueryKey,
     queryFn: () => financeiroApi.colaboradores.getProfile(user.id),
     enabled: showProfile && Boolean(user?.id),
+  });
+
+  const salvarAssinaturaMutation = useMutation({
+    mutationFn: async (file) => {
+      let uploaded = null;
+      try {
+        uploaded = await financeiroApi.colaboradores.uploadAssinatura(file, user.id);
+        return await financeiroApi.colaboradores.atualizarAssinatura(uploaded);
+      } catch (error) {
+        if (uploaded?.signaturePath) {
+          await financeiroApi.colaboradores.removerArquivoAssinatura(uploaded.signaturePath).catch(() => null);
+        }
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: profileQueryKey });
+      // Atualiza tambem o user do AuthContext (usado em ChecklistForm.jsx pra estampar a
+      // assinatura do responsavel) -- ele nao reflete sozinho, e' cacheado ate o proximo login.
+      checkUserAuth(null, { force: true }).catch(() => null);
+      setShowSignaturePad(false);
+      toast({ title: 'Assinatura cadastrada', description: 'Sua assinatura foi salva no perfil.' });
+    },
+    onError: (error) => {
+      toast({ title: 'Erro', description: error?.message || 'Nao foi possivel salvar a assinatura.', variant: 'destructive' });
+    },
   });
 
   const showPushButton = canShowPushButton && permission !== 'denied';
@@ -154,7 +184,14 @@ export default function Header({ onOpenMobileMenu }) {
           loading={profileQuery.isLoading}
           error={profileQuery.error}
           isOwnProfile
-          signatureSetupUrl="https://macom-intranet.vercel.app/perfil"
+          onSetupSignature={() => setShowSignaturePad(true)}
+        />
+
+        <SignaturePadModal
+          open={showSignaturePad}
+          onCancel={() => setShowSignaturePad(false)}
+          onConfirm={(file) => salvarAssinaturaMutation.mutate(file)}
+          isProcessing={salvarAssinaturaMutation.isPending}
         />
       </div>
     </header>

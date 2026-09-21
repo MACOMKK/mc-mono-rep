@@ -69,7 +69,7 @@ export function PasswordChangeForm({
 
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="new-password">Nova senha</Label>
+          <Label htmlFor="new-password" className="text-slate-900">Nova senha</Label>
           <div className="relative">
             <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
@@ -77,7 +77,7 @@ export function PasswordChangeForm({
               type={showPassword ? 'text' : 'password'}
               value={form.password}
               onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-              className="pl-10 pr-11"
+              className="pl-10 pr-11 text-slate-900 placeholder:text-slate-400"
               autoComplete="new-password"
               required
             />
@@ -93,12 +93,13 @@ export function PasswordChangeForm({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="confirm-new-password">Confirmar nova senha</Label>
+          <Label htmlFor="confirm-new-password" className="text-slate-900">Confirmar nova senha</Label>
           <Input
             id="confirm-new-password"
             type={showPassword ? 'text' : 'password'}
             value={form.confirmPassword}
             onChange={(event) => setForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+            className="text-slate-900 placeholder:text-slate-400"
             autoComplete="new-password"
             required
           />
