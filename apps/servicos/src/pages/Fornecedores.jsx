@@ -13,6 +13,7 @@ import {
   DialogTitle,
   Input,
   Label,
+  MoneyLoader,
   Spinner,
   Switch,
   Table,
@@ -258,10 +259,7 @@ export default function Fornecedores() {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner size="sm" />
-          Carregando...
-        </div>
+        <MoneyLoader inline />
       ) : filteredRows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {rows.length === 0 ? 'Nenhum fornecedor cadastrado.' : 'Nenhum fornecedor corresponde à pesquisa.'}

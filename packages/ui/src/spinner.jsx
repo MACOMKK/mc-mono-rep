@@ -1,4 +1,5 @@
 import { cva } from 'class-variance-authority';
+import { Banknote } from 'lucide-react';
 
 import { CarSilhouette } from './car-icon';
 import { cn } from './lib/utils';
@@ -187,4 +188,70 @@ function CarLoader({ className = '', inline = false, label = 'Carregando', ...pr
   );
 }
 
-export { Spinner, spinnerVariants, PageLoader, BrandLoader, CarLoader };
+const MONEY_CSS = `
+@keyframes money-bounce {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50% { transform: translateY(-8px) rotate(4deg); }
+}
+@keyframes brand-fade {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.9; }
+}
+`;
+
+function MoneyLoaderIcon({ className = '', size = 'default' }) {
+  const dims =
+    size === 'sm' ? { box: 'h-[68px] w-[68px]', icon: 'h-8 w-8' } : { box: 'h-[92px] w-[92px]', icon: 'h-11 w-11' };
+
+  return (
+    <div className={cn('flex items-center justify-center', dims.box, className)}>
+      <style>{MONEY_CSS}</style>
+      <Banknote
+        className={cn(dims.icon, 'text-[#E60012]')}
+        style={{ animation: 'money-bounce 1.2s ease-in-out infinite' }}
+      />
+    </div>
+  );
+}
+
+function MoneyLoader({ className = '', inline = false, label = 'Carregando', ...props }) {
+  if (inline) {
+    return (
+      <div
+        role="status"
+        aria-label={label}
+        className={cn('flex flex-col items-center justify-center gap-2 py-12', className)}
+        {...props}
+      >
+        <MoneyLoaderIcon size="sm" />
+        {label ? (
+          <span
+            className="text-xs uppercase tracking-[3px] text-[#e63946]"
+            style={{ animation: 'brand-fade 1.4s ease-in-out infinite' }}
+          >
+            {label}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <main
+      role="status"
+      aria-label={label}
+      className={cn('flex min-h-screen flex-col items-center justify-center gap-6 bg-background', className)}
+      {...props}
+    >
+      <MoneyLoaderIcon />
+      <span
+        className="text-sm uppercase tracking-[4px] text-[#e63946]"
+        style={{ animation: 'brand-fade 1.4s ease-in-out infinite' }}
+      >
+        {label}
+      </span>
+    </main>
+  );
+}
+
+export { Spinner, spinnerVariants, PageLoader, BrandLoader, CarLoader, MoneyLoader };

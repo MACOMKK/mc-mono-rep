@@ -17,7 +17,7 @@ import { ptBR } from 'date-fns/locale';
 import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { financeiroApi } from '@macom/api-client/financeiroApi';
-import { Badge, Button, Spinner } from '@macom/ui';
+import { Badge, Button, MoneyLoader } from '@macom/ui';
 import { formatValor, STATUS_LABEL, STATUS_VARIANT, toLocalDateOnly } from '@/lib/financeiroFormat';
 
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -73,10 +73,7 @@ export default function CalendarioVencimentos() {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner size="sm" />
-          Carregando...
-        </div>
+        <MoneyLoader inline />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
           <div className="rounded-lg border border-border bg-card p-4">

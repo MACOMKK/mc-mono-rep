@@ -11,6 +11,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
+  MoneyLoader,
   Select,
   SelectContent,
   SelectGroup,
@@ -19,7 +20,6 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -546,10 +546,7 @@ export default function MinhasSolicitacoes() {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner size="sm" />
-          Carregando...
-        </div>
+        <MoneyLoader inline />
       ) : filteredRows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {rows.length === 0 ? 'Nenhuma solicitação encontrada.' : 'Nenhuma solicitação corresponde à pesquisa.'}

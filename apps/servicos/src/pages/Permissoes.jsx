@@ -3,13 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { financeiroApi } from '@macom/api-client/financeiroApi';
 import {
+  MoneyLoader,
   ProfileViewDialog,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -132,10 +132,7 @@ export default function Permissoes() {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner size="sm" />
-          Carregando...
-        </div>
+        <MoneyLoader inline />
       ) : filteredColaboradores.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {colaboradores.length === 0

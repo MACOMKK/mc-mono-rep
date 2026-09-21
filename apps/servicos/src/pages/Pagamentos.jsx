@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  MoneyLoader,
   Select,
   SelectContent,
   SelectGroup,
@@ -881,10 +882,7 @@ export default function Pagamentos() {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner size="sm" />
-          Carregando...
-        </div>
+        <MoneyLoader inline />
       ) : visibleRows.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhuma solicitação aguardando pagamento.</p>
       ) : (

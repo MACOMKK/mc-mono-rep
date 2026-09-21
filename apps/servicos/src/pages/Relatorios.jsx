@@ -38,12 +38,12 @@ import {
   Badge,
   Button,
   Input,
+  MoneyLoader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -510,10 +510,7 @@ export default function Relatorios() {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner size="sm" />
-          Carregando...
-        </div>
+        <MoneyLoader inline />
       ) : !resumo || Number(resumo.total_quantidade) === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-14 text-center">
           <SearchX className="h-8 w-8 text-muted-foreground" />
