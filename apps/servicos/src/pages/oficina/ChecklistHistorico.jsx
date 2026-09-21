@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Car, Plus } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
-import { Badge, Button, CarLoader } from '@macom/ui';
+import { Badge, Button, CarLoader, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
 import Pagination from '@/components/Pagination';
 import SearchInput from '@/components/SearchInput';
@@ -21,6 +21,8 @@ const STATUS_VARIANT = {
   avaliado: 'default',
   finalizado: 'success',
 };
+
+const FILTRO_TODOS = 'todas';
 
 function ChecklistThumbnail({ item }) {
   if (item.foto_thumbnail_url) {
@@ -43,20 +45,50 @@ export default function ChecklistHistorico() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [busca, setBusca] = useState('');
+  const [unidadeFiltro, setUnidadeFiltro] = useState(FILTRO_TODOS);
+
+  const unidadeFiltroAtiva = user?.isOficinaGestor && unidadeFiltro !== FILTRO_TODOS ? unidadeFiltro : undefined;
 
   const { data: checklists = [], isLoading, isError } = useQuery({
-    queryKey: ['oficina', 'checklists', 'historico'],
-    queryFn: () => oficinaApi.checklists.list({ incluirFotos: true }),
+    queryKey: ['oficina', 'checklists', 'historico', unidadeFiltroAtiva],
+    queryFn: () => oficinaApi.checklists.list({ incluirFotos: true, unidadeId: unidadeFiltroAtiva }),
+  });
+
+  // Lista completa (sem filtro de unidade) so para popular as opcoes do
+  // dropdown -- so gestor/admin enxergam todas as unidades mesmo.
+  const { data: checklistsTodos = [] } = useQuery({
+    queryKey: ['oficina', 'checklists', 'historico', 'todas-unidades'],
+    queryFn: () => oficinaApi.checklists.list({}),
+    enabled: Boolean(user?.isOficinaGestor),
+    staleTime: 5 * 60 * 1000,
   });
 
   const subtitulo = (item) =>
-    [item.veiculo_placa || item.veiculo_chassi, item.veiculo_modelo, item.os ? `O.S. ${item.os}` : null, item.colaborador_nome]
+    [
+      item.veiculo_placa || item.veiculo_chassi,
+      item.veiculo_modelo,
+      item.os ? `O.S. ${item.os}` : null,
+      item.colaborador_nome,
+      item.unidade_nome,
+    ]
       .filter(Boolean)
       .join(' · ');
 
+  const unidades = useMemo(() => {
+    const mapa = new Map();
+    checklistsTodos.forEach((item) => {
+      if (item.unidade_id && item.unidade_nome && !mapa.has(item.unidade_id)) {
+        mapa.set(item.unidade_id, item.unidade_nome);
+      }
+    });
+    return Array.from(mapa.entries())
+      .map(([id, nome]) => ({ id, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [checklistsTodos]);
+
   const filtrados = useMemo(() => {
-    if (!busca.trim()) return checklists;
     const termo = busca.trim().toLowerCase();
+    if (!termo) return checklists;
     return checklists.filter((item) =>
       [item.cliente_nome, item.veiculo_placa, item.veiculo_chassi, item.colaborador_nome]
         .filter(Boolean)
@@ -86,7 +118,26 @@ export default function ChecklistHistorico() {
         )}
       </div>
 
-      <SearchInput value={busca} onChange={setBusca} placeholder="Buscar por cliente, placa ou chassi..." className="md:max-w-sm" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <SearchInput value={busca} onChange={setBusca} placeholder="Buscar por cliente, placa ou chassi..." className="md:max-w-sm" />
+        {user?.isOficinaGestor && (
+          <div className="w-full sm:w-48">
+            <Select value={unidadeFiltro} onValueChange={setUnidadeFiltro}>
+              <SelectTrigger>
+                <SelectValue placeholder="Unidade" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={FILTRO_TODOS}>Todas unidades</SelectItem>
+                {unidades.map((unidade) => (
+                  <SelectItem key={unidade.id} value={unidade.id}>
+                    {unidade.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
 
       {isLoading && <CarLoader inline />}
 

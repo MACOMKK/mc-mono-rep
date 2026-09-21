@@ -75,6 +75,12 @@ function podeEditar(moduleRole: string | null) {
   return moduleRole === 'inspetor' || moduleRole === 'gestor' || moduleRole === 'admin';
 }
 
+// Inspetor so enxerga os checklists da propria unidade; gestor/admin veem de
+// todas as unidades.
+function podeVerTodasUnidades(moduleRole: string | null) {
+  return moduleRole === 'gestor' || moduleRole === 'admin';
+}
+
 function ensurePodeVer(moduleRole: string | null) {
   if (!podeVer(moduleRole)) {
     throw Object.assign(new Error('Seu usuario nao possui acesso liberado ao modulo oficina.'), { status: 403 });
@@ -109,13 +115,29 @@ async function createFotoSignedUrl(path: string | null) {
   return data?.signedUrl || null;
 }
 
-async function getAvaliacao(id: string) {
+// Inspetor so pode ver/editar checklist da propria unidade -- gestor/admin
+// enxergam de todas. Lanca 404 (em vez de 403) pra nao revelar que o
+// checklist existe em outra unidade.
+function ensureUnidadeAcessivel(
+  checklistUnidadeId: unknown,
+  moduleRole: string | null,
+  collaborator: Record<string, unknown> | null,
+) {
+  if (podeVerTodasUnidades(moduleRole)) return;
+  const unidadeId = collaborator?.unidade_id ? String(collaborator.unidade_id) : null;
+  if (!unidadeId || checklistUnidadeId !== unidadeId) {
+    throw Object.assign(new Error('Checklist nao encontrado.'), { status: 404 });
+  }
+}
+
+async function getAvaliacao(id: string, moduleRole: string | null, collaborator: Record<string, unknown> | null) {
   const rows = await sql!.unsafe(
     `select * from ${SERVICOS_SCHEMA}.checklist_avaliacoes where id = $1 limit 1;`,
     [id],
   );
   const row = rows[0];
   if (!row) throw Object.assign(new Error('Checklist nao encontrado.'), { status: 404 });
+  ensureUnidadeAcessivel(row.unidade_id, moduleRole, collaborator);
   return row;
 }
 
@@ -167,6 +189,14 @@ Deno.serve(async (request) => {
       if (colaboradorId) {
         params.push(colaboradorId);
         conditions.push(`ca.colaborador_id = $${params.length}`);
+      }
+      if (!podeVerTodasUnidades(moduleRole)) {
+        const unidadeId = collaborator?.unidade_id ? String(collaborator.unidade_id) : null;
+        params.push(unidadeId);
+        conditions.push(`ca.unidade_id = $${params.length}`);
+      } else if (body.unidade_id) {
+        params.push(String(body.unidade_id));
+        conditions.push(`ca.unidade_id = $${params.length}`);
       }
       if (busca) {
         params.push(`%${busca}%`);
@@ -238,6 +268,8 @@ Deno.serve(async (request) => {
       );
       const row = rows[0];
       if (!row) return json({ error: 'Checklist nao encontrado.' }, 404);
+
+      ensureUnidadeAcessivel(row.unidade_id, moduleRole, collaborator);
 
       const itens = await sql.unsafe(
         `select * from ${SERVICOS_SCHEMA}.checklist_itens where avaliacao_id = $1 order by categoria, criado_em;`,
@@ -311,7 +343,7 @@ Deno.serve(async (request) => {
       ensurePodeEditar(moduleRole);
       const id = String(body.id || '');
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
-      await getAvaliacao(id);
+      await getAvaliacao(id, moduleRole, collaborator);
 
       const campos: Record<string, unknown> = {};
       if (body.km != null) campos.km = Number(body.km);
@@ -349,7 +381,7 @@ Deno.serve(async (request) => {
       ensurePodeEditar(moduleRole);
       const id = String(body.id || '');
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
-      await getAvaliacao(id);
+      await getAvaliacao(id, moduleRole, collaborator);
 
       const rows = await sql.unsafe(
         `
@@ -368,7 +400,7 @@ Deno.serve(async (request) => {
       ensurePodeEditar(moduleRole);
       const id = String(body.id || '');
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
-      await getAvaliacao(id);
+      await getAvaliacao(id, moduleRole, collaborator);
 
       const entregaObservacoes = body.entrega_observacoes ? String(body.entrega_observacoes) : null;
       const assinaturaSaida = body.assinatura_saida ? String(body.assinatura_saida) : null;
@@ -395,7 +427,7 @@ Deno.serve(async (request) => {
       ensurePodeEditar(moduleRole);
       const avaliacaoId = String(body.avaliacao_id || '');
       if (!avaliacaoId) return json({ error: 'avaliacao_id obrigatorio.' }, 400);
-      await getAvaliacao(avaliacaoId);
+      await getAvaliacao(avaliacaoId, moduleRole, collaborator);
 
       const itens = Array.isArray(body.itens) ? body.itens : [];
       const categoria = body.categoria ? String(body.categoria) : null;
@@ -438,7 +470,7 @@ Deno.serve(async (request) => {
       if (!avaliacaoId || !tipo || !Number.isFinite(posX) || !Number.isFinite(posY)) {
         return json({ error: 'avaliacao_id, tipo, pos_x e pos_y sao obrigatorios.' }, 400);
       }
-      await getAvaliacao(avaliacaoId);
+      await getAvaliacao(avaliacaoId, moduleRole, collaborator);
 
       const rows = await sql.unsafe(
         `
@@ -457,6 +489,14 @@ Deno.serve(async (request) => {
       const id = String(body.id || '');
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
 
+      const avariaRows = await sql.unsafe(
+        `select avaliacao_id from ${SERVICOS_SCHEMA}.checklist_avarias where id = $1 limit 1;`,
+        [id],
+      );
+      const avaria = avariaRows[0];
+      if (!avaria) return json({ error: 'Avaria nao encontrada.' }, 404);
+      await getAvaliacao(String(avaria.avaliacao_id), moduleRole, collaborator);
+
       await sql.unsafe(`delete from ${SERVICOS_SCHEMA}.checklist_avarias where id = $1;`, [id]);
       return json({ ok: true });
     }
@@ -468,7 +508,7 @@ Deno.serve(async (request) => {
       if (!avaliacaoId || !storagePath) {
         return json({ error: 'avaliacao_id e storage_path sao obrigatorios.' }, 400);
       }
-      await getAvaliacao(avaliacaoId);
+      await getAvaliacao(avaliacaoId, moduleRole, collaborator);
 
       const rows = await sql.unsafe(
         `
@@ -489,7 +529,7 @@ Deno.serve(async (request) => {
       if (!avaliacaoId || !storagePath) {
         return json({ error: 'avaliacao_id e storage_path sao obrigatorios.' }, 400);
       }
-      await getAvaliacao(avaliacaoId);
+      await getAvaliacao(avaliacaoId, moduleRole, collaborator);
 
       const rows = await sql.unsafe(
         `
@@ -512,7 +552,7 @@ Deno.serve(async (request) => {
       if (!avaliacaoId || !storagePath) {
         return json({ error: 'avaliacao_id e storage_path sao obrigatorios.' }, 400);
       }
-      await getAvaliacao(avaliacaoId);
+      await getAvaliacao(avaliacaoId, moduleRole, collaborator);
 
       const rows = await sql.unsafe(
         `

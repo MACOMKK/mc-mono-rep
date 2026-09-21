@@ -30,7 +30,13 @@ function ChecklistThumbnail({ item }) {
 }
 
 export default function ChecklistRow({ item, onClick }) {
-  const subtitulo = [item.veiculo_placa || item.veiculo_chassi, item.veiculo_modelo, item.os ? `O.S. ${item.os}` : null, item.colaborador_nome]
+  const subtitulo = [
+    item.veiculo_placa || item.veiculo_chassi,
+    item.veiculo_modelo,
+    item.os ? `O.S. ${item.os}` : null,
+    item.colaborador_nome,
+    item.unidade_nome,
+  ]
     .filter(Boolean)
     .join(' · ');
 
