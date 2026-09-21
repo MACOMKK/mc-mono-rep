@@ -41,7 +41,6 @@
     "dev:servicos": "vite --config apps/servicos/vite.config.js --configLoader runner",
     "prebuild:servicos": "npm run sync:favicons",
     "build:servicos": "vite build --config apps/servicos/vite.config.js --configLoader runner",
-    "android:servicos": "npm run build:servicos && npm --prefix apps/servicos run cap:sync && npm --prefix apps/servicos run cap:open:android",
     "lint": "eslint apps/central/src --quiet",
     "lint:relatorios": "eslint apps/relatorios/src --quiet",
     "lint:admin": "npm --prefix apps/admin run lint",

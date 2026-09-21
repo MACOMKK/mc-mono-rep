@@ -7,7 +7,6 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { PushProvider } from '@/lib/PushContext';
 import AppLayout from '@/components/layout/AppLayout';
 import AppUpdatePrompt from '@/components/AppUpdatePrompt';
-import NativeBackButtonHandler from '@/components/NativeBackButtonHandler';
 import Login from '@/pages/Login';
 import MinhasSolicitacoes from '@/pages/MinhasSolicitacoes';
 import Aprovacoes from '@/pages/Aprovacoes';
@@ -152,7 +151,6 @@ function App() {
     <QueryClientProvider client={queryClientInstance}>
       <AuthProvider>
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <NativeBackButtonHandler />
           <Routes>
             <Route path="/entrar" element={<LoginRoute />} />
             <Route path="/login" element={<Navigate replace to="/entrar" />} />

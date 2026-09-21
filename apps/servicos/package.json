@@ -11,14 +11,9 @@
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
-    "preview": "vite preview --configLoader runner",
-    "cap:sync": "cap sync android",
-    "cap:open:android": "cap open android"
+    "preview": "vite preview --configLoader runner"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.0",
-    "@capacitor/app": "^8.1.1",
-    "@capacitor/core": "^8.5.0",
     "@radix-ui/react-alert-dialog": "^1.1.6",
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-label": "^2.1.2",
@@ -41,7 +36,6 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.5.0",
     "@eslint/js": "^9.19.0",
     "@types/node": "^22.13.5",
     "@types/react": "^18.2.66",

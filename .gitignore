@@ -36,14 +36,3 @@ dist-ssr
 
 # Generated files
 README.md
-
-# Capacitor (apps/servicos/android) — projeto nativo fica versionado, so ignora
-# build output e config especifica da maquina (caminho local do Android SDK)
-apps/servicos/android/app/build/
-apps/servicos/android/build/
-apps/servicos/android/.gradle/
-apps/servicos/android/local.properties
-apps/servicos/android/.idea/
-apps/servicos/android/captures/
-apps/servicos/android/*.apk
-apps/servicos/android/app/release/
