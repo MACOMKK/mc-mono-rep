@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 import { mergeConfig } from 'vite';
@@ -49,6 +50,8 @@ function withBuildMetadata(baseVersion) {
   }
 }
 
+const appVersion = withBuildMetadata(version);
+
 const baseConfig = createAppConfig(import.meta.url, {
   server: {
     port: 5177,
@@ -59,12 +62,30 @@ const baseConfig = createAppConfig(import.meta.url, {
     strictPort: true,
   },
   define: {
-    __APP_VERSION__: JSON.stringify(withBuildMetadata(version)),
+    __APP_VERSION__: JSON.stringify(appVersion),
   },
 });
 
+// Gera version.json no dist, fora do bundle/SW cache -- e o unico jeito da pagina ainda rodando a
+// versao antiga descobrir o numero da versao NOVA antes do usuario clicar em "Atualizar" no toast
+// do AppUpdatePrompt.jsx (o numero so existe dentro do bundle novo, que so roda depois do reload).
+// Buscado com cache: 'no-store' pra sempre pegar o arquivo publicado no deploy mais recente.
+function versionJsonPlugin() {
+  let outDir;
+  return {
+    name: 'macom-servicos-version-json',
+    configResolved(config) {
+      outDir = config.build.outDir;
+    },
+    writeBundle() {
+      writeFileSync(`${outDir}/version.json`, JSON.stringify({ version: appVersion }));
+    },
+  };
+}
+
 export default mergeConfig(baseConfig, {
   plugins: [
+    versionJsonPlugin(),
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',
