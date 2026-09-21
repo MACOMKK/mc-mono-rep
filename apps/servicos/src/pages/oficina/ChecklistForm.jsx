@@ -1,7 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { Button, CarLoader, Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Textarea } from '@macom/ui';
+import {
+  Button,
+  CarLoader,
+  Checkbox,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Textarea,
+} from '@macom/ui';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { useAuth } from '@/lib/AuthContext';
@@ -54,6 +70,8 @@ export default function ChecklistForm() {
   const [avaliacaoId, setAvaliacaoId] = useState(idParam || null);
   const [cliente, setCliente] = useState(null);
   const [veiculo, setVeiculo] = useState(null);
+  const [unidadeId, setUnidadeId] = useState(user?.collaborator?.unidade_id || '');
+  const [unidades, setUnidades] = useState([]);
   const [os, setOs] = useState('');
   const [km, setKm] = useState('');
   const [nivelCombustivel, setNivelCombustivel] = useState(0.5);
@@ -68,6 +86,16 @@ export default function ChecklistForm() {
   const [avisoDonoDiferente, setAvisoDonoDiferente] = useState(null);
   const [transferindo, setTransferindo] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(null);
+
+  useEffect(() => {
+    oficinaApi.unidades.listar().then(setUnidades).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!idParam && !unidadeId && user?.collaborator?.unidade_id) {
+      setUnidadeId(user.collaborator.unidade_id);
+    }
+  }, [idParam, unidadeId, user?.collaborator?.unidade_id]);
 
   useEffect(() => {
     if (!idParam) {
@@ -121,6 +149,7 @@ export default function ChecklistForm() {
           setAvaliacaoId(draft.avaliacaoId || null);
           setCliente(draft.cliente || null);
           setVeiculo(draft.veiculo || null);
+          setUnidadeId(draft.unidadeId || user?.collaborator?.unidade_id || '');
           setOs(draft.os || '');
           setKm(draft.km || '');
           setNivelCombustivel(draft.nivelCombustivel ?? 0.5);
@@ -146,6 +175,7 @@ export default function ChecklistForm() {
             ? { id: row.veiculo_id, placa: row.veiculo_placa, chassi: row.veiculo_chassi, modelo_nome: row.veiculo_modelo, cor: row.veiculo_cor }
             : null,
         );
+        setUnidadeId(row.unidade_id || '');
         setOs(row.os || '');
         setKm(row.km ?? '');
         setNivelCombustivel(row.nivel_combustivel ?? 0.5);
@@ -171,6 +201,7 @@ export default function ChecklistForm() {
         avaliacaoId,
         cliente,
         veiculo,
+        unidadeId,
         os,
         km,
         nivelCombustivel,
@@ -180,7 +211,7 @@ export default function ChecklistForm() {
         etapa,
       }),
     );
-  }, [idParam, avaliacaoId, cliente, veiculo, os, km, nivelCombustivel, pinturaSuja, observacoes, comunicacoes, etapa]);
+  }, [idParam, avaliacaoId, cliente, veiculo, unidadeId, os, km, nivelCombustivel, pinturaSuja, observacoes, comunicacoes, etapa]);
 
   const limparRascunho = () => localStorage.removeItem(DRAFT_KEY);
 
@@ -205,7 +236,7 @@ export default function ChecklistForm() {
       setErro(null);
       setEtapa((atual) => atual + 1);
       oficinaApi.checklists
-        .atualizar(avaliacaoId, { os: os || null, km: km ? Number(km) : null })
+        .atualizar(avaliacaoId, { os: os || null, km: km ? Number(km) : null, unidade_id: unidadeId || null })
         .catch((error) => {
           setErro(error.message || 'Não foi possível salvar os dados do veículo automaticamente. Volte a esta etapa e clique em Avançar novamente.');
         });
@@ -218,6 +249,7 @@ export default function ChecklistForm() {
       const { row, avisoDonoDiferente: aviso } = await oficinaApi.checklists.iniciar({
         veiculoId: veiculo.id,
         clienteId: cliente?.id,
+        unidadeId: unidadeId || undefined,
         os: os || undefined,
         km: km ? Number(km) : undefined,
       });
@@ -389,6 +421,21 @@ export default function ChecklistForm() {
         <div className="flex flex-col gap-4">
           <ClienteVeiculoPicker tipo="cliente" label="Cliente (opcional)" value={cliente} onChange={setCliente} />
           <ClienteVeiculoPicker tipo="veiculo" label="Veículo *" value={veiculo} onChange={setVeiculo} />
+          <div className="space-y-2">
+            <Label htmlFor="unidade">Unidade</Label>
+            <Select value={unidadeId} onValueChange={setUnidadeId}>
+              <SelectTrigger id="unidade">
+                <SelectValue placeholder="Selecione a unidade" />
+              </SelectTrigger>
+              <SelectContent>
+                {unidades.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Input placeholder="O.S." value={os} onChange={(e) => setOs(e.target.value)} />
             <Input placeholder="Km" type="number" value={km} onChange={(e) => setKm(e.target.value)} />

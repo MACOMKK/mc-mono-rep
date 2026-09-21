@@ -304,9 +304,10 @@ Deno.serve(async (request) => {
       const colaboradorId = body.colaborador_id ? String(body.colaborador_id) : String(collaborator!.id);
       const os = body.os ? String(body.os).trim() : null;
       const km = body.km != null ? Number(body.km) : null;
-      // Unidade sempre fixa: vem do colaborador que esta criando o checklist,
-      // nunca escolhida na tela (ver apps/servicos/CLAUDE.md se essa decisao mudar).
-      const unidadeId = collaborator?.unidade_id ? String(collaborator.unidade_id) : null;
+      // Unidade parte da unidade do colaborador que esta criando o checklist,
+      // mas pode ser trocada na tela (ex.: inspetor cobrindo outra unidade) --
+      // ela define quem enxerga o checklist depois, ver ensureUnidadeAcessivel.
+      const unidadeId = body.unidade_id ? String(body.unidade_id) : collaborator?.unidade_id ? String(collaborator.unidade_id) : null;
 
       let avisoDonoDiferente = null;
       if (clienteId) {
@@ -356,6 +357,9 @@ Deno.serve(async (request) => {
       }
       if (body.assinatura_entrada !== undefined) {
         campos.assinatura_entrada = body.assinatura_entrada ? String(body.assinatura_entrada) : null;
+      }
+      if (body.unidade_id !== undefined) {
+        campos.unidade_id = body.unidade_id ? String(body.unidade_id) : null;
       }
 
       const fields = Object.keys(campos);
@@ -779,6 +783,11 @@ Deno.serve(async (request) => {
       );
 
       return json({ row: rows[0] }, 201);
+    }
+
+    if (action === 'unidades_listar') {
+      const rows = await sql.unsafe(`select id, nome, empresa_id from public.unidades order by nome;`);
+      return json({ rows });
     }
 
     if (action === 'cores_listar') {

@@ -82,12 +82,13 @@ export const oficinaApi = {
       const result = await invokeOficina({ action: 'checklist_obter', id });
       return { row: result.row || null, itens: result.itens || [], avarias: result.avarias || [] };
     },
-    async iniciar({ veiculoId, clienteId, colaboradorId, os, km }) {
+    async iniciar({ veiculoId, clienteId, colaboradorId, unidadeId, os, km }) {
       const result = await invokeOficina({
         action: 'checklist_iniciar',
         veiculo_id: veiculoId,
         cliente_id: clienteId,
         colaborador_id: colaboradorId,
+        unidade_id: unidadeId,
         os,
         km,
       });
@@ -213,6 +214,12 @@ export const oficinaApi = {
     async criar(nome) {
       const result = await invokeOficina({ action: 'cores_criar', nome });
       return result.row || null;
+    },
+  },
+  unidades: {
+    async listar() {
+      const result = await invokeOficina({ action: 'unidades_listar' });
+      return result.rows || [];
     },
   },
 };
