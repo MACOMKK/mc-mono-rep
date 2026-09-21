@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Pencil, Printer } from 'lucide-react';
 
-import { Badge, Button, CarLoader, Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Textarea } from '@macom/ui';
+import { Badge, Button, CarLoader, Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Textarea } from '@macom/ui';
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { useAuth } from '@/lib/AuthContext';
 import AvariaMap from '@/components/oficina/AvariaMap';
@@ -11,8 +11,8 @@ import FotoUploadGrid from '@/components/oficina/FotoUploadGrid';
 import AssinaturaModal from '@/components/oficina/AssinaturaModal';
 import ChecklistDocumento from '@/pages/oficina/ChecklistDocumento';
 
-const STATUS_LABEL = { em_andamento: 'Em andamento', finalizado: 'Finalizado' };
-const STATUS_VARIANT = { em_andamento: 'warning', finalizado: 'success' };
+const STATUS_LABEL = { em_andamento: 'Em andamento', avaliado: 'Avaliado', finalizado: 'Finalizado' };
+const STATUS_VARIANT = { em_andamento: 'warning', avaliado: 'default', finalizado: 'success' };
 const CATEGORIAS = ['documentacao', 'seguranca', 'pneus'];
 const COMUNICACOES_LABEL = {
   concessionarias: 'Das concessionárias Mitsubishi e/ou reparadores autorizados Mitsubishi',
@@ -53,6 +53,11 @@ export default function ChecklistDetail() {
   const [finalizando, setFinalizando] = useState(false);
   const [erroFinalizar, setErroFinalizar] = useState(null);
 
+  const [os, setOs] = useState('');
+  const [editandoOs, setEditandoOs] = useState(false);
+  const [salvandoOs, setSalvandoOs] = useState(false);
+  const [erroOs, setErroOs] = useState(null);
+
   useEffect(() => {
     oficinaApi.checklists
       .obter(id)
@@ -63,6 +68,7 @@ export default function ChecklistDetail() {
         setEntregaObservacoes(rowCarregado?.entrega_observacoes || '');
         setEntregaConferida(Boolean(rowCarregado?.entrega_conferida));
         setAssinaturaSaida(rowCarregado?.assinatura_saida || null);
+        setOs(rowCarregado?.os || '');
       })
       .finally(() => setCarregando(false));
   }, [id]);
@@ -82,6 +88,20 @@ export default function ChecklistDetail() {
       setErroFinalizar(error.message || 'Não foi possível finalizar o checklist.');
     } finally {
       setFinalizando(false);
+    }
+  };
+
+  const handleSalvarOs = async () => {
+    setSalvandoOs(true);
+    setErroOs(null);
+    try {
+      const rowAtualizado = await oficinaApi.checklists.atualizar(id, { os: os || null });
+      setRow(rowAtualizado);
+      setEditandoOs(false);
+    } catch (error) {
+      setErroOs(error.message || 'Não foi possível salvar a O.S.');
+    } finally {
+      setSalvandoOs(false);
     }
   };
 
@@ -122,7 +142,7 @@ export default function ChecklistDetail() {
               Editar
             </Button>
           )}
-          {row.status === 'em_andamento' && row.assinatura_entrada && user?.isOficinaInspetor && (
+          {(row.status === 'avaliado' || (row.status === 'em_andamento' && row.assinatura_entrada)) && user?.isOficinaInspetor && (
             <Button type="button" size="sm" onClick={() => setModalEntregaAberto(true)}>
               Registrar Saída
             </Button>
@@ -155,7 +175,42 @@ export default function ChecklistDetail() {
         </div>
         <div>
           <p className="text-xs text-muted-foreground">O.S.</p>
-          <p>{row.os || '—'}</p>
+          {editandoOs ? (
+            <div className="mt-1 flex items-center gap-2">
+              <Input
+                className="h-8"
+                placeholder="O.S."
+                autoFocus
+                value={os}
+                onChange={(e) => setOs(e.target.value)}
+                onBlur={() => (os !== (row.os || '') ? handleSalvarOs() : setEditandoOs(false))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur();
+                  if (e.key === 'Escape') {
+                    setOs(row.os || '');
+                    setEditandoOs(false);
+                  }
+                }}
+                disabled={salvandoOs}
+              />
+              {salvandoOs && <span className="text-xs text-muted-foreground">Salvando...</span>}
+            </div>
+          ) : (
+            <p className="flex items-center gap-1.5">
+              {row.os || '—'}
+              {user?.isOficinaInspetor && (
+                <button
+                  type="button"
+                  onClick={() => setEditandoOs(true)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Editar O.S."
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
+            </p>
+          )}
+          {erroOs && <p className="mt-1 text-xs text-destructive">{erroOs}</p>}
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Km</p>

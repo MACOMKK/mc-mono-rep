@@ -339,6 +339,25 @@ Deno.serve(async (request) => {
       return json({ row: rows[0] });
     }
 
+    if (action === 'checklist_concluir_avaliacao') {
+      ensurePodeEditar(moduleRole);
+      const id = String(body.id || '');
+      if (!id) return json({ error: 'ID obrigatorio.' }, 400);
+      await getAvaliacao(id);
+
+      const rows = await sql.unsafe(
+        `
+          update ${SERVICOS_SCHEMA}.checklist_avaliacoes
+          set status = 'avaliado'
+          where id = $1 and status = 'em_andamento'
+          returning *;
+        `,
+        [id],
+      );
+
+      return json({ row: rows[0] });
+    }
+
     if (action === 'checklist_finalizar') {
       ensurePodeEditar(moduleRole);
       const id = String(body.id || '');

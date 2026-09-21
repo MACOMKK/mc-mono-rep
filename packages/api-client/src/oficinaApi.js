@@ -96,6 +96,10 @@ export const oficinaApi = {
       const result = await invokeOficina({ action: 'checklist_atualizar', id, ...dados });
       return result.row || null;
     },
+    async concluirAvaliacao(id) {
+      const result = await invokeOficina({ action: 'checklist_concluir_avaliacao', id });
+      return result.row || null;
+    },
     async finalizar(id, { entregaConferida, entregaObservacoes, assinaturaSaida } = {}) {
       const result = await invokeOficina({
         action: 'checklist_finalizar',

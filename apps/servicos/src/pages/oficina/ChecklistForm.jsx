@@ -30,7 +30,6 @@ const ETAPAS = [
   'Observações',
   'Fotos',
   'Assinatura (Entrada)',
-  'Entrega e Saída',
 ];
 
 function itensParaMapa(itensArray) {
@@ -63,13 +62,9 @@ export default function ChecklistForm() {
   const [itensPorCategoria, setItensPorCategoria] = useState({ documentacao: {}, seguranca: {}, pneus: {} });
   const [observacoes, setObservacoes] = useState('');
   const [comunicacoes, setComunicacoes] = useState([]);
-  const [entregaObservacoes, setEntregaObservacoes] = useState('');
-  const [entregaConferida, setEntregaConferida] = useState(false);
   const [fotos, setFotos] = useState([]);
   const [assinaturaEntrada, setAssinaturaEntrada] = useState(null);
-  const [assinaturaSaida, setAssinaturaSaida] = useState(null);
   const [modalAssinaturaEntradaAberto, setModalAssinaturaEntradaAberto] = useState(false);
-  const [modalAssinaturaSaidaAberto, setModalAssinaturaSaidaAberto] = useState(false);
   const [avisoDonoDiferente, setAvisoDonoDiferente] = useState(null);
   const [transferindo, setTransferindo] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(null);
@@ -132,8 +127,6 @@ export default function ChecklistForm() {
           setPinturaSuja(Boolean(draft.pinturaSuja));
           setObservacoes(draft.observacoes || '');
           setComunicacoes(Array.isArray(draft.comunicacoes) ? draft.comunicacoes : []);
-          setEntregaObservacoes(draft.entregaObservacoes || '');
-          setEntregaConferida(Boolean(draft.entregaConferida));
           setEtapa(draft.etapa || 0);
         } catch {
           // rascunho corrompido, ignora
@@ -159,11 +152,8 @@ export default function ChecklistForm() {
         setPinturaSuja(Boolean(row.pintura_suja));
         setObservacoes(row.observacoes || '');
         setComunicacoes(Array.isArray(row.comunicacoes) ? row.comunicacoes : []);
-        setEntregaObservacoes(row.entrega_observacoes || '');
-        setEntregaConferida(Boolean(row.entrega_conferida));
         setFotos(row.fotos || []);
         setAssinaturaEntrada(row.assinatura_entrada || null);
-        setAssinaturaSaida(row.assinatura_saida || null);
         setAvarias(avariasCarregadas || []);
         setItensPorCategoria((prev) => ({ ...prev, ...itensParaMapa(itens || []) }));
         if (row.assinatura_entrada) {
@@ -187,12 +177,10 @@ export default function ChecklistForm() {
         pinturaSuja,
         observacoes,
         comunicacoes,
-        entregaObservacoes,
-        entregaConferida,
         etapa,
       }),
     );
-  }, [idParam, avaliacaoId, cliente, veiculo, os, km, nivelCombustivel, pinturaSuja, observacoes, comunicacoes, entregaObservacoes, entregaConferida, etapa]);
+  }, [idParam, avaliacaoId, cliente, veiculo, os, km, nivelCombustivel, pinturaSuja, observacoes, comunicacoes, etapa]);
 
   const limparRascunho = () => localStorage.removeItem(DRAFT_KEY);
 
@@ -302,19 +290,20 @@ export default function ChecklistForm() {
       });
   };
 
-  const handleFinalizar = async () => {
+  const handleConcluirAvaliacao = async () => {
+    if (!assinaturaEntrada) {
+      setErro('Capture a assinatura do cliente na entrada antes de concluir.');
+      return;
+    }
     setSalvando(true);
     setErro(null);
     try {
-      await oficinaApi.checklists.finalizar(avaliacaoId, {
-        entregaConferida,
-        entregaObservacoes: entregaObservacoes || undefined,
-        assinaturaSaida: assinaturaSaida || undefined,
-      });
+      await oficinaApi.checklists.atualizar(avaliacaoId, { assinatura_entrada: assinaturaEntrada });
+      await oficinaApi.checklists.concluirAvaliacao(avaliacaoId);
       limparRascunho();
       navigate(`/oficina/checklists/${avaliacaoId}`);
     } catch (error) {
-      setErro(error.message || 'Não foi possível finalizar o checklist.');
+      setErro(error.message || 'Não foi possível concluir a avaliação.');
     } finally {
       setSalvando(false);
     }
@@ -555,26 +544,8 @@ export default function ChecklistForm() {
             <Button type="button" variant="outline" onClick={() => setEtapa((atual) => atual - 1)}>
               Voltar
             </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                if (!assinaturaEntrada) {
-                  setErro('Capture a assinatura do cliente na entrada antes de avançar.');
-                  return;
-                }
-                setErro(null);
-                setEtapa((atual) => atual + 1);
-                // A partir daqui o checklist não depende mais do rascunho local: futuras
-                // aberturas de "novo checklist" não podem reaproveitar este avaliacaoId.
-                limparRascunho();
-                oficinaApi.checklists
-                  .atualizar(avaliacaoId, { assinatura_entrada: assinaturaEntrada })
-                  .catch((error) => {
-                    setErro(error.message || 'Não foi possível salvar a assinatura automaticamente. Volte a esta etapa e clique em Avançar novamente.');
-                  });
-              }}
-            >
-              Avançar
+            <Button type="button" onClick={handleConcluirAvaliacao} disabled={salvando || !assinaturaEntrada}>
+              {salvando ? 'Concluindo...' : 'Concluir avaliação'}
             </Button>
           </div>
 
@@ -585,75 +556,6 @@ export default function ChecklistForm() {
             onConfirm={(dataUrl) => {
               setAssinaturaEntrada(dataUrl);
               setModalAssinaturaEntradaAberto(false);
-            }}
-          />
-        </div>
-      )}
-
-      {etapa === 8 && (
-        <div className="flex flex-col gap-4">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h2 className="font-semibold">Resumo</h2>
-            <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
-              <dt className="text-muted-foreground">Cliente</dt>
-              <dd>{cliente?.nome || '—'}</dd>
-              <dt className="text-muted-foreground">Veículo</dt>
-              <dd>{veiculo?.placa || veiculo?.chassi || '—'}</dd>
-              <dt className="text-muted-foreground">O.S.</dt>
-              <dd>{os || '—'}</dd>
-              <dt className="text-muted-foreground">Km</dt>
-              <dd>{km || '—'}</dd>
-              <dt className="text-muted-foreground">Avarias</dt>
-              <dd>{avarias.length}</dd>
-              <dt className="text-muted-foreground">Fotos</dt>
-              <dd>{fotos.length}</dd>
-            </dl>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium" htmlFor="entregaObservacoes">
-              Observações da entrega
-            </label>
-            <Textarea
-              id="entregaObservacoes"
-              rows={3}
-              value={entregaObservacoes}
-              onChange={(e) => setEntregaObservacoes(e.target.value)}
-            />
-          </div>
-
-          <label htmlFor="entregaConferida" className="flex cursor-pointer items-center gap-2 text-sm">
-            <Checkbox id="entregaConferida" checked={entregaConferida} onCheckedChange={(checked) => setEntregaConferida(checked === true)} />
-            Entrega conferida com o cliente.
-          </label>
-
-          <div className="rounded-lg border border-border bg-card p-3">
-            <p className="text-xs text-muted-foreground">Assinatura do cliente (Saída)</p>
-            {assinaturaSaida ? (
-              <div className="mt-2 inline-block rounded-md bg-white p-1">
-                <img src={assinaturaSaida} alt="Assinatura do cliente na saída" className="h-16 object-contain" />
-              </div>
-            ) : (
-              <p className="mt-1 text-sm text-muted-foreground">Ainda não capturada.</p>
-            )}
-            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setModalAssinaturaSaidaAberto(true)}>
-              {assinaturaSaida ? 'Refazer assinatura' : 'Capturar assinatura'}
-            </Button>
-          </div>
-
-          <div className="flex justify-end">
-            <Button type="button" onClick={handleFinalizar} disabled={salvando || !assinaturaSaida}>
-              {salvando ? 'Finalizando...' : 'Finalizar avaliação'}
-            </Button>
-          </div>
-
-          <AssinaturaModal
-            open={modalAssinaturaSaidaAberto}
-            titulo="Assinatura do cliente na saída"
-            onCancel={() => setModalAssinaturaSaidaAberto(false)}
-            onConfirm={(dataUrl) => {
-              setAssinaturaSaida(dataUrl);
-              setModalAssinaturaSaidaAberto(false);
             }}
           />
         </div>

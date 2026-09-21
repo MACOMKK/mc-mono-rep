@@ -12,11 +12,13 @@ import { usePagination } from '@/hooks/usePagination';
 
 const STATUS_LABEL = {
   em_andamento: 'Em andamento',
+  avaliado: 'Avaliado',
   finalizado: 'Finalizado',
 };
 
 const STATUS_VARIANT = {
   em_andamento: 'warning',
+  avaliado: 'default',
   finalizado: 'success',
 };
 
