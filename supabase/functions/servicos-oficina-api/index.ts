@@ -180,12 +180,13 @@ Deno.serve(async (request) => {
       const rows = await sql.unsafe(
         `
           select ca.*, cl.nome as cliente_nome, v.placa as veiculo_placa, v.chassi as veiculo_chassi,
-            mv.nome as veiculo_modelo, c.nome as colaborador_nome, foto.storage_path as foto_thumbnail_path
+            mv.nome as veiculo_modelo, c.nome as colaborador_nome, u.nome as unidade_nome, foto.storage_path as foto_thumbnail_path
           from ${SERVICOS_SCHEMA}.checklist_avaliacoes ca
           left join public.clientes cl on cl.id = ca.cliente_id
           left join public.veiculos v on v.id = ca.veiculo_id
           left join public.modelos_veiculo mv on mv.id = v.modelo_id
           left join public.colaboradores c on c.id = ca.colaborador_id
+          left join public.unidades u on u.id = ca.unidade_id
           left join lateral (
             select cf.storage_path
             from ${SERVICOS_SCHEMA}.checklist_fotos cf
@@ -221,13 +222,15 @@ Deno.serve(async (request) => {
         `
           select ca.*, cl.nome as cliente_nome, cl.telefone as cliente_telefone,
             v.placa as veiculo_placa, v.chassi as veiculo_chassi, cv.nome as veiculo_cor,
-            mv.nome as veiculo_modelo, c.nome as colaborador_nome, c.assinatura_url as colaborador_assinatura_url
+            mv.nome as veiculo_modelo, c.nome as colaborador_nome, c.assinatura_url as colaborador_assinatura_url,
+            u.nome as unidade_nome
           from ${SERVICOS_SCHEMA}.checklist_avaliacoes ca
           left join public.clientes cl on cl.id = ca.cliente_id
           left join public.veiculos v on v.id = ca.veiculo_id
           left join public.cores_veiculo cv on cv.id = v.cor_id
           left join public.modelos_veiculo mv on mv.id = v.modelo_id
           left join public.colaboradores c on c.id = ca.colaborador_id
+          left join public.unidades u on u.id = ca.unidade_id
           where ca.id = $1
           limit 1;
         `,
@@ -269,6 +272,9 @@ Deno.serve(async (request) => {
       const colaboradorId = body.colaborador_id ? String(body.colaborador_id) : String(collaborator!.id);
       const os = body.os ? String(body.os).trim() : null;
       const km = body.km != null ? Number(body.km) : null;
+      // Unidade sempre fixa: vem do colaborador que esta criando o checklist,
+      // nunca escolhida na tela (ver apps/servicos/CLAUDE.md se essa decisao mudar).
+      const unidadeId = collaborator?.unidade_id ? String(collaborator.unidade_id) : null;
 
       let avisoDonoDiferente = null;
       if (clienteId) {
@@ -291,11 +297,11 @@ Deno.serve(async (request) => {
       const rows = await sql.unsafe(
         `
           insert into ${SERVICOS_SCHEMA}.checklist_avaliacoes
-            (veiculo_id, cliente_id, colaborador_id, os, km)
-          values ($1, $2, $3, $4, $5)
+            (veiculo_id, cliente_id, colaborador_id, os, km, unidade_id)
+          values ($1, $2, $3, $4, $5, $6)
           returning *;
         `,
-        [veiculoId, clienteId, colaboradorId, os, km],
+        [veiculoId, clienteId, colaboradorId, os, km, unidadeId],
       );
 
       return json({ row: rows[0], aviso_dono_diferente: avisoDonoDiferente }, 201);

@@ -216,6 +216,10 @@ export default function ChecklistDetail() {
           <p className="text-xs text-muted-foreground">Km</p>
           <p>{row.km ?? '—'}</p>
         </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Unidade</p>
+          <p>{row.unidade_nome || '—'}</p>
+        </div>
       </div>
 
       <div className="rounded-xl border bg-card p-4">
