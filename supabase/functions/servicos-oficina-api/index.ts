@@ -307,6 +307,11 @@ Deno.serve(async (request) => {
 
       const dados = await carregarChecklistCompleto(id);
       if (!dados) return json({ error: 'Link invalido ou expirado.' }, 404);
+      if (dados.row.status !== 'avaliado' && dados.row.status !== 'finalizado') {
+        // Nao revela que o checklist existe/voltou a em_andamento -- mesma
+        // mensagem generica de token invalido.
+        return json({ error: 'Link invalido ou expirado.' }, 404);
+      }
 
       return json(dados);
     }
@@ -328,7 +333,10 @@ Deno.serve(async (request) => {
     if (action === 'checklist_link_compartilhar') {
       const id = String(body.id || '');
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
-      await getAvaliacao(id, moduleRole, collaborator);
+      const avaliacao = await getAvaliacao(id, moduleRole, collaborator);
+      if (avaliacao.status !== 'avaliado' && avaliacao.status !== 'finalizado') {
+        return json({ error: 'So e possivel compartilhar um checklist avaliado ou finalizado.' }, 400);
+      }
       const { token, expiresAt } = await criarTokenCompartilhamento(id);
       return json({ token, expires_at: expiresAt });
     }

@@ -165,10 +165,12 @@ export default function ChecklistDetail() {
             <Printer className="mr-2 h-4 w-4" />
             Visualizar PDF
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={handleCompartilharWhatsApp} disabled={compartilhando}>
-            <WhatsAppIcon className="mr-2 h-4 w-4" />
-            {compartilhando ? 'Gerando link...' : 'Compartilhar'}
-          </Button>
+          {(row.status === 'avaliado' || row.status === 'finalizado') && (
+            <Button type="button" variant="outline" size="sm" onClick={handleCompartilharWhatsApp} disabled={compartilhando}>
+              <WhatsAppIcon className="mr-2 h-4 w-4" />
+              {compartilhando ? 'Gerando link...' : 'Compartilhar'}
+            </Button>
+          )}
           {row.status === 'em_andamento' && !row.assinatura_entrada && user?.isOficinaInspetor && (
             <Button type="button" size="sm" onClick={() => navigate(`/oficina/checklists/${id}/editar`)}>
               <Pencil className="mr-2 h-4 w-4" />

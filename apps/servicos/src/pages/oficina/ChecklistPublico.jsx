@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Download } from 'lucide-react';
+import { Printer } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { Button, CarLoader } from '@macom/ui';
@@ -18,22 +18,20 @@ function itensParaMapa(itensArray) {
 // Pagina publica (sem login) do link de checklist compartilhado via
 // WhatsApp -- ver ChecklistDetail.jsx (handleCompartilharWhatsApp) e a action
 // checklist_publico_obter em supabase/functions/servicos-oficina-api. O PDF e
-// gerado inteiramente no navegador de quem abre o link (html2pdf.js), nunca
-// fica armazenado no nosso servidor.
+// gerado via impressao nativa do navegador (window.print(), mesmo caminho
+// "Salvar PDF" ja usado por colaboradores em ChecklistDocumento.jsx) -- o
+// layout desse documento usa flex/grid que o html2canvas nao reproduz bem,
+// entao evitamos gerar o PDF via canvas. Nada fica armazenado no servidor.
 export default function ChecklistPublico() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') || '';
-  const docRef = useRef(null);
 
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [dados, setDados] = useState(null);
-  const [baixando, setBaixando] = useState(false);
-  const carregouRef = useRef(false);
 
-  if (!carregouRef.current) {
-    carregouRef.current = true;
+  useEffect(() => {
     oficinaApi.checklists.publico
       .obter({ id, token })
       .then(({ row, itens, avarias }) => {
@@ -43,25 +41,16 @@ export default function ChecklistPublico() {
         setErro(error.message || 'Este link é inválido ou já expirou.');
       })
       .finally(() => setCarregando(false));
-  }
+  }, [id, token]);
 
-  const handleBaixarPdf = async () => {
-    if (!docRef.current) return;
-    setBaixando(true);
-    try {
-      const html2pdf = (await import('html2pdf.js')).default;
-      await html2pdf()
-        .set({
-          filename: `checklist${dados?.row?.numero ? `-${dados.row.numero}` : ''}.pdf`,
-          margin: 0,
-          html2canvas: { scale: 2, useCORS: true },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        })
-        .from(docRef.current)
-        .save();
-    } finally {
-      setBaixando(false);
+  useEffect(() => {
+    if (dados?.row) {
+      document.title = `checklist${dados.row.numero ? `-${dados.row.numero}` : ''}`;
     }
+  }, [dados]);
+
+  const handleBaixarPdf = () => {
+    window.print();
   };
 
   if (carregando) {
@@ -85,19 +74,17 @@ export default function ChecklistPublico() {
   return (
     <div className="min-h-screen bg-muted/30 py-6">
       <div className="no-print mx-auto mb-4 flex max-w-3xl justify-end px-3">
-        <Button type="button" onClick={handleBaixarPdf} disabled={baixando}>
-          <Download className="mr-2 h-4 w-4" />
-          {baixando ? 'Gerando PDF...' : 'Baixar PDF'}
+        <Button type="button" onClick={handleBaixarPdf}>
+          <Printer className="mr-2 h-4 w-4" />
+          Baixar PDF
         </Button>
       </div>
-      <div ref={docRef}>
-        <ChecklistDocumento
-          row={dados.row}
-          avarias={dados.avarias}
-          itensPorCategoria={dados.itensPorCategoria}
-          toolbarOculta
-        />
-      </div>
+      <ChecklistDocumento
+        row={dados.row}
+        avarias={dados.avarias}
+        itensPorCategoria={dados.itensPorCategoria}
+        toolbarOculta
+      />
     </div>
   );
 }
