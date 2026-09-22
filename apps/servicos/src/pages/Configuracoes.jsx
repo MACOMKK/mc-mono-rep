@@ -632,7 +632,7 @@ export default function Configuracoes() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold">Configurações</h1>
-        <p className="text-sm text-muted-foreground">Área administrativa do Serviços.</p>
+        <p className="text-sm text-muted-foreground">Área administrativa do HUB.</p>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>

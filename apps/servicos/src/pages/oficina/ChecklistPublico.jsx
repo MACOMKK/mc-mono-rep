@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Printer } from 'lucide-react';
 
@@ -30,6 +30,8 @@ export default function ChecklistPublico() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [dados, setDados] = useState(null);
+  const [imagensProntas, setImagensProntas] = useState(false);
+  const docRef = useRef(null);
 
   useEffect(() => {
     oficinaApi.checklists.publico
@@ -47,6 +49,43 @@ export default function ChecklistPublico() {
     if (dados?.row) {
       document.title = `checklist${dados.row.numero ? `-${dados.row.numero}` : ''}`;
     }
+  }, [dados]);
+
+  // As imagens (logos, diagrama do veiculo, fotos via signed URL) sao
+  // carregadas do zero nessa pagina publica -- sem esperar elas terminarem
+  // de carregar, o layout quebra (containers com altura dependente da
+  // imagem colapsam) e o PDF sai sem foto nenhuma.
+  useEffect(() => {
+    if (!dados || !docRef.current) return undefined;
+
+    let cancelado = false;
+    const imgs = Array.from(docRef.current.querySelectorAll('img'));
+
+    if (imgs.length === 0) {
+      setImagensProntas(true);
+      return undefined;
+    }
+
+    setImagensProntas(false);
+    Promise.all(
+      imgs.map(
+        (img) =>
+          new Promise((resolve) => {
+            if (img.complete) {
+              resolve();
+              return;
+            }
+            img.addEventListener('load', resolve, { once: true });
+            img.addEventListener('error', resolve, { once: true });
+          }),
+      ),
+    ).then(() => {
+      if (!cancelado) setImagensProntas(true);
+    });
+
+    return () => {
+      cancelado = true;
+    };
   }, [dados]);
 
   const handleBaixarPdf = () => {
@@ -74,17 +113,19 @@ export default function ChecklistPublico() {
   return (
     <div className="min-h-screen bg-muted/30 py-6">
       <div className="no-print mx-auto mb-4 flex max-w-3xl justify-end px-3">
-        <Button type="button" onClick={handleBaixarPdf}>
+        <Button type="button" onClick={handleBaixarPdf} disabled={!imagensProntas}>
           <Printer className="mr-2 h-4 w-4" />
-          Baixar PDF
+          {imagensProntas ? 'Baixar PDF' : 'Carregando imagens...'}
         </Button>
       </div>
-      <ChecklistDocumento
-        row={dados.row}
-        avarias={dados.avarias}
-        itensPorCategoria={dados.itensPorCategoria}
-        toolbarOculta
-      />
+      <div ref={docRef}>
+        <ChecklistDocumento
+          row={dados.row}
+          avarias={dados.avarias}
+          itensPorCategoria={dados.itensPorCategoria}
+          toolbarOculta
+        />
+      </div>
     </div>
   );
 }

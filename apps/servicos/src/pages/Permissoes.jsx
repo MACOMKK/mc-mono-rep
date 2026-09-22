@@ -136,7 +136,7 @@ export default function Permissoes() {
       ) : filteredColaboradores.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {colaboradores.length === 0
-            ? 'Nenhum colaborador com acesso ao Serviços.'
+            ? 'Nenhum colaborador com acesso ao HUB.'
             : 'Nenhum colaborador corresponde à pesquisa/filtro.'}
         </p>
       ) : (

@@ -145,7 +145,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, setMobileOpen
   const { user } = useAuth();
   const closeMobile = () => setMobileOpen(false);
   // O drawer mobile nunca deve refletir o estado "recolhido" da sidebar desktop (persistido em
-  // localStorage) -- senao o menu mobile abre so com o icone, sem "MACOM SERVICOS - vX".
+  // localStorage) -- senao o menu mobile abre so com o icone, sem "MACOM HUB - vX".
   const effectiveCollapsed = collapsed && !mobileOpen;
 
   return (
@@ -169,7 +169,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, setMobileOpen
               <div className="flex flex-col leading-none">
                 <h1 className="text-base font-extrabold leading-none tracking-tight text-foreground">MACOM</h1>
                 <p className="mt-1 text-[10px] font-medium tracking-wider text-muted-foreground">
-                  SERVIÇOS <span className="text-muted-foreground/60">· v{appVersion}</span>
+                  HUB <span className="text-muted-foreground/60">· v{appVersion}</span>
                 </p>
               </div>
             </div>

@@ -12,7 +12,7 @@ export default function Login({ loading = false }) {
     try {
       await login(email, password, captchaToken);
     } catch (error) {
-      throw new Error(error.message || 'Não foi possível entrar no sistema Serviços.');
+      throw new Error(error.message || 'Não foi possível entrar no sistema HUB.');
     }
   };
 
@@ -20,12 +20,12 @@ export default function Login({ loading = false }) {
     <AuthLoginCard
       logoUrl={LOGO_URL}
       backgroundImageUrl={BG_URL}
-      title="Acessar Serviços"
+      title="Acessar HUB"
       subtitle="Use o mesmo login interno da MACOM"
       onSubmit={handleSubmit}
       loading={loading}
       error={authError?.type === 'config' ? authError.message : ''}
-      footer="Sem acesso ao sistema Serviços? Solicite a liberação ao administrador."
+      footer="Sem acesso ao sistema HUB? Solicite a liberação ao administrador."
     />
   );
 }

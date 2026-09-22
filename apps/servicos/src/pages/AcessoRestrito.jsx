@@ -4,7 +4,7 @@ export default function AcessoRestrito({ modulo }) {
       <span className="text-xs font-semibold uppercase tracking-[0.2em] text-destructive">Acesso restrito</span>
       <h2 className="text-xl font-bold">{modulo}</h2>
       <p className="max-w-md text-sm text-muted-foreground">
-        Você não tem acesso liberado a este módulo. Fale com um administrador do SERVIÇOS para solicitar liberação.
+        Você não tem acesso liberado a este módulo. Fale com um administrador do HUB para solicitar liberação.
       </p>
     </div>
   );

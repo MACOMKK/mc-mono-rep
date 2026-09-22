@@ -25,7 +25,7 @@ export default function InstallPromptBanner() {
         <Download className="h-5 w-5" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-foreground">Instalar o Servicos</p>
+        <p className="text-sm font-bold text-foreground">Instalar o HUB</p>
         <p className="mt-0.5 text-xs leading-4 text-muted-foreground">
           Adicione o app à tela inicial para acesso rápido e em tela cheia.
         </p>

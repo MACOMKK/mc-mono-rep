@@ -96,9 +96,9 @@ export default mergeConfig(baseConfig, {
       includeAssets: ['favicon.svg', 'pwa-icons/*.png'],
       manifest: {
         id: '/',
-        name: 'MACOM Servicos',
-        short_name: 'Servicos',
-        description: 'Sistema MACOM Servicos — atendimento, oficina, financeiro, estoque, compras e RH.',
+        name: 'MACOM HUB',
+        short_name: 'HUB',
+        description: 'Sistema MACOM HUB — atendimento, oficina, financeiro, estoque, compras e RH.',
         start_url: '/',
         scope: '/',
         display: 'standalone',
