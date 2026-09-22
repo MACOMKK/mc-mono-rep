@@ -12,11 +12,13 @@ const SERVICOS_SCHEMA = 'gestao_servicos';
 const MODULO = 'oficina';
 const FOTOS_STORAGE_BUCKET = 'oficina-checklist-fotos';
 const FOTO_SIGNED_URL_TTL_SECONDS = 10 * 60;
+const CHECKLIST_SHARE_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 const databaseUrl = Deno.env.get('DATABASE_URL');
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const checklistShareSecret = Deno.env.get('CHECKLIST_SHARE_SECRET');
 
 const sql = databaseUrl
   ? postgres(databaseUrl, {
@@ -64,6 +66,9 @@ function mapDatabaseError(message: string) {
   if (message.includes('idx_veiculos_placa_unique')) {
     return 'Ja existe um veiculo com esta placa.';
   }
+  if (message.includes('veiculos_estoque_veiculo_id_key')) {
+    return 'Este veiculo ja esta no estoque do CRM.';
+  }
   return message;
 }
 
@@ -93,6 +98,16 @@ function ensurePodeEditar(moduleRole: string | null) {
   }
 }
 
+// Promover veiculo pro estoque do CRM e uma decisao comercial (passa a
+// aparecer disponivel pra venda), entao segue a mesma regra de quem pode
+// configurar estoque no crm-api (ensureCanConfigure): so gestor/admin, nao
+// inspetor.
+function ensurePodeGerenciarEstoque(moduleRole: string | null) {
+  if (!podeVerTodasUnidades(moduleRole)) {
+    throw Object.assign(new Error('Apenas gestores e administradores podem promover o veiculo para o estoque.'), { status: 403 });
+  }
+}
+
 function createStorageAdminClient() {
   if (!supabaseUrl || !serviceRoleKey) return null;
   return createClient(supabaseUrl, serviceRoleKey);
@@ -113,6 +128,79 @@ async function createFotoSignedUrl(path: string | null) {
   }
 
   return data?.signedUrl || null;
+}
+
+function base64UrlEncode(bytes: Uint8Array) {
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlDecode(value: string) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(value.length + ((4 - (value.length % 4)) % 4), '=');
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function getChecklistShareHmacKey() {
+  if (!checklistShareSecret) return null;
+  return crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(checklistShareSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign', 'verify'],
+  );
+}
+
+// Token de link publico do checklist: HMAC sobre "checklistId.expiraEmMs",
+// sem nenhum estado guardado no banco -- quem tiver um token valido e nao
+// expirado (24h) consegue ler os dados desse checklist especifico, sem
+// precisar de sessao/JWT de colaborador. So leitura, nunca mutacao.
+async function criarTokenCompartilhamento(checklistId: string) {
+  const key = await getChecklistShareHmacKey();
+  if (!key) {
+    throw Object.assign(new Error('CHECKLIST_SHARE_SECRET nao configurado.'), { status: 500 });
+  }
+
+  const expiraEm = Date.now() + CHECKLIST_SHARE_TOKEN_TTL_MS;
+  const payload = `${checklistId}.${expiraEm}`;
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+  const token = `${base64UrlEncode(new TextEncoder().encode(payload))}.${base64UrlEncode(new Uint8Array(signature))}`;
+  return { token, expiresAt: expiraEm };
+}
+
+async function validarTokenCompartilhamento(checklistId: string, token: string) {
+  const key = await getChecklistShareHmacKey();
+  if (!key) return false;
+
+  const [payloadPart, signaturePart] = String(token || '').split('.');
+  if (!payloadPart || !signaturePart) return false;
+
+  let payload: string;
+  try {
+    payload = new TextDecoder().decode(base64UrlDecode(payloadPart));
+  } catch {
+    return false;
+  }
+
+  const [tokenChecklistId, expiraEmRaw] = payload.split('.');
+  const expiraEm = Number(expiraEmRaw);
+  if (tokenChecklistId !== checklistId || !Number.isFinite(expiraEm) || expiraEm < Date.now()) {
+    return false;
+  }
+
+  // Mesmo padrao de supabase/functions/whatsapp-api (validacao de webhook):
+  // recalcula o HMAC com sign() e compara, em vez de usar verify() (que
+  // exige um BufferSource cujo tipo o TS/deno-dom nao aceita direto a
+  // partir de um Uint8Array decodificado).
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+  const signatureEsperada = base64UrlEncode(new Uint8Array(signature));
+  return signatureEsperada === signaturePart;
 }
 
 // Inspetor so pode ver/editar checklist da propria unidade -- gestor/admin
@@ -141,6 +229,54 @@ async function getAvaliacao(id: string, moduleRole: string | null, collaborator:
   return row;
 }
 
+// Usada tanto por checklist_obter (autenticado) quanto por
+// checklist_publico_obter (via token assinado) -- a checagem de quem pode
+// acessar fica a cargo de cada action, essa funcao so busca os dados.
+async function carregarChecklistCompleto(id: string) {
+  const rows = await sql!.unsafe(
+    `
+      select ca.*, cl.nome as cliente_nome, cl.telefone as cliente_telefone,
+        v.placa as veiculo_placa, v.chassi as veiculo_chassi, cv.nome as veiculo_cor,
+        mv.nome as veiculo_modelo, c.nome as colaborador_nome, c.assinatura_url as colaborador_assinatura_url,
+        u.nome as unidade_nome
+      from ${SERVICOS_SCHEMA}.checklist_avaliacoes ca
+      left join public.clientes cl on cl.id = ca.cliente_id
+      left join public.veiculos v on v.id = ca.veiculo_id
+      left join public.cores_veiculo cv on cv.id = v.cor_id
+      left join public.modelos_veiculo mv on mv.id = v.modelo_id
+      left join public.colaboradores c on c.id = ca.colaborador_id
+      left join public.unidades u on u.id = ca.unidade_id
+      where ca.id = $1
+      limit 1;
+    `,
+    [id],
+  );
+  const row = rows[0];
+  if (!row) return null;
+
+  const itens = await sql!.unsafe(
+    `select * from ${SERVICOS_SCHEMA}.checklist_itens where avaliacao_id = $1 order by categoria, criado_em;`,
+    [id],
+  );
+  const avarias = await sql!.unsafe(
+    `select * from ${SERVICOS_SCHEMA}.checklist_avarias where avaliacao_id = $1 order by criado_em;`,
+    [id],
+  );
+
+  const fotos = await sql!.unsafe(
+    `select * from ${SERVICOS_SCHEMA}.checklist_fotos where avaliacao_id = $1 order by criado_em;`,
+    [id],
+  );
+  const fotosComUrl = await Promise.all(
+    fotos.map(async (foto: Record<string, unknown>) => ({
+      ...foto,
+      url: await createFotoSignedUrl(String(foto.storage_path || '')),
+    })),
+  );
+
+  return { row: { ...row, fotos: fotosComUrl }, itens, avarias };
+}
+
 Deno.serve(async (request) => {
   const corsHeaders = buildCorsHeaders(request);
   const json = (data: unknown, status = 200) => jsonResponse(data, status, corsHeaders);
@@ -154,6 +290,27 @@ Deno.serve(async (request) => {
       return json({ error: 'DATABASE_URL nao configurada.' }, 500);
     }
 
+    const body = await request.json().catch(() => ({}));
+    const action = String(body.action || 'checklist_listar');
+
+    // Rota publica (link de compartilhamento via WhatsApp): sem JWT de
+    // colaborador, autorizacao e via token HMAC assinado com validade de 24h
+    // (ver criarTokenCompartilhamento/validarTokenCompartilhamento). Precisa
+    // ficar antes de getServicosAuthContext, que exige sessao de colaborador.
+    if (action === 'checklist_publico_obter') {
+      const id = String(body.id || '');
+      const token = String(body.token || '');
+      if (!id || !token) return json({ error: 'Link invalido.' }, 400);
+
+      const tokenValido = await validarTokenCompartilhamento(id, token);
+      if (!tokenValido) return json({ error: 'Link invalido ou expirado.' }, 404);
+
+      const dados = await carregarChecklistCompleto(id);
+      if (!dados) return json({ error: 'Link invalido ou expirado.' }, 404);
+
+      return json(dados);
+    }
+
     const { collaborator, moduleRole } = await getServicosAuthContext(
       request,
       sql,
@@ -162,14 +319,19 @@ Deno.serve(async (request) => {
       MODULO,
     );
 
-    const body = await request.json().catch(() => ({}));
-    const action = String(body.action || 'checklist_listar');
-
     if (action === 'me') {
       return json({ role: moduleRole, collaborator_id: collaborator?.id || null });
     }
 
     ensurePodeVer(moduleRole);
+
+    if (action === 'checklist_link_compartilhar') {
+      const id = String(body.id || '');
+      if (!id) return json({ error: 'ID obrigatorio.' }, 400);
+      await getAvaliacao(id, moduleRole, collaborator);
+      const { token, expiresAt } = await criarTokenCompartilhamento(id);
+      return json({ token, expires_at: expiresAt });
+    }
 
     if (action === 'checklist_listar') {
       const status = body.status ? String(body.status) : null;
@@ -248,50 +410,12 @@ Deno.serve(async (request) => {
       const id = String(body.id || '');
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
 
-      const rows = await sql.unsafe(
-        `
-          select ca.*, cl.nome as cliente_nome, cl.telefone as cliente_telefone,
-            v.placa as veiculo_placa, v.chassi as veiculo_chassi, cv.nome as veiculo_cor,
-            mv.nome as veiculo_modelo, c.nome as colaborador_nome, c.assinatura_url as colaborador_assinatura_url,
-            u.nome as unidade_nome
-          from ${SERVICOS_SCHEMA}.checklist_avaliacoes ca
-          left join public.clientes cl on cl.id = ca.cliente_id
-          left join public.veiculos v on v.id = ca.veiculo_id
-          left join public.cores_veiculo cv on cv.id = v.cor_id
-          left join public.modelos_veiculo mv on mv.id = v.modelo_id
-          left join public.colaboradores c on c.id = ca.colaborador_id
-          left join public.unidades u on u.id = ca.unidade_id
-          where ca.id = $1
-          limit 1;
-        `,
-        [id],
-      );
-      const row = rows[0];
-      if (!row) return json({ error: 'Checklist nao encontrado.' }, 404);
+      const dados = await carregarChecklistCompleto(id);
+      if (!dados) return json({ error: 'Checklist nao encontrado.' }, 404);
 
-      ensureUnidadeAcessivel(row.unidade_id, moduleRole, collaborator);
+      ensureUnidadeAcessivel(dados.row.unidade_id, moduleRole, collaborator);
 
-      const itens = await sql.unsafe(
-        `select * from ${SERVICOS_SCHEMA}.checklist_itens where avaliacao_id = $1 order by categoria, criado_em;`,
-        [id],
-      );
-      const avarias = await sql.unsafe(
-        `select * from ${SERVICOS_SCHEMA}.checklist_avarias where avaliacao_id = $1 order by criado_em;`,
-        [id],
-      );
-
-      const fotos = await sql.unsafe(
-        `select * from ${SERVICOS_SCHEMA}.checklist_fotos where avaliacao_id = $1 order by criado_em;`,
-        [id],
-      );
-      const fotosComUrl = await Promise.all(
-        fotos.map(async (foto: Record<string, unknown>) => ({
-          ...foto,
-          url: await createFotoSignedUrl(String(foto.storage_path || '')),
-        })),
-      );
-
-      return json({ row: { ...row, fotos: fotosComUrl }, itens, avarias });
+      return json(dados);
     }
 
     if (action === 'checklist_iniciar') {
@@ -675,12 +799,14 @@ Deno.serve(async (request) => {
           select
             v.id, v.placa, v.chassi, cv.nome as cor, v.km,
             mv.nome as modelo_nome, ma.nome as marca_nome,
-            v.cliente_atual_id, c.nome as cliente_atual_nome
+            v.cliente_atual_id, c.nome as cliente_atual_nome,
+            ve.id as estoque_id, ve.status as estoque_status
           from public.veiculos v
           left join public.modelos_veiculo mv on mv.id = v.modelo_id
           left join public.marcas_veiculo ma on ma.id = mv.marca_id
           left join public.cores_veiculo cv on cv.id = v.cor_id
           left join public.clientes c on c.id = v.cliente_atual_id
+          left join gestao_crm.veiculos_estoque ve on ve.veiculo_id = v.id
           where v.id = $1;
         `,
         [id],
@@ -756,6 +882,32 @@ Deno.serve(async (request) => {
 
       if (!row) return json({ error: 'Veiculo nao encontrado.' }, 404);
       return json({ row });
+    }
+
+    if (action === 'veiculo_promover_estoque') {
+      ensurePodeGerenciarEstoque(moduleRole);
+      const veiculoId = String(body.veiculo_id || '');
+      if (!veiculoId) return json({ error: 'veiculo_id e obrigatorio.' }, 400);
+
+      const veiculoRows = await sql.unsafe(`select id from public.veiculos where id = $1;`, [veiculoId]);
+      if (!veiculoRows[0]) return json({ error: 'Veiculo nao encontrado.' }, 404);
+
+      const condicao = ['novo', 'seminovo', 'usado'].includes(String(body.condicao || ''))
+        ? String(body.condicao)
+        : 'seminovo';
+      const preco = body.preco != null && body.preco !== '' ? Number(body.preco) : null;
+      const observacoes = body.observacoes ? String(body.observacoes) : null;
+
+      const rows = await sql.unsafe(
+        `
+          insert into gestao_crm.veiculos_estoque (veiculo_id, condicao, preco, observacoes, criado_por)
+          values ($1, $2, $3, $4, $5)
+          returning id, veiculo_id, condicao, status, preco, observacoes;
+        `,
+        [veiculoId, condicao, preco, observacoes, collaborator?.id || null],
+      );
+
+      return json({ row: rows[0] }, 201);
     }
 
     if (action === 'veiculo_criar') {

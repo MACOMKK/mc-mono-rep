@@ -54,6 +54,33 @@ async function invokeOficina(body = {}, accessTokenOverride) {
   return result;
 }
 
+// Variante pra rota publica (link de checklist compartilhado via WhatsApp):
+// o visitante nao tem sessao Supabase, entao autentica no gateway so com a
+// anon key -- a autorizacao de verdade e o token assinado que vai no body,
+// validado dentro da propria action checklist_publico_obter.
+async function invokeOficinaPublico(body = {}) {
+  assertSupabaseConfigured();
+
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/servicos-oficina-api`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const payloadError = result?.error;
+    throw toError(payloadError, response.status, payloadError?.code || result?.code, payloadError?.details, payloadError?.hint);
+  }
+
+  return result;
+}
+
 export const oficinaApi = {
   auth: {
     async me(accessToken) {
@@ -111,6 +138,19 @@ export const oficinaApi = {
         assinatura_saida: assinaturaSaida,
       });
       return result.row || null;
+    },
+    // Gera um token de compartilhamento (valido por 24h) pra montar o link
+    // publico /checklist-publico/:id?token=... que pode ser mandado pro
+    // cliente via WhatsApp -- sem gerar nem guardar nenhum PDF no servidor.
+    async compartilharLink(id) {
+      const result = await invokeOficina({ action: 'checklist_link_compartilhar', id });
+      return { token: result.token, expiresAt: result.expires_at };
+    },
+    publico: {
+      async obter({ id, token }) {
+        const result = await invokeOficinaPublico({ action: 'checklist_publico_obter', id, token });
+        return { row: result.row || null, itens: result.itens || [], avarias: result.avarias || [] };
+      },
     },
   },
   itens: {
@@ -203,6 +243,16 @@ export const oficinaApi = {
     },
     async transferir({ veiculoId, clienteId }) {
       const result = await invokeOficina({ action: 'veiculo_transferir', veiculo_id: veiculoId, cliente_id: clienteId });
+      return result.row || null;
+    },
+    async promoverEstoque({ veiculoId, condicao, preco, observacoes }) {
+      const result = await invokeOficina({
+        action: 'veiculo_promover_estoque',
+        veiculo_id: veiculoId,
+        condicao,
+        preco,
+        observacoes,
+      });
       return result.row || null;
     },
   },

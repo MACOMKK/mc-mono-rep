@@ -121,23 +121,25 @@ const COMUNICACOES_OPCOES = [
   { key: 'parceiro', label: 'De qualquer parceiro Mitsubishi' },
 ];
 
-export default function ChecklistDocumento({ row, avarias = [], itensPorCategoria = {}, onVoltar }) {
+export default function ChecklistDocumento({ row, avarias = [], itensPorCategoria = {}, onVoltar, toolbarOculta = false }) {
   const documentacao = itensPorCategoria.documentacao || {};
   const seguranca = itensPorCategoria.seguranca || {};
   const pneus = itensPorCategoria.pneus || {};
 
   return (
     <div>
-      <div className="no-print mb-4 flex justify-between rounded-lg border border-border bg-card p-3">
-        <Button type="button" variant="outline" size="sm" onClick={onVoltar}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Voltar
-        </Button>
-        <Button type="button" variant="default" size="sm" onClick={() => window.print()}>
-          <Printer className="mr-2 h-4 w-4" />
-          Salvar PDF
-        </Button>
-      </div>
+      {!toolbarOculta && (
+        <div className="no-print mb-4 flex justify-between rounded-lg border border-border bg-card p-3">
+          <Button type="button" variant="outline" size="sm" onClick={onVoltar}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Voltar
+          </Button>
+          <Button type="button" variant="default" size="sm" onClick={() => window.print()}>
+            <Printer className="mr-2 h-4 w-4" />
+            Salvar PDF
+          </Button>
+        </div>
+      )}
 
       <div className="doc-sheet mx-auto shadow-[0_10px_40px_-12px_rgba(0,0,0,0.35)]">
         <div className="flex items-start gap-3">

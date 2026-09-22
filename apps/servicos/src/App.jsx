@@ -22,6 +22,7 @@ import ChecklistList from '@/pages/oficina/ChecklistList';
 import ChecklistHistorico from '@/pages/oficina/ChecklistHistorico';
 import ChecklistForm from '@/pages/oficina/ChecklistForm';
 import ChecklistDetail from '@/pages/oficina/ChecklistDetail';
+import ChecklistPublico from '@/pages/oficina/ChecklistPublico';
 import VeiculosHistorico from '@/pages/oficina/VeiculosHistorico';
 
 const getFromPath = (search) => {
@@ -154,6 +155,7 @@ function App() {
           <Routes>
             <Route path="/entrar" element={<LoginRoute />} />
             <Route path="/login" element={<Navigate replace to="/entrar" />} />
+            <Route path="/checklist-publico/:id" element={<ChecklistPublico />} />
             <Route path="*" element={<ServicosRoutes />} />
           </Routes>
         </Router>

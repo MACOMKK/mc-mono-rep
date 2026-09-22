@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Pencil, Printer } from 'lucide-react';
+import { WhatsAppIcon } from '@macom/ui';
 
 import { Badge, Button, CarLoader, Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Textarea } from '@macom/ui';
 import { oficinaApi } from '@macom/api-client/oficinaApi';
@@ -44,6 +45,8 @@ export default function ChecklistDetail() {
     checklistCarregado ? itensParaMapa(checklistCarregado.itens || []) : {},
   );
   const [imprimindo, setImprimindo] = useState(false);
+  const [compartilhando, setCompartilhando] = useState(false);
+  const [erroCompartilhar, setErroCompartilhar] = useState(null);
 
   const [entregaObservacoes, setEntregaObservacoes] = useState('');
   const [entregaConferida, setEntregaConferida] = useState(false);
@@ -88,6 +91,32 @@ export default function ChecklistDetail() {
       setErroFinalizar(error.message || 'Não foi possível finalizar o checklist.');
     } finally {
       setFinalizando(false);
+    }
+  };
+
+  // Gera um link publico (valido por 24h) e abre o WhatsApp com a mensagem
+  // pronta -- o cliente baixa o PDF pelo proprio navegador dele quando abre o
+  // link, sem nenhum arquivo passando pelo nosso servidor.
+  const handleCompartilharWhatsApp = async () => {
+    setCompartilhando(true);
+    setErroCompartilhar(null);
+    try {
+      const { token } = await oficinaApi.checklists.compartilharLink(id);
+      const link = `${window.location.origin}/checklist-publico/${id}?token=${encodeURIComponent(token)}`;
+      const linhas = [
+        `*Checklist de Inspeção${row.numero ? ` Nº ${row.numero}` : ''}*`,
+        '',
+        row.veiculo_modelo && `*Veículo:* ${[row.veiculo_modelo, row.veiculo_placa].filter(Boolean).join(' · ')}`,
+        '',
+        `Baixe o PDF do checklist: ${link}`,
+        '',
+        'Este link expira em 24 horas.',
+      ].filter(Boolean);
+      window.open(`https://wa.me/?text=${encodeURIComponent(linhas.join('\n'))}`, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      setErroCompartilhar(error.message || 'Não foi possível gerar o link de compartilhamento.');
+    } finally {
+      setCompartilhando(false);
     }
   };
 
@@ -136,6 +165,10 @@ export default function ChecklistDetail() {
             <Printer className="mr-2 h-4 w-4" />
             Visualizar PDF
           </Button>
+          <Button type="button" variant="outline" size="sm" onClick={handleCompartilharWhatsApp} disabled={compartilhando}>
+            <WhatsAppIcon className="mr-2 h-4 w-4" />
+            {compartilhando ? 'Gerando link...' : 'Compartilhar'}
+          </Button>
           {row.status === 'em_andamento' && !row.assinatura_entrada && user?.isOficinaInspetor && (
             <Button type="button" size="sm" onClick={() => navigate(`/oficina/checklists/${id}/editar`)}>
               <Pencil className="mr-2 h-4 w-4" />
@@ -159,6 +192,12 @@ export default function ChecklistDetail() {
         </div>
         <Badge variant={STATUS_VARIANT[row.status] || 'default'}>{STATUS_LABEL[row.status] || row.status}</Badge>
       </div>
+
+      {erroCompartilhar && (
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          {erroCompartilhar}
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-4 rounded-lg border border-border bg-card p-4 text-sm">
         <div>
