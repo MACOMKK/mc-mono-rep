@@ -220,5 +220,8 @@ export const crmApi = {
     async closeVenda(payload) {
       return invokeCrm({ action: 'close_venda', ...payload });
     },
+    async cancelVenda(payload) {
+      return invokeCrm({ action: 'cancel_venda', ...payload });
+    },
   },
 };

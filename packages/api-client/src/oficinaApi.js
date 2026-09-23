@@ -107,7 +107,12 @@ export const oficinaApi = {
     },
     async obter(id) {
       const result = await invokeOficina({ action: 'checklist_obter', id });
-      return { row: result.row || null, itens: result.itens || [], avarias: result.avarias || [] };
+      return {
+        row: result.row || null,
+        itens: result.itens || [],
+        avarias: result.avarias || [],
+        historico: result.historico || [],
+      };
     },
     async iniciar({ veiculoId, clienteId, colaboradorId, unidadeId, os, km }) {
       const result = await invokeOficina({

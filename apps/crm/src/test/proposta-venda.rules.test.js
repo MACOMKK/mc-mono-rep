@@ -17,6 +17,9 @@ vi.mock('@macom/api-client/crmApi', () => ({
       closeVenda: vi.fn(async ({ vendaPayload }) => ({
         venda: { id: 'venda-1', ...vendaPayload },
       })),
+      cancelVenda: vi.fn(async ({ vendaId, motivo_cancelamento, previsao_fechamento }) => ({
+        venda: { id: vendaId, status: 'cancelada', motivo_cancelamento, previsao_fechamento },
+      })),
       list: vi.fn(async () => []),
       listPage: vi.fn(async () => ({ rows: [], count: 0 })),
     },
@@ -199,5 +202,48 @@ describe('VendaRepository.closeVenda (validacao de fechamento direto)', () => {
       }),
     );
     expect(venda.id).toBe('venda-1');
+  });
+});
+
+describe('VendaRepository.cancelar (validacao de cancelamento/estorno)', () => {
+  it('exige o id da venda', async () => {
+    await expect(crmDataClient.entities.Venda.cancelar(undefined, {
+      motivo_cancelamento: 'Cliente desistiu',
+    })).rejects.toThrow(/Venda obrigatoria/);
+    expect(crmApi.vendas.cancelVenda).not.toHaveBeenCalled();
+  });
+
+  it('exige motivo do cancelamento', async () => {
+    await expect(crmDataClient.entities.Venda.cancelar('venda-1', {}))
+      .rejects.toThrow(/Informe o motivo do cancelamento/);
+    expect(crmApi.vendas.cancelVenda).not.toHaveBeenCalled();
+
+    await expect(crmDataClient.entities.Venda.cancelar('venda-1', { motivo_cancelamento: '   ' }))
+      .rejects.toThrow(/Informe o motivo do cancelamento/);
+    expect(crmApi.vendas.cancelVenda).not.toHaveBeenCalled();
+  });
+
+  it('envia o motivo cortado e a previsao de fechamento para o crmApi', async () => {
+    const venda = await crmDataClient.entities.Venda.cancelar('venda-1', {
+      motivo_cancelamento: '  Veiculo trocado  ',
+      previsao_fechamento: '2026-10-01',
+    });
+
+    expect(crmApi.vendas.cancelVenda).toHaveBeenCalledWith({
+      vendaId: 'venda-1',
+      motivo_cancelamento: 'Veiculo trocado',
+      previsao_fechamento: '2026-10-01',
+    });
+    expect(venda.status).toBe('cancelada');
+  });
+
+  it('envia previsao_fechamento null quando nao informada', async () => {
+    await crmDataClient.entities.Venda.cancelar('venda-1', { motivo_cancelamento: 'Erro de digitacao' });
+
+    expect(crmApi.vendas.cancelVenda).toHaveBeenCalledWith({
+      vendaId: 'venda-1',
+      motivo_cancelamento: 'Erro de digitacao',
+      previsao_fechamento: null,
+    });
   });
 });

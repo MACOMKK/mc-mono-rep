@@ -11,11 +11,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
+import { useAuth } from '@/lib/AuthContext';
 import { useEmpresa } from '@/context/EmpresaContext';
 import { useUnidadesEmpresa } from '@/hooks/useUnidadesEmpresa';
 import { cn } from '@/lib/utils';
 import ListPagination from '@/components/ListPagination';
-import { Building2, Car, Clock3, History, Mail, Paperclip, Pencil, Phone, Save, Search, Tag, UserRound, X } from 'lucide-react';
+import { Ban, Building2, Car, Clock3, History, Mail, Paperclip, Pencil, Phone, Save, Search, Tag, UserRound, X } from 'lucide-react';
 
 import { ACTIVE_LEAD_STATUSES as ACTIVE_LEAD_STATUSES_LIST, LEAD_STATUS_LABEL, LEAD_STATUS_STYLE } from '@/lib/leadStatus';
 
@@ -98,8 +99,12 @@ export default function Clientes() {
   const [formData, setFormData] = useState(null);
   const [periodoInicio, setPeriodoInicio] = useState('');
   const [periodoFim, setPeriodoFim] = useState('');
+  const [cancelingVendaId, setCancelingVendaId] = useState(null);
+  const [cancelamentoForm, setCancelamentoForm] = useState({ motivo_cancelamento: '', previsao_fechamento: '' });
   const { empresa } = useEmpresa();
   const { empresas: EMPRESAS } = useUnidadesEmpresa();
+  const { user } = useAuth();
+  const canConfigure = user?.role === 'admin' || user?.role === 'manager';
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const pageSize = 50;
@@ -443,6 +448,41 @@ export default function Clientes() {
       });
     },
   });
+
+  const cancelVendaMutation = useMutation({
+    mutationFn: ({ vendaId, data }) => crmDataClient.entities.Venda.cancelar(vendaId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cliente-vendas', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['clientes-veiculos-estoque'] });
+      queryClient.invalidateQueries({ queryKey: ['cliente-leads', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['cliente-historico', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['clientes-active-leads'] });
+      setCancelingVendaId(null);
+      setCancelamentoForm({ motivo_cancelamento: '', previsao_fechamento: '' });
+      toast({
+        title: 'Venda cancelada',
+        description: 'O veiculo voltou para o estoque e o lead foi reaberto.',
+        variant: 'success',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel cancelar a venda',
+        description: error.message || 'Revise os dados informados.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  function startCancelarVenda(vendaId) {
+    setCancelingVendaId(vendaId);
+    setCancelamentoForm({ motivo_cancelamento: '', previsao_fechamento: '' });
+  }
+
+  function confirmCancelarVenda(event, vendaId) {
+    event.preventDefault();
+    cancelVendaMutation.mutate({ vendaId, data: cancelamentoForm });
+  }
 
   function openCliente(cliente) {
     setSelected(cliente);
@@ -803,23 +843,101 @@ export default function Clientes() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {selectedVendas.map((venda) => (
-                        <div key={venda.id} className="border-l-4 border-emerald-600 bg-white p-4 shadow-sm">
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
-                              <Car className="h-3 w-3" />
-                              Venda
-                            </span>
-                            <span className="text-sm font-bold">{formatCurrency(venda.valor_final)}</span>
+                      {selectedVendas.map((venda) => {
+                        const cancelada = venda.status === 'cancelada';
+                        return (
+                          <div
+                            key={venda.id}
+                            className={cn('border-l-4 bg-white p-4 shadow-sm', cancelada ? 'border-slate-300' : 'border-emerald-600')}
+                          >
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                              <span className={cn('flex items-center gap-1 text-[10px] font-black uppercase tracking-widest', cancelada ? 'text-slate-500' : 'text-emerald-700')}>
+                                <Car className="h-3 w-3" />
+                                Venda
+                              </span>
+                              <div className="flex items-center gap-2">
+                                {cancelada ? (
+                                  <Badge className="rounded-sm border border-slate-300 bg-slate-100 text-[10px] uppercase tracking-wider text-slate-600">
+                                    Cancelada
+                                  </Badge>
+                                ) : null}
+                                <span className={cn('text-sm font-bold', cancelada ? 'text-muted-foreground line-through' : '')}>
+                                  {formatCurrency(venda.valor_final)}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-sm font-bold">{veiculoVendaLabel(venda.veiculo_estoque_id)}</p>
+                            <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+                              <span>Forma de pagamento: {FORMA_PAGAMENTO_LABEL[venda.forma_pagamento] || venda.forma_pagamento}</span>
+                              <span>Data da venda: {venda.data_venda ? formatDate(venda.data_venda) : '-'}</span>
+                              {venda.observacoes ? <span>Observacoes: {venda.observacoes}</span> : null}
+                              {cancelada ? (
+                                <>
+                                  <span>Cancelada em: {venda.cancelada_em ? formatDate(venda.cancelada_em) : '-'}</span>
+                                  <span>Motivo do cancelamento: {venda.motivo_cancelamento || '-'}</span>
+                                </>
+                              ) : null}
+                            </div>
+
+                            {!cancelada && canConfigure ? (
+                              cancelingVendaId === venda.id ? (
+                                <form onSubmit={(event) => confirmCancelarVenda(event, venda.id)} className="mt-3 space-y-2 border-t pt-3">
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Motivo do cancelamento *</Label>
+                                    <Textarea
+                                      required
+                                      value={cancelamentoForm.motivo_cancelamento}
+                                      onChange={(event) => setCancelamentoForm((current) => ({ ...current, motivo_cancelamento: event.target.value }))}
+                                      className="resize-none rounded-none text-sm"
+                                      rows={2}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Nova previsao de fechamento do lead</Label>
+                                    <Input
+                                      type="date"
+                                      value={cancelamentoForm.previsao_fechamento}
+                                      onChange={(event) => setCancelamentoForm((current) => ({ ...current, previsao_fechamento: event.target.value }))}
+                                      className="h-9 rounded-none text-sm"
+                                    />
+                                    <p className="text-[10px] text-muted-foreground">Necessario apenas se o lead ainda estiver convertido.</p>
+                                  </div>
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      className="h-8 rounded-none text-[11px] font-bold uppercase tracking-wider"
+                                      onClick={() => setCancelingVendaId(null)}
+                                    >
+                                      Voltar
+                                    </Button>
+                                    <Button
+                                      type="submit"
+                                      variant="destructive"
+                                      disabled={cancelVendaMutation.isPending}
+                                      className="h-8 rounded-none text-[11px] font-bold uppercase tracking-wider"
+                                    >
+                                      Confirmar cancelamento
+                                    </Button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <div className="mt-3 flex justify-end border-t pt-3">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="h-8 rounded-none text-[11px] font-bold uppercase tracking-wider text-red-700"
+                                    onClick={() => startCancelarVenda(venda.id)}
+                                  >
+                                    <Ban className="mr-1.5 h-3.5 w-3.5" />
+                                    Cancelar venda
+                                  </Button>
+                                </div>
+                              )
+                            ) : null}
                           </div>
-                          <p className="text-sm font-bold">{veiculoVendaLabel(venda.veiculo_estoque_id)}</p>
-                          <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
-                            <span>Forma de pagamento: {FORMA_PAGAMENTO_LABEL[venda.forma_pagamento] || venda.forma_pagamento}</span>
-                            <span>Data da venda: {venda.data_venda ? formatDate(venda.data_venda) : '-'}</span>
-                            {venda.observacoes ? <span>Observacoes: {venda.observacoes}</span> : null}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </TabsContent>

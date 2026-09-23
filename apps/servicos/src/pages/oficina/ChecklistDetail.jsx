@@ -1,6 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Pencil, Printer } from 'lucide-react';
+import {
+  ArrowLeft,
+  Camera,
+  Check,
+  Clock,
+  ClipboardList,
+  History,
+  ImageOff,
+  Link2,
+  ListChecks,
+  Pencil,
+  Printer,
+  Share2,
+  Trash2,
+} from 'lucide-react';
 import { WhatsAppIcon } from '@macom/ui';
 
 import { Badge, Button, CarLoader, Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Textarea } from '@macom/ui';
@@ -20,6 +34,21 @@ const COMUNICACOES_LABEL = {
   grupo: 'De qualquer empresa pertencente ao grupo Mitsubishi',
   parceiro: 'De qualquer parceiro Mitsubishi',
 };
+
+const HISTORICO_EVENTO_META = {
+  criado: { label: 'Checklist iniciado', icon: ClipboardList, className: 'text-muted-foreground bg-muted' },
+  editado: { label: 'Checklist editado', icon: Pencil, className: 'text-muted-foreground bg-muted' },
+  itens_atualizados: { label: 'Itens atualizados', icon: ListChecks, className: 'text-muted-foreground bg-muted' },
+  avaria_adicionada: { label: 'Avaria registrada', icon: Pencil, className: 'text-amber-600 bg-amber-500/10' },
+  avaria_removida: { label: 'Avaria removida', icon: Trash2, className: 'text-destructive bg-destructive/20' },
+  foto_adicionada: { label: 'Foto adicionada', icon: Camera, className: 'text-muted-foreground bg-muted' },
+  foto_removida: { label: 'Foto removida', icon: ImageOff, className: 'text-destructive bg-destructive/20' },
+  avaliado: { label: 'Avaliação concluída', icon: Check, className: 'text-emerald-600 bg-emerald-500/20' },
+  finalizado: { label: 'Entrega finalizada', icon: Check, className: 'text-emerald-600 bg-emerald-500/20' },
+  link_compartilhado: { label: 'Link compartilhado', icon: Share2, className: 'text-muted-foreground bg-muted' },
+  link_acessado: { label: 'Link acessado pelo cliente', icon: Link2, className: 'text-muted-foreground bg-muted' },
+};
+const HISTORICO_EVENTO_META_DEFAULT = { label: null, icon: Clock, className: 'text-muted-foreground bg-muted' };
 
 function itensParaMapa(itensArray) {
   const mapa = {};
@@ -44,6 +73,8 @@ export default function ChecklistDetail() {
   const [itensPorCategoria, setItensPorCategoria] = useState(
     checklistCarregado ? itensParaMapa(checklistCarregado.itens || []) : {},
   );
+  const [historico, setHistorico] = useState(checklistCarregado?.historico || []);
+  const [modalHistoricoAberto, setModalHistoricoAberto] = useState(false);
   const [imprimindo, setImprimindo] = useState(false);
   const [compartilhando, setCompartilhando] = useState(false);
   const [erroCompartilhar, setErroCompartilhar] = useState(null);
@@ -64,10 +95,11 @@ export default function ChecklistDetail() {
   useEffect(() => {
     oficinaApi.checklists
       .obter(id)
-      .then(({ row: rowCarregado, itens, avarias: avariasCarregadas }) => {
+      .then(({ row: rowCarregado, itens, avarias: avariasCarregadas, historico: historicoCarregado }) => {
         setRow(rowCarregado);
         setAvarias(avariasCarregadas || []);
         setItensPorCategoria(itensParaMapa(itens || []));
+        setHistorico(historicoCarregado || []);
         setEntregaObservacoes(rowCarregado?.entrega_observacoes || '');
         setEntregaConferida(Boolean(rowCarregado?.entrega_conferida));
         setAssinaturaSaida(rowCarregado?.assinatura_saida || null);
@@ -75,6 +107,10 @@ export default function ChecklistDetail() {
       })
       .finally(() => setCarregando(false));
   }, [id]);
+
+  const refreshHistorico = () => {
+    oficinaApi.checklists.obter(id).then(({ historico: historicoAtualizado }) => setHistorico(historicoAtualizado || []));
+  };
 
   const handleFinalizar = async () => {
     setFinalizando(true);
@@ -87,6 +123,7 @@ export default function ChecklistDetail() {
       });
       setRow(rowAtualizado);
       setModalEntregaAberto(false);
+      refreshHistorico();
     } catch (error) {
       setErroFinalizar(error.message || 'Não foi possível finalizar o checklist.');
     } finally {
@@ -113,6 +150,7 @@ export default function ChecklistDetail() {
         'Este link expira em 24 horas.',
       ].filter(Boolean);
       window.open(`https://wa.me/?text=${encodeURIComponent(linhas.join('\n'))}`, '_blank', 'noopener,noreferrer');
+      refreshHistorico();
     } catch (error) {
       setErroCompartilhar(error.message || 'Não foi possível gerar o link de compartilhamento.');
     } finally {
@@ -161,6 +199,10 @@ export default function ChecklistDetail() {
           Voltar
         </Button>
         <div className="flex gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => setModalHistoricoAberto(true)}>
+            <History className="mr-2 h-4 w-4" />
+            Histórico
+          </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => setImprimindo(true)}>
             <Printer className="mr-2 h-4 w-4" />
             Visualizar PDF
@@ -324,6 +366,44 @@ export default function ChecklistDetail() {
           )}
         </div>
       </div>
+
+      <Dialog open={modalHistoricoAberto} onOpenChange={setModalHistoricoAberto}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Histórico</DialogTitle>
+          </DialogHeader>
+
+          {historico.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhum evento registrado.</p>
+          ) : (
+            <ul className="min-w-0 max-h-[60vh] overflow-y-auto">
+              {historico.map((item, index) => {
+                const meta = HISTORICO_EVENTO_META[item.evento] || HISTORICO_EVENTO_META_DEFAULT;
+                const EventoIcon = meta.icon;
+                const isLast = index === historico.length - 1;
+                return (
+                  <li key={item.id} className="flex min-w-0 gap-3 text-sm">
+                    <div className="flex shrink-0 flex-col items-center">
+                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${meta.className}`}>
+                        <EventoIcon className="h-3 w-3" />
+                      </span>
+                      {!isLast && <span className="my-1 w-0.5 flex-1 bg-border" />}
+                    </div>
+                    <div className="min-w-0 flex-1 pb-4 pt-1">
+                      <p className="break-words font-medium">{meta.label || item.evento}</p>
+                      <p className="break-words text-xs text-muted-foreground">
+                        {new Date(item.criado_em).toLocaleString('pt-BR')}
+                        {item.autor_nome ? ` — ${item.autor_nome}` : ''}
+                      </p>
+                      {item.observacao && <p className="mt-1 break-words text-muted-foreground">{item.observacao}</p>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={modalEntregaAberto} onOpenChange={(open) => !open && setModalEntregaAberto(false)}>
         <DialogContent>

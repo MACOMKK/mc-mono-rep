@@ -1116,6 +1116,10 @@ function mapVendaRow(row = {}) {
     data_venda: normalizeDateOnly(row.data_venda),
     motivo_status_id: row.motivo_status_id || '',
     observacoes: row.observacoes || '',
+    status: row.status || 'concluida',
+    cancelada_em: row.cancelada_em || null,
+    motivo_cancelamento: row.motivo_cancelamento || '',
+    cancelada_por: row.cancelada_por || '',
     ...mapBaseDates(row),
   };
 }
@@ -1238,6 +1242,24 @@ const VendaRepository = {
         motivo_status_id: data.motivo_status_id,
         observacoes: data.observacoes || null,
       },
+    });
+
+    return mapVendaRow(result.venda);
+  },
+
+  async cancelar(vendaId, data = {}) {
+    if (!vendaId) {
+      throw new Error('Venda obrigatoria.');
+    }
+    const motivoCancelamento = String(data.motivo_cancelamento || '').trim();
+    if (!motivoCancelamento) {
+      throw new Error('Informe o motivo do cancelamento.');
+    }
+
+    const result = await crmApi.vendas.cancelVenda({
+      vendaId,
+      motivo_cancelamento: motivoCancelamento,
+      previsao_fechamento: data.previsao_fechamento || null,
     });
 
     return mapVendaRow(result.venda);

@@ -1646,6 +1646,84 @@ Deno.serve(async (request) => {
       return json({ venda: vendaRows[0] });
     }
 
+    // Soft cancel: reverte o estoque sempre e o lead so se ele ainda estiver
+    // 'convertido' (pode ja ter mudado de status por outro motivo depois da venda).
+    // A venda nunca e apagada -- fica com status='cancelada' para auditoria. A proposta
+    // associada (quando houver) nao e revertida, continua 'aceita' como registro
+    // historico do que foi ofertado/aceito.
+    if (action === 'cancel_venda') {
+      ensureCanConfigure(access);
+
+      const vendaId = typeof body.vendaId === 'string' && body.vendaId ? body.vendaId : '';
+      if (!vendaId) return json({ error: 'Venda obrigatoria.' }, 400);
+
+      const motivoCancelamento = typeof body.motivo_cancelamento === 'string' ? body.motivo_cancelamento.trim() : '';
+      if (!motivoCancelamento) return json({ error: 'Informe o motivo do cancelamento.' }, 400);
+
+      const venda = await ensureEntityAccess('vendas', vendaId, access, collaborator);
+      if (venda.status === 'cancelada') {
+        return json({ error: 'Esta venda ja foi cancelada.' }, 400);
+      }
+
+      const result = await sql.begin(async (transaction) => {
+        const vendaRows = await transaction.unsafe(
+          `update ${CRM_SCHEMA}.vendas
+           set status = 'cancelada', cancelada_em = now(), motivo_cancelamento = $1, cancelada_por = $2
+           where id = $3 and status = 'concluida'
+           returning *;`,
+          [motivoCancelamento, collaborator?.id ?? null, vendaId],
+        );
+        const canceledVenda = vendaRows[0];
+        if (!canceledVenda) {
+          throw Object.assign(new Error('Esta venda ja foi cancelada.'), { status: 409 });
+        }
+
+        await transaction.unsafe(
+          `update ${CRM_SCHEMA}.veiculos_estoque set status = 'disponivel' where id = $1 and status = 'vendido';`,
+          [canceledVenda.veiculo_estoque_id],
+        );
+
+        const leadRows = await transaction.unsafe(
+          `select status from ${CRM_SCHEMA}.leads where id = $1 limit 1;`,
+          [canceledVenda.lead_id],
+        );
+        const leadStatus = leadRows[0]?.status;
+
+        if (leadStatus === 'convertido') {
+          const previsaoFechamento = typeof body.previsao_fechamento === 'string' && body.previsao_fechamento ? body.previsao_fechamento : '';
+          if (!previsaoFechamento) {
+            throw Object.assign(new Error('Informe a previsao de fechamento para reabrir o lead em negociacao.'), { status: 400 });
+          }
+
+          await transaction.unsafe(
+            `update ${CRM_SCHEMA}.leads
+             set status = 'negociacao', previsao_fechamento = $1
+             where id = $2 and status = 'convertido';`,
+            [previsaoFechamento, canceledVenda.lead_id],
+          );
+        }
+
+        await transaction.unsafe(
+          `insert into ${CRM_SCHEMA}.historico_atendimentos (
+            cliente_id, lead_id, tipo, descricao, entidade, entidade_id, status, metadados, criado_por
+          ) values ($1, $2, 'venda_cancelada', $3, 'Venda', $4, $5, $6, $7);`,
+          [
+            canceledVenda.cliente_id,
+            canceledVenda.lead_id,
+            `Venda cancelada: ${motivoCancelamento}`,
+            vendaId,
+            leadStatus === 'convertido' ? 'negociacao' : leadStatus,
+            JSON.stringify({ venda_id: vendaId, motivo_cancelamento: motivoCancelamento }),
+            collaborator?.id ?? null,
+          ],
+        );
+
+        return canceledVenda;
+      });
+
+      return json({ venda: result });
+    }
+
     const entity = String(body.entity || '') as EntityName;
     const config = ENTITY_CONFIG[entity];
 
@@ -1665,6 +1743,13 @@ Deno.serve(async (request) => {
     // generico, que pularia a baixa de estoque e a conversao do lead.
     if (entity === 'vendas' && action === 'create') {
       return json({ error: 'Use a acao de aceitar proposta ou fechar venda direta.' }, 400);
+    }
+
+    // status de vendas so pode mudar via cancel_venda (efeito colateral obrigatorio:
+    // devolver o veiculo ao estoque e, se aplicavel, reabrir o lead) -- update generico
+    // pularia isso e deixaria o estoque/lead dessincronizados da venda.
+    if (entity === 'vendas' && action === 'update' && Object.prototype.hasOwnProperty.call(body.payload || {}, 'status')) {
+      return json({ error: 'Use a acao de cancelar venda.' }, 400);
     }
 
     // Proposta so pode virar 'aceita' atraves de accept_proposta, porque essa

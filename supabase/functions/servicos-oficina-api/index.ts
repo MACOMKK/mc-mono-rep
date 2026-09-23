@@ -441,7 +441,18 @@ Deno.serve(async (request) => {
 
       ensureUnidadeAcessivel(dados.row.unidade_id, moduleRole, collaborator);
 
-      return json(dados);
+      const historico = await sql!.unsafe(
+        `
+          select h.*, c.nome as autor_nome
+          from ${SERVICOS_SCHEMA}.historico_checklist h
+          left join public.colaboradores c on c.id = h.autor_id
+          where h.checklist_id = $1
+          order by h.criado_em desc;
+        `,
+        [id],
+      );
+
+      return json({ ...dados, historico });
     }
 
     if (action === 'checklist_iniciar') {
@@ -456,8 +467,10 @@ Deno.serve(async (request) => {
       const km = body.km != null ? Number(body.km) : null;
       // Unidade parte da unidade do colaborador que esta criando o checklist,
       // mas pode ser trocada na tela (ex.: inspetor cobrindo outra unidade) --
-      // ela define quem enxerga o checklist depois, ver ensureUnidadeAcessivel.
+      // ela define quem enxerga o checklist depois, ver ensureUnidadeAcessivel,
+      // e agora tambem a numeracao (ver "numero" abaixo).
       const unidadeId = body.unidade_id ? String(body.unidade_id) : collaborator?.unidade_id ? String(collaborator.unidade_id) : null;
+      if (!unidadeId) return json({ error: 'unidade_id obrigatorio.' }, 400);
 
       let avisoDonoDiferente = null;
       if (clienteId) {
@@ -477,15 +490,28 @@ Deno.serve(async (request) => {
         }
       }
 
-      const rows = await sql.unsafe(
-        `
-          insert into ${SERVICOS_SCHEMA}.checklist_avaliacoes
-            (veiculo_id, cliente_id, colaborador_id, os, km, unidade_id)
-          values ($1, $2, $3, $4, $5, $6)
-          returning *;
-        `,
-        [veiculoId, clienteId, colaboradorId, os, km, unidadeId],
-      );
+      // Numeracao por unidade (nao mais uma sequence global): trava com um
+      // advisory lock escopado a unidade pra serializar criacoes concorrentes
+      // na mesma unidade, calcula o proximo numero e insere na mesma
+      // transacao -- a constraint unique(unidade_id, numero) da migration
+      // cobre qualquer brecha residual.
+      const rows = await sql.begin(async (trx) => {
+        await trx.unsafe(`select pg_advisory_xact_lock(hashtextextended($1::text, 0));`, [unidadeId]);
+        const proximoRows = await trx.unsafe(
+          `select coalesce(max(numero), 0) + 1 as proximo from ${SERVICOS_SCHEMA}.checklist_avaliacoes where unidade_id = $1;`,
+          [unidadeId],
+        );
+        const numero = Number(proximoRows[0].proximo);
+        return trx.unsafe(
+          `
+            insert into ${SERVICOS_SCHEMA}.checklist_avaliacoes
+              (veiculo_id, cliente_id, colaborador_id, os, km, unidade_id, numero)
+            values ($1, $2, $3, $4, $5, $6, $7)
+            returning *;
+          `,
+          [veiculoId, clienteId, colaboradorId, os, km, unidadeId, numero],
+        );
+      });
 
       await insertHistoricoChecklist(String(rows[0].id), 'criado', collaborator?.id ? String(collaborator.id) : null);
 
@@ -496,26 +522,53 @@ Deno.serve(async (request) => {
       ensurePodeEditar(moduleRole);
       const id = String(body.id || '');
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
-      await getAvaliacao(id, moduleRole, collaborator);
+      const currentRow = await getAvaliacao(id, moduleRole, collaborator);
 
+      // So entra em `campos` (e portanto so vira update + evento de historico) o que
+      // realmente mudou em relacao ao valor ja salvo -- o wizard (ChecklistForm.jsx)
+      // chama essa action a cada "Avancar", mesmo sem alteracao (ex.: reabrir um
+      // checklist ja preenchido e so navegar pelas etapas), e sem essa checagem isso
+      // gerava um evento "editado" fantasma no historico a cada passo.
       const campos: Record<string, unknown> = {};
-      if (body.km != null) campos.km = Number(body.km);
-      if (body.nivel_combustivel != null) campos.nivel_combustivel = Number(body.nivel_combustivel);
-      if (body.pintura_suja != null) campos.pintura_suja = Boolean(body.pintura_suja);
-      if (body.observacoes !== undefined) campos.observacoes = body.observacoes ? String(body.observacoes) : null;
-      if (body.os !== undefined) campos.os = body.os ? String(body.os) : null;
+      if (body.km != null && Number(body.km) !== Number(currentRow.km)) {
+        campos.km = Number(body.km);
+      }
+      if (body.nivel_combustivel != null && Number(body.nivel_combustivel) !== Number(currentRow.nivel_combustivel)) {
+        campos.nivel_combustivel = Number(body.nivel_combustivel);
+      }
+      if (body.pintura_suja != null && Boolean(body.pintura_suja) !== Boolean(currentRow.pintura_suja)) {
+        campos.pintura_suja = Boolean(body.pintura_suja);
+      }
+      if (body.observacoes !== undefined) {
+        const novo = body.observacoes ? String(body.observacoes) : null;
+        if (novo !== (currentRow.observacoes ?? null)) campos.observacoes = novo;
+      }
+      if (body.os !== undefined) {
+        const novo = body.os ? String(body.os) : null;
+        if (novo !== (currentRow.os ?? null)) campos.os = novo;
+      }
       if (body.comunicacoes !== undefined) {
-        campos.comunicacoes = JSON.stringify(Array.isArray(body.comunicacoes) ? body.comunicacoes : []);
+        const novoArray = Array.isArray(body.comunicacoes) ? body.comunicacoes : [];
+        // Nao fazer JSON.stringify aqui: como o SET usa `$n::jsonb`, o driver
+        // postgres.js ja detecta o tipo jsonb do parametro (via describe do
+        // prepared statement) e serializa o array sozinho -- stringificar
+        // manualmente antes gerava double-encoding (jsonb guardando uma STRING
+        // com o JSON dentro, em vez de um array de verdade; Array.isArray()
+        // no frontend dava false ao reabrir e o campo parecia "nao salvo").
+        const atual = JSON.stringify(currentRow.comunicacoes ?? []);
+        if (JSON.stringify(novoArray) !== atual) campos.comunicacoes = novoArray;
       }
       if (body.assinatura_entrada !== undefined) {
-        campos.assinatura_entrada = body.assinatura_entrada ? String(body.assinatura_entrada) : null;
+        const novo = body.assinatura_entrada ? String(body.assinatura_entrada) : null;
+        if (novo !== (currentRow.assinatura_entrada ?? null)) campos.assinatura_entrada = novo;
       }
       if (body.unidade_id !== undefined) {
-        campos.unidade_id = body.unidade_id ? String(body.unidade_id) : null;
+        const novo = body.unidade_id ? String(body.unidade_id) : null;
+        if (novo !== (currentRow.unidade_id ?? null)) campos.unidade_id = novo;
       }
 
       const fields = Object.keys(campos);
-      if (!fields.length) return json({ error: 'Nada para atualizar.' }, 400);
+      if (!fields.length) return json({ row: currentRow });
 
       const setClause = fields
         .map((field, index) => `${field} = $${index + 2}${field === 'comunicacoes' ? '::jsonb' : ''}`)
@@ -529,6 +582,15 @@ Deno.serve(async (request) => {
         `,
         [id, ...fields.map((field) => campos[field])],
       );
+
+      if (rows[0]) {
+        await insertHistoricoChecklist(
+          id,
+          'editado',
+          collaborator?.id ? String(collaborator.id) : null,
+          `Campos alterados: ${fields.join(', ')}.`,
+        );
+      }
 
       return json({ row: rows[0] });
     }
@@ -597,6 +659,32 @@ Deno.serve(async (request) => {
       const categoria = body.categoria ? String(body.categoria) : null;
       if (!categoria) return json({ error: 'categoria obrigatoria.' }, 400);
 
+      const itensAtuais = await sql.unsafe(
+        `select item, status from ${SERVICOS_SCHEMA}.checklist_itens where avaliacao_id = $1 and categoria = $2 order by item;`,
+        [avaliacaoId, categoria],
+      );
+
+      // Mesmo motivo do checklist_atualizar acima: o wizard salva a cada "Avancar"
+      // mesmo sem alterar nada nessa categoria (ex.: reabrir e so navegar pelas
+      // etapas). So faz o delete+insert (e loga "itens_atualizados") se o conjunto
+      // de itens realmente mudou.
+      const normalizarItens = (lista: Array<{ item?: unknown; status?: unknown }>) =>
+        lista
+          .map((item) => ({
+            item: String(item?.item || '').trim(),
+            status: item?.status ? String(item.status) : null,
+          }))
+          .filter((item) => item.item)
+          .sort((a, b) => a.item.localeCompare(b.item));
+
+      const novoNormalizado = normalizarItens(itens);
+      const atualNormalizado = normalizarItens(itensAtuais as Array<{ item?: unknown; status?: unknown }>);
+      const mudou = JSON.stringify(novoNormalizado) !== JSON.stringify(atualNormalizado);
+
+      if (!mudou) {
+        return json({ rows: itensAtuais });
+      }
+
       await sql.begin(async (trx) => {
         await trx.unsafe(
           `delete from ${SERVICOS_SCHEMA}.checklist_itens where avaliacao_id = $1 and categoria = $2;`,
@@ -619,6 +707,13 @@ Deno.serve(async (request) => {
       const rows = await sql.unsafe(
         `select * from ${SERVICOS_SCHEMA}.checklist_itens where avaliacao_id = $1 order by categoria, criado_em;`,
         [avaliacaoId],
+      );
+
+      await insertHistoricoChecklist(
+        avaliacaoId,
+        'itens_atualizados',
+        collaborator?.id ? String(collaborator.id) : null,
+        `Itens de "${categoria}" atualizados (${itens.length}).`,
       );
 
       return json({ rows });
@@ -645,6 +740,13 @@ Deno.serve(async (request) => {
         [avaliacaoId, tipo, posX, posY, body.area ? String(body.area) : null, body.observacao ? String(body.observacao) : null],
       );
 
+      await insertHistoricoChecklist(
+        avaliacaoId,
+        'avaria_adicionada',
+        collaborator?.id ? String(collaborator.id) : null,
+        `Avaria "${tipo}" registrada${body.area ? ` em ${body.area}` : ''}.`,
+      );
+
       return json({ row: rows[0] }, 201);
     }
 
@@ -662,6 +764,13 @@ Deno.serve(async (request) => {
       await getAvaliacao(String(avaria.avaliacao_id), moduleRole, collaborator);
 
       await sql.unsafe(`delete from ${SERVICOS_SCHEMA}.checklist_avarias where id = $1;`, [id]);
+
+      await insertHistoricoChecklist(
+        String(avaria.avaliacao_id),
+        'avaria_removida',
+        collaborator?.id ? String(collaborator.id) : null,
+      );
+
       return json({ ok: true });
     }
 
@@ -682,6 +791,8 @@ Deno.serve(async (request) => {
         `,
         [avaliacaoId, storagePath, body.categoria ? String(body.categoria) : null, body.legenda ? String(body.legenda) : null],
       );
+
+      await insertHistoricoChecklist(avaliacaoId, 'foto_adicionada', collaborator?.id ? String(collaborator.id) : null);
 
       return json({ row: rows[0], url: await createFotoSignedUrl(storagePath) }, 201);
     }
@@ -731,6 +842,8 @@ Deno.serve(async (request) => {
       if (storageClient) {
         await storageClient.storage.from(FOTOS_STORAGE_BUCKET).remove([storagePath]);
       }
+
+      await insertHistoricoChecklist(avaliacaoId, 'foto_removida', collaborator?.id ? String(collaborator.id) : null);
 
       return json({ row: rows[0] || null });
     }

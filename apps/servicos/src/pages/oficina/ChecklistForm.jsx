@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, Lock } from 'lucide-react';
 import {
   Button,
   CarLoader,
@@ -61,6 +62,7 @@ export default function ChecklistForm() {
   const { id: idParam } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const [carregando, setCarregando] = useState(Boolean(idParam));
   const [etapa, setEtapa] = useState(0);
@@ -231,6 +233,10 @@ export default function ChecklistForm() {
       setErro('Selecione ou cadastre o veículo.');
       return;
     }
+    if (!unidadeId) {
+      setErro('Selecione a unidade.');
+      return;
+    }
 
     if (avaliacaoId) {
       setErro(null);
@@ -249,13 +255,14 @@ export default function ChecklistForm() {
       const { row, avisoDonoDiferente: aviso } = await oficinaApi.checklists.iniciar({
         veiculoId: veiculo.id,
         clienteId: cliente?.id,
-        unidadeId: unidadeId || undefined,
+        unidadeId,
         os: os || undefined,
         km: km ? Number(km) : undefined,
       });
       setAvaliacaoId(row.id);
       if (aviso) setAvisoDonoDiferente(aviso);
       setEtapa((atual) => atual + 1);
+      queryClient.invalidateQueries({ queryKey: ['oficina', 'checklists'] });
     } catch (error) {
       setErro(error.message || 'Não foi possível salvar os dados do veículo.');
     } finally {
@@ -333,6 +340,7 @@ export default function ChecklistForm() {
       await oficinaApi.checklists.atualizar(avaliacaoId, { assinatura_entrada: assinaturaEntrada });
       await oficinaApi.checklists.concluirAvaliacao(avaliacaoId);
       limparRascunho();
+      queryClient.invalidateQueries({ queryKey: ['oficina', 'checklists'] });
       navigate(`/oficina/checklists/${avaliacaoId}`);
     } catch (error) {
       setErro(error.message || 'Não foi possível concluir a avaliação.');
@@ -363,6 +371,30 @@ export default function ChecklistForm() {
 
   const progresso = useMemo(() => Math.round(((etapa + 1) / ETAPAS.length) * 100), [etapa]);
 
+  // So relevante reabrindo um checklist existente (idParam): calcula ate onde o
+  // preenchimento ja avancou de fato, olhando os dados carregados -- em vez de liberar
+  // todas as etapas (o que deixaria pular direto pra "Fotos" mesmo sem ter passado por
+  // Documentacao/Seguranca/Pneus ainda). O wizard e sequencial (cada "Avancar" salva a
+  // etapa atual), entao a etapa com categoria preenchida so existe se todas as
+  // anteriores tambem foram preenchidas -- por isso o loop para no primeiro buraco.
+  const etapaMaximaComDados = useMemo(() => {
+    if (!idParam) return 0;
+    let maxima = 1; // "Dados do veiculo" (0) ja existe pelo checklist carregado -> libera "Inspecao geral" (1)
+    const categoriaPorEtapa = { 2: 'documentacao', 3: 'seguranca', 4: 'pneus' };
+    for (let index = 2; index <= 4; index += 1) {
+      const categoria = categoriaPorEtapa[index];
+      if (Object.keys(itensPorCategoria[categoria] || {}).length > 0) {
+        maxima = index + 1;
+      } else {
+        break;
+      }
+    }
+    if (fotos.length > 0) {
+      maxima = Math.max(maxima, ETAPAS.length - 2);
+    }
+    return maxima;
+  }, [idParam, itensPorCategoria, fotos]);
+
   if (carregando) {
     return <CarLoader inline />;
   }
@@ -390,7 +422,18 @@ export default function ChecklistForm() {
             // Uma vez na etapa final (assinatura de entrada já validada pelo cliente),
             // trava a navegação para as etapas anteriores — não é mais possível alterar
             // a inspeção/dados de entrada, só a entrega e a assinatura de saída.
-            const habilitada = etapa >= ETAPAS.length - 1 ? index === etapa : index <= etapa;
+            // Reabrindo um checklist existente (idParam), libera navegação livre só até
+            // `etapaMaximaComDados` — a etapa mais à frente que já tem dado salvo (mais a
+            // próxima, pra poder continuar) — não faz sentido obrigar a clicar "Avançar"
+            // em cada uma só pra chegar onde parou, mas também não pode pular pra uma
+            // etapa que ainda não foi preenchida. Num checklist novo (sem idParam) isso
+            // continua linear: etapas à frente ainda não têm dado nenhum (e a avaliação
+            // só existe no servidor a partir do fim da etapa 0).
+            const habilitada = etapa >= ETAPAS.length - 1
+              ? index === etapa
+              : idParam
+                ? index <= Math.max(etapa, etapaMaximaComDados)
+                : index <= etapa;
             return (
               <button
                 key={nome}
@@ -405,7 +448,7 @@ export default function ChecklistForm() {
                       : 'bg-muted text-muted-foreground'
                 } ${habilitada ? 'cursor-pointer hover:opacity-90' : 'cursor-not-allowed opacity-60'}`}
               >
-                {index + 1}. {nome}
+                {habilitada ? `${index + 1}.` : <Lock className="inline h-3 w-3" />} {nome}
               </button>
             );
           })}
@@ -422,7 +465,7 @@ export default function ChecklistForm() {
           <ClienteVeiculoPicker tipo="cliente" label="Cliente (opcional)" value={cliente} onChange={setCliente} />
           <ClienteVeiculoPicker tipo="veiculo" label="Veículo *" value={veiculo} onChange={setVeiculo} />
           <div className="space-y-2">
-            <Label htmlFor="unidade">Unidade</Label>
+            <Label htmlFor="unidade">Unidade *</Label>
             <Select value={unidadeId} onValueChange={setUnidadeId}>
               <SelectTrigger id="unidade">
                 <SelectValue placeholder="Selecione a unidade" />
