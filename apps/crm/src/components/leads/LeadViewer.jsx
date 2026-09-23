@@ -98,7 +98,7 @@ function EmptyState({ children }) {
 
 const ATIVIDADES_VISIVEIS = 4;
 
-export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity }) {
+export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity, onCreateProposta }) {
   const veiculo = lead?.veiculo_interesse || null;
   const [showAllAtividades, setShowAllAtividades] = useState(false);
   const [section, setSection] = useState('visao_geral');
@@ -395,7 +395,21 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
             ) : null}
 
             {section === 'propostas' ? (
-              <Block icon={FileText} title="Propostas">
+              <Block
+                icon={FileText}
+                title="Propostas"
+                action={onCreateProposta ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 rounded-none text-[10px] font-bold uppercase tracking-wider"
+                    onClick={onCreateProposta}
+                  >
+                    Nova proposta
+                  </Button>
+                ) : null}
+              >
                 <div className="space-y-1.5 md:col-span-2">
                   {propostas.length === 0 ? (
                     <EmptyState>Nenhuma proposta registrada para este lead.</EmptyState>

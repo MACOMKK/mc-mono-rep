@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -81,6 +82,7 @@ const formatVehicleLabel = (vehicle = {}, fallback = '') => {
 };
 
 export default function Leads() {
+  const navigate = useNavigate();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [viewingLead, setViewingLead] = useState(null);
@@ -827,6 +829,7 @@ export default function Leads() {
         }}
         onCreateActivity={() => { setEditingActivity(null); setActivityFormOpen(true); }}
         onSelectActivity={(atividade) => { setEditingActivity(atividade); setActivityFormOpen(true); }}
+        onCreateProposta={() => viewingLead && navigate(`/propostas?leadId=${viewingLead.id}`)}
       />
 
       {activityFormOpen && viewingLead && (

@@ -218,6 +218,21 @@ function ensureUnidadeAcessivel(
   }
 }
 
+// Mesmo padrao do insertHistorico() do servicos-api (Financeiro, ver
+// historico_solicitacao) -- autor_id fica null pro evento link_acessado,
+// disparado pelo cliente anonimo via link publico.
+async function insertHistoricoChecklist(
+  checklistId: string,
+  evento: string,
+  autorId: string | null,
+  observacao: string | null = null,
+) {
+  await sql!.unsafe(
+    `insert into ${SERVICOS_SCHEMA}.historico_checklist (checklist_id, evento, autor_id, observacao) values ($1, $2, $3, $4);`,
+    [checklistId, evento, autorId, observacao],
+  );
+}
+
 async function getAvaliacao(id: string, moduleRole: string | null, collaborator: Record<string, unknown> | null) {
   const rows = await sql!.unsafe(
     `select * from ${SERVICOS_SCHEMA}.checklist_avaliacoes where id = $1 limit 1;`,
@@ -313,6 +328,8 @@ Deno.serve(async (request) => {
         return json({ error: 'Link invalido ou expirado.' }, 404);
       }
 
+      await insertHistoricoChecklist(id, 'link_acessado', null);
+
       return json(dados);
     }
 
@@ -338,6 +355,7 @@ Deno.serve(async (request) => {
         return json({ error: 'So e possivel compartilhar um checklist avaliado ou finalizado.' }, 400);
       }
       const { token, expiresAt } = await criarTokenCompartilhamento(id);
+      await insertHistoricoChecklist(id, 'link_compartilhado', collaborator?.id ? String(collaborator.id) : null);
       return json({ token, expires_at: expiresAt });
     }
 
@@ -469,6 +487,8 @@ Deno.serve(async (request) => {
         [veiculoId, clienteId, colaboradorId, os, km, unidadeId],
       );
 
+      await insertHistoricoChecklist(String(rows[0].id), 'criado', collaborator?.id ? String(collaborator.id) : null);
+
       return json({ row: rows[0], aviso_dono_diferente: avisoDonoDiferente }, 201);
     }
 
@@ -529,6 +549,10 @@ Deno.serve(async (request) => {
         [id],
       );
 
+      if (rows[0]) {
+        await insertHistoricoChecklist(id, 'avaliado', collaborator?.id ? String(collaborator.id) : null);
+      }
+
       return json({ row: rows[0] });
     }
 
@@ -555,6 +579,10 @@ Deno.serve(async (request) => {
         `,
         [id, entregaConferida, entregaObservacoes, assinaturaSaida],
       );
+
+      if (rows[0]) {
+        await insertHistoricoChecklist(id, 'finalizado', collaborator?.id ? String(collaborator.id) : null);
+      }
 
       return json({ row: rows[0] });
     }

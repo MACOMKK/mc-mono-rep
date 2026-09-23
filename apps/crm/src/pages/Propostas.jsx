@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Plus, X } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
@@ -63,11 +64,32 @@ const emptyVendaForm = {
 
 export default function Propostas() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const leadIdFromUrl = searchParams.get('leadId');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [leadSearch, setLeadSearch] = useState('');
   const [selectedLead, setSelectedLead] = useState(null);
+
+  const { data: leadFromUrl } = useQuery({
+    queryKey: ['crm-propostas-lead-from-url', leadIdFromUrl],
+    queryFn: () => crmDataClient.entities.Lead.get(leadIdFromUrl),
+    enabled: Boolean(leadIdFromUrl),
+  });
+
+  useEffect(() => {
+    if (!leadFromUrl) return;
+    setSelectedLead(leadFromUrl);
+    setLeadSearch(leadFromUrl.nome);
+    setForm((prev) => ({ ...prev, lead_id: leadFromUrl.id, vendedor_id: prev.vendedor_id || leadFromUrl.responsavel_id || '' }));
+    setCreateOpen(true);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('leadId');
+      return next;
+    }, { replace: true });
+  }, [leadFromUrl, setSearchParams]);
 
   const [acceptTarget, setAcceptTarget] = useState(null);
   const [vendaForm, setVendaForm] = useState(emptyVendaForm);

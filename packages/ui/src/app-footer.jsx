@@ -4,7 +4,7 @@ export function AppFooter({ orgName = 'MACOM Mitsubishi', className = '' }) {
   const year = new Date().getFullYear();
   return (
     <p className={`text-center text-[10px] text-muted-foreground ${className}`}>
-      {orgName} © {year} · desenvolvido por Kevin Kley
+      {orgName} © {year} · desenvolvido por Kevin Kley & Gabriel Xavier
     </p>
   );
 }

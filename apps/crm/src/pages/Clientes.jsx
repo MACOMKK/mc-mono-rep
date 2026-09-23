@@ -43,6 +43,18 @@ const ATTENDANCE_RESULT_LABEL = {
   lead_perdido: 'Lead perdido',
 };
 
+const FORMA_PAGAMENTO_LABEL = {
+  a_vista: 'A vista',
+  financiamento: 'Financiamento',
+  consorcio: 'Consorcio',
+  troca: 'Troca',
+};
+
+function formatCurrency(value) {
+  const number = Number(value || 0);
+  return number.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
 function toDate(value) {
   if (!value) return null;
   const date = new Date(value);
@@ -183,6 +195,51 @@ export default function Clientes() {
       filters: { cliente_id: selectedId },
     }),
   });
+
+  const {
+    data: selectedVendasPage = { rows: [] },
+    isFetching: loadingSelectedVendas,
+    isError: errorSelectedVendas,
+    error: selectedVendasError,
+  } = useQuery({
+    queryKey: ['cliente-vendas', selectedId],
+    enabled: Boolean(selectedId),
+    queryFn: () => crmDataClient.entities.Venda.listPage({
+      orderBy: '-created_date',
+      limit: 100,
+      filters: { cliente_id: selectedId },
+    }),
+  });
+  const selectedVendas = selectedVendasPage.rows || [];
+
+  const { data: veiculosEstoque = [] } = useQuery({
+    queryKey: ['clientes-veiculos-estoque'],
+    enabled: selectedVendas.length > 0,
+    queryFn: () => crmDataClient.entities.VeiculoEstoque.list('-created_date'),
+  });
+
+  const { data: modelosVeiculo = [] } = useQuery({
+    queryKey: ['clientes-modelos-veiculo'],
+    enabled: selectedVendas.length > 0,
+    queryFn: () => crmDataClient.entities.ModeloVeiculo.list('nome'),
+  });
+
+  const { data: marcasVeiculo = [] } = useQuery({
+    queryKey: ['clientes-marcas-veiculo'],
+    enabled: selectedVendas.length > 0,
+    queryFn: () => crmDataClient.entities.MarcaVeiculo.list('nome'),
+  });
+
+  const modeloPorId = useMemo(() => Object.fromEntries(modelosVeiculo.map((modelo) => [modelo.id, modelo])), [modelosVeiculo]);
+  const marcaNomePorId = useMemo(() => Object.fromEntries(marcasVeiculo.map((marca) => [marca.id, marca.nome])), [marcasVeiculo]);
+
+  const veiculoVendaLabel = (veiculoId) => {
+    const veiculo = veiculosEstoque.find((item) => item.id === veiculoId);
+    if (!veiculo) return '-';
+    const modelo = modeloPorId[veiculo.modelo_id];
+    const marca = modelo ? marcaNomePorId[modelo.marca_id] : '';
+    return [marca, modelo?.nome, veiculo.chassi].filter(Boolean).join(' ') || '-';
+  };
 
   const selectedHistorico = selectedHistoricoPage.rows || [];
   const selectedLeads = selectedLeadsPage.rows || [];
@@ -608,10 +665,11 @@ export default function Clientes() {
               ) : null}
 
               <Tabs defaultValue="visao" className="border-t pt-5">
-                <TabsList className="grid h-auto w-full grid-cols-4 rounded-none bg-slate-100 p-1">
+                <TabsList className="grid h-auto w-full grid-cols-5 rounded-none bg-slate-100 p-1">
                   <TabsTrigger value="visao" className="rounded-none text-[10px] font-bold uppercase tracking-widest">Resumo</TabsTrigger>
                   <TabsTrigger value="leads" className="rounded-none text-[10px] font-bold uppercase tracking-widest">Leads</TabsTrigger>
                   <TabsTrigger value="atendimentos" className="rounded-none text-[10px] font-bold uppercase tracking-widest">Atividades</TabsTrigger>
+                  <TabsTrigger value="vendas" className="rounded-none text-[10px] font-bold uppercase tracking-widest">Vendas</TabsTrigger>
                   <TabsTrigger value="historico" className="rounded-none text-[10px] font-bold uppercase tracking-widest">Timeline</TabsTrigger>
                 </TabsList>
 
@@ -723,6 +781,42 @@ export default function Clientes() {
                             {atendimento.resultado ? <span>Resultado: {ATTENDANCE_RESULT_LABEL[atendimento.resultado] || atendimento.resultado}</span> : null}
                             {atendimento.proximo_contato ? <span>Proximo contato: {formatDate(`${String(atendimento.proximo_contato).slice(0, 10)}T00:00:00`)}</span> : null}
                             <span>Criado em: {formatDate(atendimento.created_date)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="vendas" className="mt-4">
+                  {errorSelectedVendas ? (
+                    <div className="border border-dashed border-red-300 bg-red-50 py-8 text-center text-xs font-semibold uppercase tracking-widest text-red-700">
+                      {selectedVendasError?.message || 'Nao foi possivel carregar as vendas.'}
+                    </div>
+                  ) : loadingSelectedVendas ? (
+                    <div className="border border-dashed py-8 text-center text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                      Carregando vendas...
+                    </div>
+                  ) : selectedVendas.length === 0 ? (
+                    <div className="border border-dashed py-8 text-center text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                      Nenhuma venda registrada
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {selectedVendas.map((venda) => (
+                        <div key={venda.id} className="border-l-4 border-emerald-600 bg-white p-4 shadow-sm">
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                              <Car className="h-3 w-3" />
+                              Venda
+                            </span>
+                            <span className="text-sm font-bold">{formatCurrency(venda.valor_final)}</span>
+                          </div>
+                          <p className="text-sm font-bold">{veiculoVendaLabel(venda.veiculo_estoque_id)}</p>
+                          <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+                            <span>Forma de pagamento: {FORMA_PAGAMENTO_LABEL[venda.forma_pagamento] || venda.forma_pagamento}</span>
+                            <span>Data da venda: {venda.data_venda ? formatDate(venda.data_venda) : '-'}</span>
+                            {venda.observacoes ? <span>Observacoes: {venda.observacoes}</span> : null}
                           </div>
                         </div>
                       ))}
