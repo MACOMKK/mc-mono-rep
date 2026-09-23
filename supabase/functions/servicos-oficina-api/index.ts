@@ -1087,7 +1087,13 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'unidades_listar') {
-      const rows = await sql.unsafe(`select id, nome, empresa_id from public.unidades order by nome;`);
+      const rows = await sql.unsafe(`
+        select u.id, u.nome, u.empresa_id
+        from public.unidades u
+        left join public.empresas e on e.id = u.empresa_id
+        where e.slug is distinct from 'macom_motos'
+        order by u.nome;
+      `);
       return json({ rows });
     }
 
