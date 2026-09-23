@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { ChevronDown, Lock, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 
 import {
+  AppFooter,
   Button,
   DropdownMenu,
   DropdownMenuContent,
@@ -208,8 +209,9 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, setMobileOpen
           </div>
         </nav>
 
-        <div className="border-t border-border p-3">
+        <div className="border-t border-border p-3 space-y-2">
           <ThemeToggleButton theme={theme} onToggle={toggleTheme} collapsed={effectiveCollapsed} />
+          {!effectiveCollapsed ? <AppFooter /> : null}
         </div>
       </aside>
     </>

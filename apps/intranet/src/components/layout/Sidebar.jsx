@@ -6,6 +6,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen
 } from 'lucide-react';
+import { AppFooter } from '@macom/ui';
 import { cn } from '@/lib/utils';
 import { canViewNavItem, intranetNavItems } from '@/lib/navigation';
 
@@ -106,7 +107,9 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         )}
       </nav>
 
-      <div className="h-3 border-t border-sidebar-border" />
+      <div className="border-t border-sidebar-border p-2">
+        {!collapsed ? <AppFooter /> : null}
+      </div>
     </aside>
   );
 }

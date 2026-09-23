@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom';
+import { AppFooter } from '@macom/ui';
 import Navbar from '@/components/Navbar';
 import { EmpresaProvider } from '@/context/EmpresaContext';
 import { useCrmRealtime } from '@/hooks/useCrmRealtime';
@@ -13,6 +14,7 @@ export default function Layout() {
         <main>
           <Outlet />
         </main>
+        <AppFooter className="py-3" />
       </div>
     </EmpresaProvider>
   );

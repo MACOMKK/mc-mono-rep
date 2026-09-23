@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Archive, BriefcaseBusiness, Building2, FileText, Home, Landmark, Laptop, LogOut, Network, PanelLeftClose, PanelLeftOpen, Phone, Smartphone, Users, X } from 'lucide-react';
-import { ThemeToggleButton } from '@macom/ui';
+import { AppFooter, ThemeToggleButton } from '@macom/ui';
 
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
@@ -140,7 +140,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, setMobileOpen
             {!collapsed ? <span>Sair</span> : null}
           </Button>
           {!collapsed ? (
-            <p className="text-center text-[10px] text-muted-foreground">MACOM Mitsubishi © {new Date().getFullYear()}</p>
+            <AppFooter />
           ) : null}
         </div>
       </aside>

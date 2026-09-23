@@ -15,7 +15,7 @@ import {
   UsersRound,
   X,
 } from 'lucide-react';
-import { Button, ThemeToggleButton } from '@macom/ui';
+import { AppFooter, Button, ThemeToggleButton } from '@macom/ui';
 import { useAuth } from '@macom/auth';
 
 const LOGO_URL = 'https://res.cloudinary.com/drevbr5eq/image/upload/q_auto/f_auto/v1777603989/logo_vermelha_e2aob2.png';
@@ -133,7 +133,7 @@ export default function ConsoleSidebar({ collapsed, onToggle, mobileOpen, setMob
             {!collapsed ? <span>Sair</span> : null}
           </Button>
           {!collapsed ? (
-            <p className="text-center text-[10px] text-muted-foreground">MACOM Mitsubishi © {new Date().getFullYear()}</p>
+            <AppFooter />
           ) : null}
         </div>
       </aside>

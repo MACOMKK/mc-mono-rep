@@ -1,3 +1,5 @@
+import { AppFooter } from '@macom/ui';
+
 export default function App() {
   return (
     <main className="min-h-screen bg-background px-6 py-10 text-foreground">
@@ -34,6 +36,8 @@ export default function App() {
             </p>
           </div>
         </section>
+
+        <AppFooter className="mt-10" />
       </div>
     </main>
   );

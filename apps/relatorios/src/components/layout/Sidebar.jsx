@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LogOut, MessageCircle, Mail, PanelLeftClose, PanelLeftOpen, Download } from 'lucide-react';
-import { Spinner, Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@macom/ui';
+import { AppFooter, Spinner, Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
 import { MACOM_LOGO_URL } from '@/config/branding';
 import { useInstallPrompt } from '@/lib/useInstallPrompt';
@@ -304,6 +304,8 @@ export default function Sidebar({ user, collapsed, onToggle }) {
               {isLoggingOut ? 'Saindo...' : 'Sair'}
             </button>
           )}
+
+          {!collapsed && <AppFooter className="pt-1" />}
         </div>
 
         <PasswordChangeDialog open={passwordOpen} onOpenChange={setPasswordOpen} />

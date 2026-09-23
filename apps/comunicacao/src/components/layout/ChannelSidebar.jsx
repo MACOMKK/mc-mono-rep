@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Download, Hash, LogOut, Plus, Search, X } from 'lucide-react';
-import { Avatar, AvatarFallback, Button, ThemeToggleButton } from '@macom/ui';
+import { AppFooter, Avatar, AvatarFallback, Button, ThemeToggleButton } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
 import { useCanais } from '@/hooks/useCanais';
 import { useConversas } from '@/hooks/useConversas';
@@ -241,6 +241,10 @@ export default function ChannelSidebar({ isOpen, onClose, theme, toggleTheme }) 
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
+      </div>
+
+      <div className="border-t border-border px-4 py-2">
+        <AppFooter />
       </div>
 
         <NewDirectMessageDialog open={isNewDmOpen} onOpenChange={setIsNewDmOpen} />

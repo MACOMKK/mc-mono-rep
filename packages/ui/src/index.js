@@ -1,6 +1,7 @@
 export * from './account-menu';
 export * from './alert';
 export * from './alert-dialog';
+export * from './app-footer';
 export * from './app-update-notice';
 export * from './auth-login-card';
 export * from './avatar';
