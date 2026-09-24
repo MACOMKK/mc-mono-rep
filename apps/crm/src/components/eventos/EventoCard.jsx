@@ -1,12 +1,6 @@
 import { format } from 'date-fns';
-import { Phone, Calendar, Flame, Building2, Car, UserRound, AlarmClock } from 'lucide-react';
+import { Phone, Calendar, Building2, Car, UserRound, AlarmClock } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-const TEMP_COLORS = {
-  frio: 'bg-blue-100 text-blue-700 border-blue-200',
-  morno: 'bg-amber-100 text-amber-700 border-amber-200',
-  quente: 'bg-red-100 text-primary border-red-200',
-};
 
 const TIPO_COLORS = {
   ligacao: 'bg-blue-600 text-white',
@@ -97,9 +91,6 @@ export default function EventoCard({ evento, onClick, compact = false }) {
             <div className="flex items-center gap-2 mb-0.5">
               <span className={cn('text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm', TIPO_COLORS[evento.tipo_evento] || 'bg-muted text-muted-foreground')}>
                 {evento.tipo_evento?.replace('_', ' ')}
-              </span>
-              <span className={cn('text-[10px] font-bold uppercase px-2 py-0.5 rounded-sm border', TEMP_COLORS[evento.temperatura] || 'bg-muted')}>
-                <Flame className="w-2.5 h-2.5 inline mr-0.5" />{evento.temperatura}
               </span>
               {evento.resultado ? (
                 <span className="bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-700">

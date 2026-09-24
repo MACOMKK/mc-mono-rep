@@ -97,7 +97,6 @@ export default function LeadForm({
     },
     empresa: 'Macom Ananindeua',
     responsavel_id: '',
-    previsao_fechamento: '',
     motivo_status_id: '',
     motivo_perda: '',
     observacoes: '',
@@ -562,14 +561,6 @@ export default function LeadForm({
                       <SelectItem value="perdido">Perdido</SelectItem>
                     </SelectContent>
                   </Select>
-                </Field>
-                <Field label={`Previsao de fechamento${LEAD_STATUS_REQUIREMENTS[data.status]?.fields.includes('previsao_fechamento') ? ' *' : ''}`}>
-                  <Input
-                    type="date"
-                    value={data.previsao_fechamento || ''}
-                    onChange={(event) => set('previsao_fechamento', event.target.value)}
-                    className="h-9 rounded-none text-sm"
-                  />
                 </Field>
                 {LEAD_STATUS_REQUIREMENTS[data.status]?.motivo ? (
                   <Field label="Motivo *">

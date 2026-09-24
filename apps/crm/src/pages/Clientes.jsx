@@ -100,7 +100,7 @@ export default function Clientes() {
   const [periodoInicio, setPeriodoInicio] = useState('');
   const [periodoFim, setPeriodoFim] = useState('');
   const [cancelingVendaId, setCancelingVendaId] = useState(null);
-  const [cancelamentoForm, setCancelamentoForm] = useState({ motivo_cancelamento: '', previsao_fechamento: '' });
+  const [cancelamentoForm, setCancelamentoForm] = useState({ motivo_cancelamento: '' });
   const { empresa } = useEmpresa();
   const { empresas: EMPRESAS } = useUnidadesEmpresa();
   const { user } = useAuth();
@@ -458,7 +458,7 @@ export default function Clientes() {
       queryClient.invalidateQueries({ queryKey: ['cliente-historico', selectedId] });
       queryClient.invalidateQueries({ queryKey: ['clientes-active-leads'] });
       setCancelingVendaId(null);
-      setCancelamentoForm({ motivo_cancelamento: '', previsao_fechamento: '' });
+      setCancelamentoForm({ motivo_cancelamento: '' });
       toast({
         title: 'Venda cancelada',
         description: 'O veiculo voltou para o estoque e o lead foi reaberto.',
@@ -476,7 +476,7 @@ export default function Clientes() {
 
   function startCancelarVenda(vendaId) {
     setCancelingVendaId(vendaId);
-    setCancelamentoForm({ motivo_cancelamento: '', previsao_fechamento: '' });
+    setCancelamentoForm({ motivo_cancelamento: '' });
   }
 
   function confirmCancelarVenda(event, vendaId) {
@@ -891,16 +891,6 @@ export default function Clientes() {
                                       className="resize-none rounded-none text-sm"
                                       rows={2}
                                     />
-                                  </div>
-                                  <div className="space-y-1">
-                                    <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Nova previsao de fechamento do lead</Label>
-                                    <Input
-                                      type="date"
-                                      value={cancelamentoForm.previsao_fechamento}
-                                      onChange={(event) => setCancelamentoForm((current) => ({ ...current, previsao_fechamento: event.target.value }))}
-                                      className="h-9 rounded-none text-sm"
-                                    />
-                                    <p className="text-[10px] text-muted-foreground">Necessario apenas se o lead ainda estiver convertido.</p>
                                   </div>
                                   <div className="flex justify-end gap-2">
                                     <Button

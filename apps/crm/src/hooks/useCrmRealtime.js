@@ -153,7 +153,6 @@ function mapLeadRow(row = {}) {
         : remainingMinutes !== null && remainingMinutes <= slaAlertMinutes
           ? 'alerta'
           : 'no_prazo',
-    previsao_fechamento: normalizeDateOnly(row.previsao_fechamento),
     observacoes: row.observacoes || '',
     ...baseDates(row),
   };

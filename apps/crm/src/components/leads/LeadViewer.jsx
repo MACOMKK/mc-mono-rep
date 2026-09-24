@@ -232,7 +232,6 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
                 <Block icon={LayoutDashboard} title="Situação">
                   <Item label="Status">{LEAD_STATUS_LABEL[lead.status] || lead.status}</Item>
                   <Item label="Origem">{lead.origem || '-'}</Item>
-                  <Item label="Previsão de fechamento">{formatDate(lead.previsao_fechamento)}</Item>
                   {lead.status === 'perdido' ? (
                     <Item label="Motivo da perda">{lead.motivo_perda || '-'}</Item>
                   ) : null}

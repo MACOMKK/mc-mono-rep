@@ -69,7 +69,6 @@ function createInitialData(evento, leads, initialLeadId) {
     resultado: '',
     motivo_resultado: '',
     motivo_status_id: '',
-    previsao_fechamento: '',
     proxima_atividade: {
       titulo: '',
       tipo_evento: 'ligacao',
@@ -109,7 +108,6 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
   const willTransitionLead = Boolean(targetLeadStatus) && isLeadEligibleForResultado(data.resultado, selectedLead?.status);
   const targetRequirement = willTransitionLead ? LEAD_STATUS_REQUIREMENTS[targetLeadStatus] : null;
   const needsMotivoStatus = Boolean(targetRequirement?.motivo);
-  const needsPrevisaoFechamento = Boolean(targetRequirement?.fields.includes('previsao_fechamento'));
 
   const canSave = Boolean(
     data.lead_id
@@ -118,7 +116,6 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
     && (!needsResult || data.resultado)
     && (!needsLossReason || String(data.motivo_resultado || '').trim())
     && (!needsMotivoStatus || data.motivo_status_id)
-    && (!needsPrevisaoFechamento || data.previsao_fechamento)
     && (!needsNextActivity || (
       String(data.proxima_atividade?.titulo || '').trim()
       && data.proxima_atividade?.tipo_evento
@@ -147,7 +144,6 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
       resultado: status === 'concluida' ? current.resultado : '',
       motivo_resultado: status === 'concluida' ? current.motivo_resultado : '',
       motivo_status_id: status === 'concluida' ? current.motivo_status_id : '',
-      previsao_fechamento: status === 'concluida' ? current.previsao_fechamento : '',
     }));
   }
 
@@ -159,7 +155,6 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
         ...current,
         resultado,
         motivo_status_id: requirement?.motivo ? current.motivo_status_id : '',
-        previsao_fechamento: requirement?.fields.includes('previsao_fechamento') ? current.previsao_fechamento : '',
       };
     });
   }
@@ -194,11 +189,11 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
 
           {selectedLead ? (
             <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 text-xs">
-              <span className="flex items-center gap-2 font-semibold"><UserRound className="h-3.5 w-3.5" />{selectedLead.nome}</span>
-              <span className="flex items-center gap-2 text-muted-foreground"><Phone className="h-3.5 w-3.5" />{selectedLead.telefone}</span>
-              <span className="flex items-center gap-2 text-muted-foreground"><Car className="h-3.5 w-3.5" />{selectedLead.modelo_interesse || 'Modelo nao informado'}</span>
-              <span className="flex items-center gap-2 text-muted-foreground"><Tag className="h-3.5 w-3.5" />{selectedLead.origem || 'Sem origem'}</span>
-              <span className="col-span-2 flex items-center gap-2 text-muted-foreground"><Building2 className="h-3.5 w-3.5" />{selectedLead.empresa}</span>
+              <span className="flex min-w-0 items-center gap-2 font-semibold"><UserRound className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{selectedLead.nome}</span></span>
+              <span className="flex min-w-0 items-center gap-2 text-muted-foreground"><Phone className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{selectedLead.telefone}</span></span>
+              <span className="flex min-w-0 items-center gap-2 text-muted-foreground"><Car className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{selectedLead.modelo_interesse || 'Modelo nao informado'}</span></span>
+              <span className="flex min-w-0 items-center gap-2 text-muted-foreground"><Tag className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{selectedLead.origem || 'Sem origem'}</span></span>
+              <span className="col-span-2 flex min-w-0 items-center gap-2 text-muted-foreground"><Building2 className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{selectedLead.empresa}</span></span>
             </div>
           ) : null}
 
@@ -228,16 +223,6 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
                   <SelectItem value="visita">Visita</SelectItem>
                   <SelectItem value="test_drive">Test-drive</SelectItem>
                   <SelectItem value="tarefa">Tarefa</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Temperatura">
-              <Select value={data.temperatura} onValueChange={(value) => set('temperatura', value)}>
-                <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent className="rounded-none">
-                  <SelectItem value="frio">Frio</SelectItem>
-                  <SelectItem value="morno">Morno</SelectItem>
-                  <SelectItem value="quente">Quente</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
@@ -285,20 +270,6 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
                     onChange={(value) => set('motivo_status_id', value)}
                     motivosStatus={motivosStatus}
                     disabled={isClosed}
-                  />
-                </Field>
-              </div>
-            ) : null}
-            {needsPrevisaoFechamento ? (
-              <div className="col-span-2">
-                <Field label="Previsao de fechamento *">
-                  <Input
-                    required
-                    type="date"
-                    value={data.previsao_fechamento || ''}
-                    onChange={(event) => set('previsao_fechamento', event.target.value)}
-                    disabled={isClosed}
-                    className="h-9 rounded-none text-sm"
                   />
                 </Field>
               </div>

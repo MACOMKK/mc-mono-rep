@@ -13,58 +13,6 @@ const COLUNAS = [
   { key: 'perdido', color: 'border-t-red-600', headerBg: 'bg-red-600', dot: 'bg-red-600' },
 ].map((col) => ({ ...col, label: LEAD_STATUS_LABEL[col.key] }));
 
-const toLocalDate = (value) => {
-  if (!value) return null;
-  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const formatDate = (value) => {
-  const date = toLocalDate(value);
-  return date ? new Intl.DateTimeFormat('pt-BR').format(date) : '';
-};
-
-const formatShortDate = (value) => {
-  const date = toLocalDate(value);
-  return date
-    ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(date)
-    : '';
-};
-
-const getClosingInfo = (lead) => {
-  if (!lead.previsao_fechamento || ['convertido', 'perdido'].includes(lead.status)) return null;
-
-  const dueDate = toLocalDate(lead.previsao_fechamento);
-  if (!dueDate) return null;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffDays = Math.floor((dueDate.getTime() - today.getTime()) / 86400000);
-  const formattedDate = formatDate(lead.previsao_fechamento);
-
-  if (diffDays < 0) {
-    return {
-      label: `Fech. vencido`,
-      title: `Fechamento vencido desde ${formattedDate}`,
-      className: 'border-red-200 bg-red-50 text-red-700',
-    };
-  }
-
-  if (diffDays === 0) {
-    return {
-      label: 'Fech. hoje',
-      title: 'Fechamento previsto para hoje',
-      className: 'border-amber-200 bg-amber-50 text-amber-700',
-    };
-  }
-
-  return {
-    label: `Fech. ${formatShortDate(lead.previsao_fechamento)}`,
-    title: `Fechamento em ${formattedDate}`,
-    className: 'border-slate-200 bg-slate-50 text-slate-600',
-  };
-};
-
 function LeadCard({ lead, index, onClick, semContatoAgendado }) {
   const isSaving = String(lead.id).startsWith('temp-');
   const slaLabel = lead.sla_status === 'concluido'
@@ -88,7 +36,6 @@ function LeadCard({ lead, index, onClick, semContatoAgendado }) {
       : lead.sla_status === 'alerta'
         ? 'SLA de primeiro contato perto do prazo'
         : 'SLA de primeiro contato no prazo';
-  const closingInfo = getClosingInfo(lead);
 
   return (
     <Draggable draggableId={lead.id} index={index}>
@@ -141,14 +88,6 @@ function LeadCard({ lead, index, onClick, semContatoAgendado }) {
                   className={cn('inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider', slaStyle)}
                 >
                   <CalendarClock className="h-3 w-3" />{slaLabel}
-                </span>
-              ) : null}
-              {closingInfo ? (
-                <span
-                  title={closingInfo.title}
-                  className={cn('inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider', closingInfo.className)}
-                >
-                  <CalendarClock className="h-3 w-3" />{closingInfo.label}
                 </span>
               ) : null}
             </div>

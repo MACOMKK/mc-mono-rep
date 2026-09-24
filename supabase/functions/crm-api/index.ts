@@ -56,7 +56,6 @@ const ENTITY_CONFIG = {
       'unidade_id',
       'primeiro_contato_em',
       'sla_primeiro_contato_em',
-      'previsao_fechamento',
       'observacoes',
     ],
   },
@@ -76,7 +75,6 @@ const ENTITY_CONFIG = {
       'resultado',
       'motivo_resultado',
       'motivo_status_id',
-      'previsao_fechamento',
       'concluido_em',
     ],
   },
@@ -545,8 +543,6 @@ function buildSqlFilters(filters: Record<string, unknown> = {}, startIndex = 1, 
   const reservedFilters = new Set([
     'created_from',
     'created_to',
-    'previsao_from',
-    'previsao_to',
     'proximo_from',
     'proximo_to',
     'sla_status',
@@ -704,7 +700,6 @@ function buildAdvancedFilters(entity: EntityName, filters: Record<string, unknow
   );
 
   if (entity === 'leads') {
-    appendDateRangeFilter(clauses, values, 'l."previsao_fechamento"', filters.previsao_from, filters.previsao_to, startIndex);
     if (filters.sla_status === 'atrasado') {
       clauses.push(`l."primeiro_contato_em" is null and l."sla_primeiro_contato_em" < now()`);
     } else if (filters.sla_status === 'alerta') {
@@ -1690,16 +1685,11 @@ Deno.serve(async (request) => {
         const leadStatus = leadRows[0]?.status;
 
         if (leadStatus === 'convertido') {
-          const previsaoFechamento = typeof body.previsao_fechamento === 'string' && body.previsao_fechamento ? body.previsao_fechamento : '';
-          if (!previsaoFechamento) {
-            throw Object.assign(new Error('Informe a previsao de fechamento para reabrir o lead em negociacao.'), { status: 400 });
-          }
-
           await transaction.unsafe(
             `update ${CRM_SCHEMA}.leads
-             set status = 'negociacao', previsao_fechamento = $1
-             where id = $2 and status = 'convertido';`,
-            [previsaoFechamento, canceledVenda.lead_id],
+             set status = 'negociacao'
+             where id = $1 and status = 'convertido';`,
+            [canceledVenda.lead_id],
           );
         }
 

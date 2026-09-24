@@ -35,39 +35,9 @@ const SLA_LABELS = {
   concluido: '1o contato realizado',
 };
 
-const formatDate = (value) => value
-  ? new Intl.DateTimeFormat('pt-BR').format(new Date(`${value}T00:00:00`))
-  : '-';
-
 const formatDateTime = (value) => value
   ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
   : '-';
-
-const getClosingStatus = (lead) => {
-  if (!lead.previsao_fechamento) {
-    return { label: '-', className: 'text-muted-foreground' };
-  }
-  if (['convertido', 'perdido'].includes(lead.status)) {
-    return { label: formatDate(lead.previsao_fechamento), className: 'text-muted-foreground' };
-  }
-
-  const dueDate = new Date(`${String(lead.previsao_fechamento).slice(0, 10)}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffDays = Math.floor((dueDate.getTime() - today.getTime()) / 86400000);
-
-  if (Number.isNaN(dueDate.getTime())) {
-    return { label: '-', className: 'text-muted-foreground' };
-  }
-
-  if (diffDays < 0) {
-    return { label: `${formatDate(lead.previsao_fechamento)} - vencida`, className: 'text-red-700 font-bold' };
-  }
-  if (diffDays === 0) {
-    return { label: `${formatDate(lead.previsao_fechamento)} - hoje`, className: 'text-amber-700 font-bold' };
-  }
-  return { label: formatDate(lead.previsao_fechamento), className: 'text-muted-foreground' };
-};
 
 const createTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -585,12 +555,11 @@ export default function Leads() {
     const lead = leads.find((l) => l.id === draggableId);
     if (!lead || lead.status === novoStatus) return;
 
-    if (LEAD_STATUS_REQUIREMENTS[novoStatus]) {
+    const requirement = LEAD_STATUS_REQUIREMENTS[novoStatus];
+    if (requirement && (requirement.motivo || requirement.fields.length > 0)) {
       setStatusTarget({ lead, status: novoStatus });
       setStatusMotivoId('');
-      setStatusExtraValues({
-        previsao_fechamento: lead.previsao_fechamento || '',
-      });
+      setStatusExtraValues({});
       return;
     }
 
@@ -764,19 +733,17 @@ export default function Leads() {
                   <TableHead className="text-white text-[10px] font-bold uppercase tracking-widest">Empresa</TableHead>
                   <TableHead className="text-white text-[10px] font-bold uppercase tracking-widest">Responsavel</TableHead>
                   <TableHead className="text-white text-[10px] font-bold uppercase tracking-widest">SLA 1o contato</TableHead>
-                  <TableHead className="text-white text-[10px] font-bold uppercase tracking-widest">Previsao</TableHead>
                   <TableHead className="text-white text-[10px] font-bold uppercase tracking-widest">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtrados.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-xs font-semibold uppercase tracking-widest text-muted-foreground py-10">
+                    <TableCell colSpan={8} className="text-center text-xs font-semibold uppercase tracking-widest text-muted-foreground py-10">
                       Nenhum lead encontrado
                     </TableCell>
                   </TableRow>
                 ) : filtrados.map((lead, i) => {
-                  const closingStatus = getClosingStatus(lead);
                   return (
                     <TableRow
                       key={lead.id}
@@ -794,7 +761,6 @@ export default function Leads() {
                           {SLA_LABELS[lead.sla_status] || '-'}
                         </span>
                       </TableCell>
-                      <TableCell className={cn('text-xs', closingStatus.className)}>{closingStatus.label}</TableCell>
                       <TableCell>
                         <span className={cn('text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-sm', STATUS_STYLES[lead.status])}>
                           {STATUS_LABEL[lead.status]}
@@ -912,19 +878,6 @@ export default function Leads() {
                       value={statusMotivoId}
                       onChange={setStatusMotivoId}
                       motivosStatus={motivosStatus}
-                    />
-                  </div>
-                )}
-
-                {requirement?.fields.includes('previsao_fechamento') && (
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Previsao de fechamento</label>
-                    <Input
-                      type="date"
-                      required
-                      value={statusExtraValues.previsao_fechamento || ''}
-                      onChange={(event) => setStatusExtraValues((prev) => ({ ...prev, previsao_fechamento: event.target.value }))}
-                      className="rounded-none"
                     />
                   </div>
                 )}

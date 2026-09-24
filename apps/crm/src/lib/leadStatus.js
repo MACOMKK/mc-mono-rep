@@ -47,16 +47,16 @@ export const ACTIVE_LEAD_STATUSES = ['novo', 'tentativa_contato', 'em_contato', 
 // (trigger gestao_crm.prepare_lead_phase1) reforca a mesma regra.
 export const LEAD_STATUS_REQUIREMENTS = {
   qualificado: { motivo: true, fields: [] },
-  negociacao: { motivo: false, fields: ['previsao_fechamento'] },
+  negociacao: { motivo: false, fields: [] },
   convertido: { motivo: true, fields: [] },
   perdido: { motivo: true, fields: [] },
 };
 
 // Resultado de gestao_crm.atendimentos -> status de lead que a conclusao da atividade
 // provoca (gestao_crm.apply_activity_outcome()). Usado para decidir, no formulario de
-// conclusao de atividade (EventoForm), quando exigir motivo/previsao de fechamento --
-// mesma exigencia de LEAD_STATUS_REQUIREMENTS, so que disparada pelo resultado do
-// atendimento em vez de uma mudanca manual de status no Kanban/LeadForm.
+// conclusao de atividade (EventoForm), quando exigir motivo -- mesma exigencia de
+// LEAD_STATUS_REQUIREMENTS, so que disparada pelo resultado do atendimento em vez de
+// uma mudanca manual de status no Kanban/LeadForm.
 export const RESULTADO_LEAD_STATUS_TARGET = {
   venda_realizada: 'convertido',
   lead_perdido: 'perdido',

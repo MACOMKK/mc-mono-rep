@@ -76,7 +76,6 @@ create table if not exists gestao_crm.leads (
   atribuido_em timestamptz,
   primeiro_contato_em timestamptz,
   sla_primeiro_contato_em timestamptz,
-  previsao_fechamento date,
   observacoes text,
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now(),

@@ -194,7 +194,6 @@ function mapLeadRow(row = {}) {
     sla_alerta_minutos: slaAlertMinutes,
     sla_minutos_restantes: remainingMinutes,
     sla_status: slaStatus,
-    previsao_fechamento: normalizeDateOnly(row.previsao_fechamento),
     observacoes: row.observacoes || '',
     ...mapBaseDates(row),
   };
@@ -390,7 +389,6 @@ function mapEventoRow(row = {}) {
     resultado: normalizedResult,
     motivo_resultado: row.motivo_resultado || '',
     motivo_status_id: row.motivo_status_id || '',
-    previsao_fechamento: normalizeDateOnly(row.previsao_fechamento),
     concluido_em: row.concluido_em || null,
     ...mapBaseDates(row),
   };
@@ -438,10 +436,6 @@ function mapLeadPayload(data = {}, clienteId) {
     throw new Error(`Selecione um motivo para mover o lead para ${LEAD_STATUS_LABEL[data.status] || data.status}.`);
   }
 
-  if (data.status === 'negociacao' && !data.previsao_fechamento) {
-    throw new Error('Informe a previsao de fechamento para mover o lead para negociacao.');
-  }
-
   if (!data.origem_id) {
     throw new Error('Selecione a origem do lead.');
   }
@@ -467,7 +461,6 @@ function mapLeadPayload(data = {}, clienteId) {
     motivo_status_id: ['qualificado', 'convertido', 'perdido'].includes(data.status) ? data.motivo_status_id : null,
     responsavel_id: data.responsavel_id || null,
     unidade_id: data.unidade_id || null,
-    previsao_fechamento: data.previsao_fechamento || null,
     observacoes: data.observacoes || null,
   };
 }
@@ -547,10 +540,6 @@ function mapEventoPayload(data = {}, lead) {
     throw new Error('Selecione um motivo para concluir esta atividade.');
   }
 
-  if (targetRequirement?.fields.includes('previsao_fechamento') && !data.previsao_fechamento) {
-    throw new Error('Informe a previsao de fechamento para concluir esta atividade.');
-  }
-
   return {
     lead_id: data.lead_id,
     cliente_id: lead?.cliente_id || data.cliente_id,
@@ -565,7 +554,6 @@ function mapEventoPayload(data = {}, lead) {
       ? String(data.motivo_resultado || '').trim()
       : null,
     motivo_status_id: targetRequirement?.motivo ? data.motivo_status_id : null,
-    previsao_fechamento: targetRequirement?.fields.includes('previsao_fechamento') ? data.previsao_fechamento : null,
   };
 }
 
@@ -1259,7 +1247,6 @@ const VendaRepository = {
     const result = await crmApi.vendas.cancelVenda({
       vendaId,
       motivo_cancelamento: motivoCancelamento,
-      previsao_fechamento: data.previsao_fechamento || null,
     });
 
     return mapVendaRow(result.venda);
