@@ -3,32 +3,12 @@
 // para gravar na fila `notificacoes.fila_emails` em vez de duplicar SQL de insert.
 // O envio de fato é feito de forma assíncrona pelo worker `processa-fila-email` (cron).
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-
 // Credenciais do Gmail: unica fonte e' a tabela `integracoes.integracoes` (chave
 // "gmail_notificacoes", configuravel via tela no Console). Nao ha mais fallback pras
 // env vars GMAIL_* — migradas e removidas em 2026-09-02.
-export interface IntegracaoCredenciaisContext {
-  supabaseUrl?: string | null;
-  serviceRoleKey?: string | null;
-}
+import { loadIntegracaoCredenciais, type IntegracaoCredenciaisContext } from './integracoes.ts';
 
-async function loadIntegracaoCredenciais(chave: string, ctx: IntegracaoCredenciaisContext) {
-  if (!ctx.supabaseUrl || !ctx.serviceRoleKey) return null;
-
-  try {
-    const client = createClient(ctx.supabaseUrl, ctx.serviceRoleKey);
-    const { data, error } = await client.schema('integracoes').rpc('get_credenciais', { p_chave: chave });
-    if (error) {
-      console.error(`Falha ao carregar credenciais da integracao "${chave}": ${error.message}`);
-      return null;
-    }
-    return (data as Record<string, unknown> | null) || null;
-  } catch (error) {
-    console.error(`Erro ao carregar credenciais da integracao "${chave}":`, error);
-    return null;
-  }
-}
+export type { IntegracaoCredenciaisContext };
 
 function toBase64Utf8(input: string) {
   const bytes = new TextEncoder().encode(input);

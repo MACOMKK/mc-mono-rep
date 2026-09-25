@@ -224,4 +224,12 @@ export const crmApi = {
       return invokeCrm({ action: 'cancel_venda', ...payload });
     },
   },
+  conversas_atendimento: {
+    ...buildEntity('conversas_atendimento'),
+    async sendMensagem(payload) {
+      const result = await invokeCrm({ action: 'send_atendimento_mensagem', ...payload });
+      return result.row || null;
+    },
+  },
+  mensagens_atendimento: buildEntity('mensagens_atendimento'),
 };

@@ -35,7 +35,8 @@ export default function NotificationsBell({ buttonClassName = '' }) {
     queryKey: notificacoesKey,
     queryFn: () => financeiroApi.notificacoes.list(),
     enabled: Boolean(colaboradorId),
-    refetchInterval: 60000,
+    // Realtime ja invalida esta query; o polling e so fallback (5 min para poupar Log Ingestion).
+    refetchInterval: 300000,
   });
   const notificacoes = notificacoesQuery.data || [];
   const naoLidas = notificacoes.filter((item) => !item.lida_em);

@@ -1,6 +1,6 @@
 export const CRM_SCHEMA = 'gestao_crm';
 
-export type EntityName = 'clientes' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'cores_veiculo' | 'veiculos_estoque' | 'pipelines' | 'etapas_pipeline' | 'motivos_status' | 'propostas' | 'vendas';
+export type EntityName = 'clientes' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'cores_veiculo' | 'veiculos_estoque' | 'pipelines' | 'etapas_pipeline' | 'motivos_status' | 'propostas' | 'vendas' | 'conversas_atendimento' | 'mensagens_atendimento';
 
 export function getAccessLevel(access: Record<string, unknown> | null) {
   return String(access?.nivel_acesso || '');
@@ -83,6 +83,46 @@ export function buildAccessScope(
           )`,
           values: [unitId],
         };
+      case 'conversas_atendimento':
+        // Mesma regra da RLS original (crm_can_access_lead/crm_can_access_cliente):
+        // visivel se o lead ou cliente vinculado esta na unidade do gestor. Conversa
+        // orfa (lead_id e cliente_id nulos) nao casa com nenhum exists -- fica oculta
+        // para nao-admin, igual a RLS fazia.
+        return {
+          clause: `(
+            exists (
+              select 1 from ${CRM_SCHEMA}.leads scope_lead
+              where scope_lead.id = conversas_atendimento.lead_id
+                and scope_lead.unidade_id = $${startIndex}
+            )
+            or exists (
+              select 1 from ${CRM_SCHEMA}.leads scope_lead
+              where scope_lead.cliente_id = conversas_atendimento.cliente_id
+                and scope_lead.unidade_id = $${startIndex}
+            )
+          )`,
+          values: [unitId],
+        };
+      case 'mensagens_atendimento':
+        return {
+          clause: `exists (
+            select 1 from ${CRM_SCHEMA}.conversas_atendimento scope_conversa
+            where scope_conversa.id = mensagens_atendimento.conversa_id
+              and (
+                exists (
+                  select 1 from ${CRM_SCHEMA}.leads scope_lead
+                  where scope_lead.id = scope_conversa.lead_id
+                    and scope_lead.unidade_id = $${startIndex}
+                )
+                or exists (
+                  select 1 from ${CRM_SCHEMA}.leads scope_lead
+                  where scope_lead.cliente_id = scope_conversa.cliente_id
+                    and scope_lead.unidade_id = $${startIndex}
+                )
+              )
+          )`,
+          values: [unitId],
+        };
       case 'categorias_veiculo':
       case 'origens_lead':
       case 'marcas_veiculo':
@@ -154,6 +194,42 @@ export function buildAccessScope(
           select 1 from ${CRM_SCHEMA}.leads scope_lead
           where scope_lead.id = ${entity}.lead_id
             and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
+        )`,
+        values: [collaboratorId],
+      };
+    case 'conversas_atendimento':
+      return {
+        clause: `(
+          exists (
+            select 1 from ${CRM_SCHEMA}.leads scope_lead
+            where scope_lead.id = conversas_atendimento.lead_id
+              and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
+          )
+          or exists (
+            select 1 from ${CRM_SCHEMA}.leads scope_lead
+            where scope_lead.cliente_id = conversas_atendimento.cliente_id
+              and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
+          )
+        )`,
+        values: [collaboratorId],
+      };
+    case 'mensagens_atendimento':
+      return {
+        clause: `exists (
+          select 1 from ${CRM_SCHEMA}.conversas_atendimento scope_conversa
+          where scope_conversa.id = mensagens_atendimento.conversa_id
+            and (
+              exists (
+                select 1 from ${CRM_SCHEMA}.leads scope_lead
+                where scope_lead.id = scope_conversa.lead_id
+                  and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
+              )
+              or exists (
+                select 1 from ${CRM_SCHEMA}.leads scope_lead
+                where scope_lead.cliente_id = scope_conversa.cliente_id
+                  and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
+              )
+            )
         )`,
         values: [collaboratorId],
       };

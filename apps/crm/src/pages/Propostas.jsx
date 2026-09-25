@@ -408,6 +408,9 @@ export default function Propostas() {
                   ))}
                 </SelectContent>
               </Select>
+              {veiculosDisponiveis.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nenhum veiculo disponivel no estoque no momento.</p>
+              ) : null}
             </div>
 
             {!form.veiculo_estoque_id ? (
@@ -532,6 +535,9 @@ export default function Propostas() {
                   ))}
                 </SelectContent>
               </Select>
+              {veiculosDisponiveis.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nenhum veiculo disponivel no estoque no momento.</p>
+              ) : null}
             </div>
 
             <div className="grid grid-cols-2 gap-3">

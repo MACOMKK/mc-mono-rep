@@ -1,10 +1,31 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
 import { buildCorsHeaders } from '../_shared/cors.ts';
+import { loadIntegracaoCredenciais } from '../_shared/integracoes.ts';
+import { sendWhatsappMessageMeta, sendWhatsappMessageEvolution, type WhatsappProvider } from '../_shared/whatsapp.ts';
+
+// gestao_crm nao e' exposto via PostgREST (so acessivel por conexao direta Postgres) --
+// mesmo padrao ja usado em crm-api/index.ts. Nao usar supabase-js .schema(...).from(...)
+// aqui, da erro "Invalid schema: gestao_crm" (schema nao esta na lista exposta do gateway).
+const databaseUrl = Deno.env.get('DATABASE_URL');
+const sql = databaseUrl
+  ? postgres(databaseUrl, {
+      prepare: false,
+      max: 3,
+      idle_timeout: 5,
+      connect_timeout: 15,
+    })
+  : null;
 
 // Edge Function desacoplada do crm-api: nao exige JWT de usuario do CRM.
 // Autentica a requisicao pelo secret proprio do canal (verify token / assinatura HMAC
-// da Meta), igual ao padrao ja usado em processa-fila-email/enviar-termo-gmail.
+// da Meta, ou token de webhook da Evolution API), igual ao padrao ja usado em
+// processa-fila-email/enviar-termo-gmail.
+//
+// Provedor e' escolhido em runtime, sem exigir redeploy: se existir uma integracao
+// ativa "whatsapp_evolution" no Console (Integracoes), usa a Evolution API (nao-oficial,
+// via Baileys); caso contrario usa a Meta Cloud API (oficial), lendo os secrets de sempre
+// via Deno.env. Ver README.md desta function para o passo a passo de cada modo.
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -23,13 +44,18 @@ function normalizePhone(phone: string) {
   return phone.replace(/\D/g, '');
 }
 
+function truncatePreview(text: string, maxLength = 140) {
+  const trimmed = (text || '').trim();
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 1)}…` : trimmed;
+}
+
 function bytesToHex(bytes: ArrayBuffer) {
   return Array.from(new Uint8Array(bytes))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
-async function verifyWhatsappSignature(rawBody: string, signatureHeader: string | null, appSecret: string) {
+async function verifyMetaSignature(rawBody: string, signatureHeader: string | null, appSecret: string) {
   if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false;
   const expectedHex = signatureHeader.slice('sha256='.length);
 
@@ -51,13 +77,33 @@ async function verifyWhatsappSignature(rawBody: string, signatureHeader: string 
   return mismatch === 0;
 }
 
+function timingSafeEquals(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+// Evolution API nao assina o corpo (sem HMAC como a Meta) -- a autenticacao do webhook e'
+// feita por um token compartilhado na querystring da URL cadastrada na propria Evolution
+// (ex.: .../whatsapp-api?token=xxx), comparado contra o campo "webhook_token" configurado
+// na integracao "whatsapp_evolution" (Console > Integracoes).
+function verifyEvolutionWebhookToken(req: Request, expectedToken: string) {
+  const url = new URL(req.url);
+  const providedToken = url.searchParams.get('token');
+  if (!providedToken) return false;
+  return timingSafeEquals(providedToken, expectedToken);
+}
+
 type IncomingMessage = {
   messageId: string;
   fromPhone: string;
   text: string;
 };
 
-function extractIncomingMessages(payload: any): IncomingMessage[] {
+function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
   const messages: IncomingMessage[] = [];
   const entries = Array.isArray(payload?.entry) ? payload.entry : [];
 
@@ -73,6 +119,31 @@ function extractIncomingMessages(payload: any): IncomingMessage[] {
         }
       }
     }
+  }
+
+  return messages;
+}
+
+// Formato Baileys (usado pela Evolution API): evento "messages.upsert", corpo em
+// payload.data (objeto unico) ou payload.data (array), conforme a versao da instancia.
+// Ignora mensagens enviadas por nos mesmos (key.fromMe) e qualquer coisa sem texto simples
+// (ex.: midia, figurinha) -- fora de escopo por enquanto, so texto e' processado.
+function extractIncomingMessagesEvolution(payload: any): IncomingMessage[] {
+  const messages: IncomingMessage[] = [];
+  if (payload?.event !== 'messages.upsert') return messages;
+
+  const rawData = payload?.data;
+  const entries = Array.isArray(rawData) ? rawData : rawData ? [rawData] : [];
+
+  for (const entry of entries) {
+    const key = entry?.key;
+    if (!key?.id || !key?.remoteJid || key?.fromMe) continue;
+
+    const text = entry?.message?.conversation ?? entry?.message?.extendedTextMessage?.text;
+    if (typeof text !== 'string' || !text) continue;
+
+    const fromPhone = String(key.remoteJid).split('@')[0];
+    messages.push({ messageId: String(key.id), fromPhone, text });
   }
 
   return messages;
@@ -117,29 +188,6 @@ async function callAi(openaiApiKey: string, history: { autor: string; conteudo: 
   return reply.trim();
 }
 
-async function sendWhatsappMessage(phoneNumberId: string, token: string, toPhone: string, text: string) {
-  const response = await fetch(`https://graph.facebook.com/v20.0/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to: toPhone,
-      type: 'text',
-      text: { body: text },
-    }),
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.error?.message || 'Falha ao enviar mensagem via WhatsApp.');
-  }
-
-  return data;
-}
-
 serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
 
@@ -155,7 +203,8 @@ serve(async (req) => {
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-  // Verificacao do webhook exigida pela Meta Cloud API na configuracao inicial.
+  // Verificacao do webhook exigida pela Meta Cloud API na configuracao inicial (a Evolution
+  // API nao usa esse handshake, entao isso so importa quando o provedor ativo e' a Meta).
   if (req.method === 'GET') {
     const url = new URL(req.url);
     const mode = url.searchParams.get('hub.mode');
@@ -177,23 +226,48 @@ serve(async (req) => {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       throw new Error('SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nao configurados.');
     }
-    if (!APP_SECRET) {
-      throw new Error('WHATSAPP_APP_SECRET nao configurado.');
+    if (!sql) {
+      throw new Error('DATABASE_URL nao configurada.');
     }
 
-    const rawBody = await req.text();
-    const signatureHeader = req.headers.get('x-hub-signature-256');
-    const validSignature = await verifyWhatsappSignature(rawBody, signatureHeader, APP_SECRET);
+    // Provedor ativo = existencia de uma integracao "whatsapp_evolution" ativa e configurada
+    // no Console (Integracoes). Sem ela, mantem o comportamento de sempre (Meta Cloud API).
+    const evolutionCredenciais = await loadIntegracaoCredenciais('whatsapp_evolution', {
+      supabaseUrl: SUPABASE_URL,
+      serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+    });
+    const provider: WhatsappProvider = evolutionCredenciais ? 'evolution' : 'meta';
 
-    if (!validSignature) {
-      return new Response(JSON.stringify({ success: false, error: 'Assinatura invalida.' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const rawBody = await req.text();
+
+    if (provider === 'meta') {
+      if (!APP_SECRET) {
+        throw new Error('WHATSAPP_APP_SECRET nao configurado.');
+      }
+      const signatureHeader = req.headers.get('x-hub-signature-256');
+      const validSignature = await verifyMetaSignature(rawBody, signatureHeader, APP_SECRET);
+      if (!validSignature) {
+        return new Response(JSON.stringify({ success: false, error: 'Assinatura invalida.' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      const webhookToken = evolutionCredenciais?.webhook_token;
+      if (typeof webhookToken !== 'string' || !webhookToken) {
+        throw new Error('Campo "webhook_token" nao configurado na integracao whatsapp_evolution.');
+      }
+      if (!verifyEvolutionWebhookToken(req, webhookToken)) {
+        return new Response(JSON.stringify({ success: false, error: 'Token invalido.' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     const payload = JSON.parse(rawBody);
-    const incomingMessages = extractIncomingMessages(payload);
+    const incomingMessages =
+      provider === 'meta' ? extractIncomingMessagesMeta(payload) : extractIncomingMessagesEvolution(payload);
 
     if (incomingMessages.length === 0) {
       // Webhooks de status (entregue/lido) tambem chegam aqui; nao ha o que processar.
@@ -203,76 +277,68 @@ serve(async (req) => {
       });
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const results = [];
 
     for (const incoming of incomingMessages) {
       const telefoneNormalizado = normalizePhone(incoming.fromPhone);
 
       // Idempotencia: a Meta pode reenviar o mesmo webhook em caso de timeout.
-      const { data: existingMessage } = await supabase
-        .schema('gestao_crm')
-        .from('mensagens_atendimento')
-        .select('id')
-        .eq('metadados->>whatsapp_message_id', incoming.messageId)
-        .maybeSingle();
+      const [existingMessage] = await sql`
+        select id from gestao_crm.mensagens_atendimento
+        where metadados->>'whatsapp_message_id' = ${incoming.messageId}
+        limit 1
+      `;
 
       if (existingMessage) {
         results.push({ messageId: incoming.messageId, status: 'duplicado' });
         continue;
       }
 
-      let { data: conversa } = await supabase
-        .schema('gestao_crm')
-        .from('conversas_atendimento')
-        .select('id, status')
-        .eq('telefone_normalizado', telefoneNormalizado)
-        .neq('status', 'encerrada')
-        .order('criado_em', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const [conversaExistente] = await sql`
+        select id, status from gestao_crm.conversas_atendimento
+        where telefone_normalizado = ${telefoneNormalizado}
+          and status <> 'encerrada'
+        order by criado_em desc
+        limit 1
+      `;
+      let conversa = conversaExistente ?? null;
 
       if (!conversa) {
-        const { data: cliente } = await supabase
-          .schema('gestao_crm')
-          .from('clientes')
-          .select('id')
-          .eq('telefone_normalizado', telefoneNormalizado)
-          .maybeSingle();
+        // Identidade (nome/telefone) mora em public.clientes desde a migration
+        // 20260915120000_extract_public_clientes.sql -- gestao_crm.clientes_crm e' so a
+        // extensao comercial (empresa, status_relacionamento etc.), sem telefone_normalizado.
+        const [cliente] = await sql`
+          select id from public.clientes
+          where telefone_normalizado = ${telefoneNormalizado}
+          limit 1
+        `;
 
-        const { data: novaConversa, error: novaConversaError } = await supabase
-          .schema('gestao_crm')
-          .from('conversas_atendimento')
-          .insert({
-            telefone_normalizado: telefoneNormalizado,
-            cliente_id: cliente?.id ?? null,
-            status: 'aberta',
-          })
-          .select('id, status')
-          .single();
-
-        if (novaConversaError) throw new Error(`Falha ao criar conversa: ${novaConversaError.message}`);
+        const [novaConversa] = await sql`
+          insert into gestao_crm.conversas_atendimento (telefone_normalizado, cliente_id, status)
+          values (${telefoneNormalizado}, ${cliente?.id ?? null}, 'aberta')
+          returning id, status
+        `;
         conversa = novaConversa;
       }
 
-      const { error: insertEntradaError } = await supabase
-        .schema('gestao_crm')
-        .from('mensagens_atendimento')
-        .insert({
-          conversa_id: conversa.id,
-          direcao: 'entrada',
-          autor: 'cliente',
-          conteudo: incoming.text,
-          metadados: { whatsapp_message_id: incoming.messageId },
-        });
+      await sql`
+        insert into gestao_crm.mensagens_atendimento (conversa_id, direcao, autor, conteudo, metadados)
+        values (
+          ${conversa.id},
+          'entrada',
+          'cliente',
+          ${incoming.text},
+          ${sql.json({ whatsapp_message_id: incoming.messageId })}
+        )
+      `;
 
-      if (insertEntradaError) throw new Error(`Falha ao gravar mensagem recebida: ${insertEntradaError.message}`);
-
-      await supabase
-        .schema('gestao_crm')
-        .from('conversas_atendimento')
-        .update({ ultima_mensagem_em: new Date().toISOString() })
-        .eq('id', conversa.id);
+      await sql`
+        update gestao_crm.conversas_atendimento
+        set ultima_mensagem_em = now(),
+            ultima_mensagem_preview = ${truncatePreview(incoming.text)},
+            nao_lida = true
+        where id = ${conversa.id}
+      `;
 
       // Conversa ja escalada para humano: nao responder automaticamente.
       if (conversa.status === 'aguardando_humano') {
@@ -280,40 +346,51 @@ serve(async (req) => {
         continue;
       }
 
-      if (!OPENAI_API_KEY || !WHATSAPP_TOKEN || !WHATSAPP_PHONE_NUMBER_ID) {
+      const canSendViaMeta = provider === 'meta' && Boolean(WHATSAPP_TOKEN) && Boolean(WHATSAPP_PHONE_NUMBER_ID);
+      const canSendViaEvolution =
+        provider === 'evolution' &&
+        typeof evolutionCredenciais?.instance_url === 'string' &&
+        typeof evolutionCredenciais?.instance_name === 'string' &&
+        typeof evolutionCredenciais?.api_key === 'string';
+
+      if (!OPENAI_API_KEY || (!canSendViaMeta && !canSendViaEvolution)) {
         results.push({ messageId: incoming.messageId, status: 'recebido_sem_ia' });
         continue;
       }
 
-      const { data: historicoRows } = await supabase
-        .schema('gestao_crm')
-        .from('mensagens_atendimento')
-        .select('autor, conteudo')
-        .eq('conversa_id', conversa.id)
-        .order('criado_em', { ascending: true })
-        .limit(20);
+      const historicoRows = await sql`
+        select autor, conteudo from gestao_crm.mensagens_atendimento
+        where conversa_id = ${conversa.id}
+        order by criado_em asc
+        limit 20
+      `;
 
       const respostaIa = await callAi(OPENAI_API_KEY, historicoRows || []);
 
-      const { error: insertSaidaError } = await supabase
-        .schema('gestao_crm')
-        .from('mensagens_atendimento')
-        .insert({
-          conversa_id: conversa.id,
-          direcao: 'saida',
-          autor: 'ia',
-          conteudo: respostaIa,
-        });
+      await sql`
+        insert into gestao_crm.mensagens_atendimento (conversa_id, direcao, autor, conteudo)
+        values (${conversa.id}, 'saida', 'ia', ${respostaIa})
+      `;
 
-      if (insertSaidaError) throw new Error(`Falha ao gravar resposta da IA: ${insertSaidaError.message}`);
+      if (provider === 'meta') {
+        await sendWhatsappMessageMeta(WHATSAPP_PHONE_NUMBER_ID!, WHATSAPP_TOKEN!, incoming.fromPhone, respostaIa);
+      } else {
+        await sendWhatsappMessageEvolution(
+          evolutionCredenciais!.instance_url as string,
+          evolutionCredenciais!.instance_name as string,
+          evolutionCredenciais!.api_key as string,
+          incoming.fromPhone,
+          respostaIa,
+        );
+      }
 
-      await sendWhatsappMessage(WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_TOKEN, incoming.fromPhone, respostaIa);
-
-      await supabase
-        .schema('gestao_crm')
-        .from('conversas_atendimento')
-        .update({ ultima_mensagem_em: new Date().toISOString() })
-        .eq('id', conversa.id);
+      await sql`
+        update gestao_crm.conversas_atendimento
+        set ultima_mensagem_em = now(),
+            ultima_mensagem_preview = ${truncatePreview(respostaIa)},
+            nao_lida = true
+        where id = ${conversa.id}
+      `;
 
       results.push({ messageId: incoming.messageId, status: 'respondido' });
     }

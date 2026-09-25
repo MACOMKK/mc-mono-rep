@@ -14,6 +14,7 @@ function formatHora(value) {
 export default function MensagemBubble({ mensagem }) {
   const isSaida = mensagem.direcao === 'saida';
   const label = AUTOR_LABEL[mensagem.autor];
+  const isPending = Boolean(mensagem.pending);
 
   return (
     <div className={cn('flex w-full flex-col', isSaida ? 'items-end' : 'items-start')}>
@@ -21,6 +22,7 @@ export default function MensagemBubble({ mensagem }) {
         className={cn(
           'max-w-[70%] rounded-none border px-3 py-2 text-sm',
           isSaida ? 'border-transparent bg-[#1a1a1a] text-white' : 'border-border bg-white text-foreground',
+          isPending && 'opacity-60',
         )}
       >
         {label ? (
@@ -30,7 +32,9 @@ export default function MensagemBubble({ mensagem }) {
         ) : null}
         <p className="whitespace-pre-wrap break-words">{mensagem.conteudo}</p>
       </div>
-      <span className="mt-0.5 text-[10px] text-muted-foreground">{formatHora(mensagem.created_date)}</span>
+      <span className="mt-0.5 text-[10px] text-muted-foreground">
+        {isPending ? 'Enviando...' : formatHora(mensagem.created_date)}
+      </span>
     </div>
   );
 }

@@ -28,6 +28,7 @@ function formatTelefone(telefone = '') {
 
 export default function ConversaListItem({ conversa, isActive, onClick }) {
   const titulo = conversa.cliente_nome || formatTelefone(conversa.telefone_normalizado);
+  const naoLida = Boolean(conversa.nao_lida);
 
   return (
     <button
@@ -39,9 +40,19 @@ export default function ConversaListItem({ conversa, isActive, onClick }) {
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-bold uppercase tracking-wide">{titulo}</span>
+        <span className="flex items-center gap-1.5 truncate text-sm font-bold uppercase tracking-wide">
+          {naoLida ? (
+            <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" aria-label="Mensagem nao lida" />
+          ) : null}
+          <span className="truncate">{titulo}</span>
+        </span>
         <span className="shrink-0 text-xs text-muted-foreground">{formatHora(conversa.ultima_mensagem_em)}</span>
       </div>
+      {conversa.ultima_mensagem_preview ? (
+        <p className={cn('truncate text-xs', naoLida ? 'font-semibold text-foreground' : 'text-muted-foreground')}>
+          {conversa.ultima_mensagem_preview}
+        </p>
+      ) : null}
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-xs text-muted-foreground">{formatTelefone(conversa.telefone_normalizado)}</span>
         <Badge className={cn('rounded-none text-[10px] uppercase tracking-wide', STATUS_STYLES[conversa.status])}>

@@ -1,21 +1,11 @@
-import { assertSupabaseConfigured, supabase } from '@macom/api-client/supabaseClient';
+import { crmApi } from '@macom/api-client/crmApi';
 
 // Camada de dados do módulo "Atendimento" (chat WhatsApp + IA).
-// Ao contrário de crmDataClient.js (que fala com a Edge Function crm-api), aqui a leitura é
-// direta via Supabase client + RLS: quem grava as conversas/mensagens é a Edge Function
-// whatsapp-api (desacoplada, sem JWT de usuário — ver supabase/functions/whatsapp-api/README.md),
-// então o frontend só precisa ler o que já está no banco, igual ao padrão usado em
-// apps/comunicacao para os hooks de chat.
-
-const SCHEMA = 'gestao_crm';
-
-function toError(error, fallbackMessage) {
-  if (!error) return new Error(fallbackMessage);
-  const err = new Error(String(error.message || fallbackMessage));
-  err.status = error.status || 500;
-  err.details = error;
-  return err;
-}
+// Quem grava as conversas/mensagens é a Edge Function whatsapp-api (desacoplada, sem JWT de
+// usuário -- ver supabase/functions/whatsapp-api/README.md), mas a leitura/escrita do frontend
+// passa pelo crm-api, igual a todas as outras entidades de gestao_crm (crmDataClient.js):
+// gestao_crm nunca foi exposto no PostgREST de produção, então .schema('gestao_crm') direto no
+// Supabase client não funciona (erro 406) -- crm-api já resolve isso com conexão direta Postgres.
 
 function mapConversaRow(row = {}) {
   return {
@@ -26,6 +16,8 @@ function mapConversaRow(row = {}) {
     canal: row.canal || 'whatsapp',
     status: row.status || 'aberta',
     ultima_mensagem_em: row.ultima_mensagem_em || null,
+    ultima_mensagem_preview: row.ultima_mensagem_preview || '',
+    nao_lida: Boolean(row.nao_lida),
     cliente_nome: row.cliente?.nome || '',
     created_date: row.criado_em || null,
     updated_date: row.atualizado_em || null,
@@ -46,99 +38,56 @@ function mapMensagemRow(row = {}) {
 }
 
 async function listConversas({ status } = {}) {
-  assertSupabaseConfigured();
+  const rows = await crmApi.conversas_atendimento.list({
+    filters: status ? { status } : {},
+    orderBy: 'ultima_mensagem_em',
+    ascending: false,
+    limit: 200,
+  });
 
-  let query = supabase
-    .schema(SCHEMA)
-    .from('conversas_atendimento')
-    .select('*, cliente:clientes(nome)')
-    .order('ultima_mensagem_em', { ascending: false, nullsFirst: false });
-
-  if (status) {
-    query = query.eq('status', status);
-  }
-
-  const { data, error } = await query;
-  if (error) throw toError(error, 'Nao foi possivel carregar as conversas.');
-
-  return (data || []).map(mapConversaRow);
+  return rows.map(mapConversaRow);
 }
 
 async function listMensagens(conversaId) {
-  assertSupabaseConfigured();
-
   if (!conversaId) return [];
 
-  const { data, error } = await supabase
-    .schema(SCHEMA)
-    .from('mensagens_atendimento')
-    .select('*')
-    .eq('conversa_id', conversaId)
-    .order('criado_em', { ascending: true });
+  const rows = await crmApi.mensagens_atendimento.list({
+    filters: { conversa_id: conversaId },
+    orderBy: 'criado_em',
+    ascending: true,
+    limit: 500,
+  });
 
-  if (error) throw toError(error, 'Nao foi possivel carregar as mensagens da conversa.');
-
-  return (data || []).map(mapMensagemRow);
+  return rows.map(mapMensagemRow);
 }
 
 async function assumirConversa(conversaId) {
-  assertSupabaseConfigured();
-
-  const { error } = await supabase
-    .schema(SCHEMA)
-    .from('conversas_atendimento')
-    .update({ status: 'aguardando_humano' })
-    .eq('id', conversaId);
-
-  if (error) throw toError(error, 'Nao foi possivel assumir a conversa.');
+  await crmApi.conversas_atendimento.update(conversaId, { status: 'aguardando_humano' });
 }
 
 async function encerrarConversa(conversaId) {
-  assertSupabaseConfigured();
-
-  const { error } = await supabase
-    .schema(SCHEMA)
-    .from('conversas_atendimento')
-    .update({ status: 'encerrada' })
-    .eq('id', conversaId);
-
-  if (error) throw toError(error, 'Nao foi possivel encerrar a conversa.');
+  await crmApi.conversas_atendimento.update(conversaId, { status: 'encerrada' });
 }
 
-// ATENCAO: grava a mensagem no banco (visivel na tela em tempo real), mas NAO envia de fato
-// pelo WhatsApp ainda. Enviar exige o WHATSAPP_TOKEN, que só existe no backend — precisa de uma
-// rota autenticada nova (ex. action em crm-api ou endpoint dedicado em whatsapp-api) que repasse
-// para a Graph API da Meta. Ver pendencia registrada para o Trello. Sem essa rota, o cliente no
-// WhatsApp NAO recebe a resposta do atendente, mesmo que ela apareca na tela do CRM.
-async function enviarMensagemManual({ conversaId, colaboradorId, texto }) {
-  assertSupabaseConfigured();
+async function marcarConversaLida(conversaId) {
+  if (!conversaId) return;
+  await crmApi.conversas_atendimento.update(conversaId, { nao_lida: false });
+}
 
+// Envia de fato pelo WhatsApp (Meta ou Evolution API, conforme integracao ativa -- ver
+// send_atendimento_mensagem em crm-api/index.ts) e so grava a mensagem/atualiza a conversa
+// depois do envio ter sucesso.
+async function enviarMensagemManual({ conversaId, texto }) {
   if (!conversaId || !texto?.trim()) {
     throw new Error('Conversa e texto da mensagem sao obrigatorios.');
   }
 
-  const { data, error } = await supabase
-    .schema(SCHEMA)
-    .from('mensagens_atendimento')
-    .insert({
-      conversa_id: conversaId,
-      direcao: 'saida',
-      autor: 'humano',
-      colaborador_id: colaboradorId || null,
-      conteudo: texto.trim(),
-    })
-    .select('*')
-    .single();
+  const row = await crmApi.conversas_atendimento.sendMensagem({
+    conversaId,
+    texto: texto.trim(),
+  });
 
-  if (error) throw toError(error, 'Nao foi possivel registrar a mensagem.');
-
-  await supabase
-    .schema(SCHEMA)
-    .from('conversas_atendimento')
-    .update({ ultima_mensagem_em: new Date().toISOString() })
-    .eq('id', conversaId);
-
-  return mapMensagemRow(data);
+  return mapMensagemRow(row);
 }
 
 export const atendimentoApi = {
@@ -147,4 +96,5 @@ export const atendimentoApi = {
   assumirConversa,
   encerrarConversa,
   enviarMensagemManual,
+  marcarConversaLida,
 };

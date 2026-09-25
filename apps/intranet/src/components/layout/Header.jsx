@@ -53,7 +53,8 @@ export default function Header() {
     queryKey: ['notifications'],
     queryFn: () => appClient.notifications.list(20),
     enabled: Boolean(user),
-    refetchInterval: 60000,
+    // Realtime ja invalida esta query; o polling e so fallback (5 min para poupar Log Ingestion).
+    refetchInterval: 300000,
   });
   const displayName = currentProfile?.name || user?.full_name || user?.email || 'Usuario';
   const displayEmail = currentProfile?.email || user?.email || '';

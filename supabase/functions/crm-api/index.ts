@@ -11,6 +11,8 @@ import {
 import type { EntityName } from './access-scope.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { CLEAR_MUST_CHANGE_PASSWORD_SQL, mapMustChangePassword } from '../_shared/auth.ts';
+import { loadIntegracaoCredenciais } from '../_shared/integracoes.ts';
+import { sendWhatsappMessageMeta, sendWhatsappMessageEvolution } from '../_shared/whatsapp.ts';
 
 const CRM_SYSTEM_SLUG = 'crm';
 
@@ -223,6 +225,18 @@ const ENTITY_CONFIG = {
       'observacoes',
     ],
   },
+  conversas_atendimento: {
+    table: 'conversas_atendimento',
+    orderBy: 'ultima_mensagem_em',
+    orderDirection: 'desc',
+    allowedFields: ['lead_id', 'cliente_id', 'status', 'ultima_mensagem_em', 'nao_lida'],
+  },
+  mensagens_atendimento: {
+    table: 'mensagens_atendimento',
+    orderBy: 'criado_em',
+    orderDirection: 'asc',
+    allowedFields: ['conversa_id', 'direcao', 'autor', 'colaborador_id', 'conteudo', 'metadados'],
+  },
 } as const;
 
 
@@ -235,6 +249,7 @@ const ORDER_FIELD_MAP: Record<string, string> = {
 const databaseUrl = Deno.env.get('DATABASE_URL');
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
 const sql = databaseUrl
   ? postgres(databaseUrl, {
@@ -846,6 +861,20 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
     `;
   }
 
+  if (entity === 'conversas_atendimento') {
+    // cliente_id aponta pra clientes_crm (extensao), mas o nome mora em public.clientes
+    // desde 20260915120000_extract_public_clientes.sql -- por isso o join extra pra cp.
+    return `
+      select ${countExpr}conversas_atendimento.*,
+        case when cli.id is null then null else json_build_object('id', cli.id, 'nome', cp.nome) end as cliente,
+        case when ld.id is null then null else json_build_object('id', ld.id, 'nome', ld.nome) end as lead
+      from ${CRM_SCHEMA}.conversas_atendimento
+      left join ${CRM_SCHEMA}.clientes_crm cli on cli.id = conversas_atendimento.cliente_id
+      left join public.clientes cp on cp.id = cli.id
+      left join ${CRM_SCHEMA}.leads ld on ld.id = conversas_atendimento.lead_id
+    `;
+  }
+
   if (entity !== 'atendimentos') {
     const entitySchema = ENTITY_CONFIG[entity].schema ?? CRM_SCHEMA;
     return `select ${countExpr}* from ${entitySchema}.${ENTITY_CONFIG[entity].table}`;
@@ -888,6 +917,10 @@ function baseAlias(entity: EntityName) {
   // colunas presentes nas duas tabelas do join (id/criado_em/atualizado_em) desde
   // que public.clientes entrou no join em buildListSelect.
   if (entity === 'clientes') return 'clientes';
+  // Mesmo motivo de 'clientes': buildListSelect('conversas_atendimento') junta
+  // clientes_crm/public.clientes/leads (todas com coluna 'id'), entao 'id' desqualificado
+  // seria ambiguo sem isso.
+  if (entity === 'conversas_atendimento') return 'conversas_atendimento';
   return '';
 }
 
@@ -1001,6 +1034,73 @@ Deno.serve(async (request) => {
       }
       await sql.unsafe(CLEAR_MUST_CHANGE_PASSWORD_SQL, [collaborator.id]);
       return json({ success: true });
+    }
+
+    // Resposta manual do atendente na tela Atendimento -- diferente do create generico de
+    // mensagens_atendimento (que so grava no banco), essa action manda de fato pelo WhatsApp
+    // antes de gravar, reaproveitando a mesma logica de envio do whatsapp-api (resposta da IA).
+    if (action === 'send_atendimento_mensagem') {
+      const conversaId = typeof body.conversaId === 'string' ? body.conversaId : '';
+      const texto = typeof body.texto === 'string' ? body.texto.trim() : '';
+      if (!conversaId || !texto) {
+        return json({ error: 'Conversa e texto da mensagem sao obrigatorios.' }, 400);
+      }
+
+      const conversa = await ensureEntityAccess('conversas_atendimento', conversaId, access, collaborator);
+      const toPhone = String(conversa.telefone_normalizado || '');
+      if (!toPhone) {
+        return json({ error: 'Conversa sem telefone associado.' }, 400);
+      }
+
+      if (!supabaseUrl || !supabaseServiceRoleKey) {
+        return json({ error: 'Integracao de WhatsApp nao configurada (SUPABASE_SERVICE_ROLE_KEY ausente).' }, 500);
+      }
+
+      const evolutionCredenciais = await loadIntegracaoCredenciais('whatsapp_evolution', {
+        supabaseUrl,
+        serviceRoleKey: supabaseServiceRoleKey,
+      });
+      const whatsappToken = Deno.env.get('WHATSAPP_TOKEN');
+      const whatsappPhoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+
+      try {
+        if (evolutionCredenciais) {
+          await sendWhatsappMessageEvolution(
+            String(evolutionCredenciais.instance_url || ''),
+            String(evolutionCredenciais.instance_name || ''),
+            String(evolutionCredenciais.api_key || ''),
+            toPhone,
+            texto,
+          );
+        } else if (whatsappToken && whatsappPhoneNumberId) {
+          await sendWhatsappMessageMeta(whatsappPhoneNumberId, whatsappToken, toPhone, texto);
+        } else {
+          return json({ error: 'Nenhum provedor de WhatsApp configurado (Meta ou Evolution API).' }, 400);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return json({ error: `Falha ao enviar mensagem pelo WhatsApp: ${message}` }, 502);
+      }
+
+      const insertPayload = {
+        conversa_id: conversaId,
+        direcao: 'saida',
+        autor: 'humano',
+        colaborador_id: collaborator?.id ?? null,
+        conteudo: texto,
+      };
+      const insertQuery = buildInsertQuery(CRM_SCHEMA, 'mensagens_atendimento', insertPayload);
+      const rows = await sql.unsafe(insertQuery.text, insertQuery.values);
+
+      const preview = texto.length > 140 ? `${texto.slice(0, 139)}…` : texto;
+      await sql.unsafe(
+        `update ${CRM_SCHEMA}.conversas_atendimento
+         set ultima_mensagem_em = now(), ultima_mensagem_preview = $2, nao_lida = false
+         where id = $1;`,
+        [conversaId, preview],
+      );
+
+      return json({ row: rows[0] || null });
     }
 
     if (action === 'list_responsaveis') {
@@ -1829,10 +1929,16 @@ Deno.serve(async (request) => {
       const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator);
       if (!Object.keys(payload).length) return json({ error: 'Payload vazio.' }, 400);
       validateContactFields(entity, payload);
-      const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'pipelines', 'etapas_pipeline', 'motivos_status'];
+      const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'pipelines', 'etapas_pipeline', 'motivos_status', 'conversas_atendimento', 'mensagens_atendimento'];
       if (collaborator?.id && !entitiesWithoutCriadoPor.includes(entity)) payload.criado_por = collaborator.id;
       if (entity === 'atendimentos' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
+      }
+      if (entity === 'mensagens_atendimento' && payload.conversa_id) {
+        // Garante que o usuario tem acesso a conversa antes de deixar gravar uma
+        // mensagem nela -- allowedFields nao impede um usuario mandar um conversa_id
+        // de uma conversa que ele nao deveria enxergar.
+        await ensureEntityAccess('conversas_atendimento', String(payload.conversa_id), access, collaborator);
       }
       if (entity === 'historico_atendimentos' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);

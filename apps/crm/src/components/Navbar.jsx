@@ -168,7 +168,8 @@ export default function Navbar({ realtime }) {
       });
       return result.count || 0;
     },
-    refetchInterval: 60000,
+    // Realtime ja invalida esta query; o polling e so fallback (5 min para poupar Log Ingestion).
+    refetchInterval: 300000,
   });
 
   return (
