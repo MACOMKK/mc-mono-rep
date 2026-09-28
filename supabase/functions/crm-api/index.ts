@@ -1138,6 +1138,24 @@ Deno.serve(async (request) => {
       return json({ rows });
     }
 
+    if (action === 'cliente_buscar') {
+      const busca = String(body.busca || '').trim();
+      if (!busca) return json({ rows: [] });
+
+      const rows = await sql.unsafe(
+        `
+          select id, nome, telefone, email, cpf_cnpj
+          from public.clientes
+          where nome ilike $1 or telefone ilike $1 or cpf_cnpj ilike $1
+          order by nome
+          limit 20;
+        `,
+        [`%${busca}%`],
+      );
+
+      return json({ rows });
+    }
+
     if (action === 'get_distribution_config') {
       ensureCanConfigure(access);
       const scopeUnitId = String(access?.nivel_acesso) === 'admin'
@@ -1386,6 +1404,7 @@ Deno.serve(async (request) => {
     // sequenciais do client (cada uma pagando seu proprio round-trip de auth).
     if (action === 'save_lead_full') {
       const leadId = typeof body.leadId === 'string' && body.leadId ? body.leadId : '';
+      const clienteIdParam = typeof body.clienteId === 'string' && body.clienteId ? body.clienteId : '';
       const clientePayloadRaw = sanitizePayload('clientes', body.clientePayload || {});
       validateContactFields('clientes', clientePayloadRaw);
       const leadPayloadRaw = sanitizePayload('leads', body.leadPayload || {});
@@ -1396,35 +1415,49 @@ Deno.serve(async (request) => {
         existingLead = await ensureEntityAccess('leads', leadId, access, collaborator);
       }
 
+      let clienteIdentidadeSelecionada: Record<string, unknown> | null = null;
+      if (clienteIdParam) {
+        const rows = await sql.unsafe(`select * from public.clientes where id = $1 limit 1;`, [clienteIdParam]);
+        if (!rows[0]) return json({ error: 'Cliente selecionado nao encontrado.' }, 404);
+        clienteIdentidadeSelecionada = rows[0];
+      }
+
       const { identidade: clienteIdentidadeRaw, extensao: clienteExtensaoRaw } = splitClientePayload(clientePayloadRaw);
 
       const result = await sql.begin(async (transaction) => {
-        // identidade (public.clientes): dedup por telefone/email, reaproveitavel por
-        // qualquer app -- ver 20260915120000_extract_public_clientes.sql.
-        const phone = String(clienteIdentidadeRaw.telefone_normalizado || '');
-        const email = String(clienteIdentidadeRaw.email_normalizado || '');
-        const existingClienteRows = phone
-          ? await transaction.unsafe(
-              `select * from public.clientes where telefone_normalizado = $1 ${email ? 'or email_normalizado = $2' : ''} limit 1;`,
-              email ? [phone, email] : [phone],
-            )
-          : [];
-
+        // Cliente escolhido explicitamente via busca (ClienteLeadPicker): usa a
+        // identidade ja existente em public.clientes direto por id, sem passar pelo
+        // dedup por telefone/email abaixo -- o usuario ja confirmou que e esse cliente.
         let clienteIdentidade;
-        if (existingClienteRows[0]) {
-          const mergedIdentidade = {
-            ...clienteIdentidadeRaw,
-            nome: clienteIdentidadeRaw.nome || existingClienteRows[0].nome,
-            email: clienteIdentidadeRaw.email || existingClienteRows[0].email,
-            email_normalizado: clienteIdentidadeRaw.email_normalizado || existingClienteRows[0].email_normalizado,
-          };
-          const updateQuery = buildUpdateQuery('public', 'clientes', existingClienteRows[0].id, mergedIdentidade);
-          const rows = await transaction.unsafe(updateQuery.text, updateQuery.values);
-          clienteIdentidade = rows[0];
+        if (clienteIdentidadeSelecionada) {
+          clienteIdentidade = clienteIdentidadeSelecionada;
         } else {
-          const insertQuery = buildInsertQuery('public', 'clientes', clienteIdentidadeRaw);
-          const rows = await transaction.unsafe(insertQuery.text, insertQuery.values);
-          clienteIdentidade = rows[0];
+          // identidade (public.clientes): dedup por telefone/email, reaproveitavel por
+          // qualquer app -- ver 20260915120000_extract_public_clientes.sql.
+          const phone = String(clienteIdentidadeRaw.telefone_normalizado || '');
+          const email = String(clienteIdentidadeRaw.email_normalizado || '');
+          const existingClienteRows = phone
+            ? await transaction.unsafe(
+                `select * from public.clientes where telefone_normalizado = $1 ${email ? 'or email_normalizado = $2' : ''} limit 1;`,
+                email ? [phone, email] : [phone],
+              )
+            : [];
+
+          if (existingClienteRows[0]) {
+            const mergedIdentidade = {
+              ...clienteIdentidadeRaw,
+              nome: clienteIdentidadeRaw.nome || existingClienteRows[0].nome,
+              email: clienteIdentidadeRaw.email || existingClienteRows[0].email,
+              email_normalizado: clienteIdentidadeRaw.email_normalizado || existingClienteRows[0].email_normalizado,
+            };
+            const updateQuery = buildUpdateQuery('public', 'clientes', existingClienteRows[0].id, mergedIdentidade);
+            const rows = await transaction.unsafe(updateQuery.text, updateQuery.values);
+            clienteIdentidade = rows[0];
+          } else {
+            const insertQuery = buildInsertQuery('public', 'clientes', clienteIdentidadeRaw);
+            const rows = await transaction.unsafe(insertQuery.text, insertQuery.values);
+            clienteIdentidade = rows[0];
+          }
         }
 
         // extensao comercial (gestao_crm.clientes_crm), mesmo id da identidade -- pode

@@ -638,6 +638,7 @@ export default function Clientes() {
                     <div className="mt-2 grid gap-2 text-sm text-muted-foreground">
                       {selected.telefone ? <span className="flex items-center gap-2"><Phone className="h-4 w-4" />{selected.telefone}</span> : null}
                       {selected.email ? <span className="flex items-center gap-2"><Mail className="h-4 w-4" />{selected.email}</span> : null}
+                      {selected.cpf_cnpj ? <span className="flex items-center gap-2">{selected.cpf_cnpj}</span> : null}
                       <span className="flex items-center gap-2"><Building2 className="h-4 w-4" />{selected.empresa}</span>
                     </div>
                   </div>
@@ -671,6 +672,10 @@ export default function Clientes() {
                     <div className="space-y-1">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">E-mail</Label>
                       <Input type="email" value={formData?.email || ''} onChange={(event) => updateField('email', event.target.value)} className="h-9 rounded-none text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">CPF/CNPJ</Label>
+                      <Input value={formData?.cpf_cnpj || ''} onChange={(event) => updateField('cpf_cnpj', event.target.value)} className="h-9 rounded-none text-sm" />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Unidade</Label>

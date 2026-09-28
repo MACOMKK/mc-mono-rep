@@ -179,7 +179,13 @@ export const crmApi = {
       return invokeCrm({ action: 'clear_crm_test_data', confirm: 'LIMPAR-DADOS-CRM', confirmar_global: true });
     },
   },
-  clientes: buildEntity('clientes'),
+  clientes: {
+    ...buildEntity('clientes'),
+    async buscar(busca) {
+      const result = await invokeCrm({ action: 'cliente_buscar', busca });
+      return result?.rows || [];
+    },
+  },
   leads: {
     ...buildEntity('leads'),
     async saveFull(payload) {

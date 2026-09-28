@@ -17,11 +17,21 @@ import {
   ExternalLink,
   FileText,
   Paperclip,
+  Search,
   Store,
   Trash2,
   Upload,
   UserRound,
 } from 'lucide-react';
+
+function useDebouncedValue(value, delay = 300) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timeout);
+  }, [value, delay]);
+  return debounced;
+}
 
 function formatDate(value) {
   if (!value) return '-';
@@ -71,6 +81,7 @@ export default function LeadForm({
     nome: '',
     telefone: '',
     email: '',
+    cpf_cnpj: '',
     origem_id: '',
     status: 'novo',
     modelo_interesse: '',
@@ -104,9 +115,38 @@ export default function LeadForm({
   const [noteText, setNoteText] = useState('');
   const [currentStep, setCurrentStep] = useState(0);
   const [unidadeError, setUnidadeError] = useState('');
+  const [nomeError, setNomeError] = useState('');
   const [telefoneError, setTelefoneError] = useState('');
   const [statusRequirementError, setStatusRequirementError] = useState('');
   const [showMaisDetalhesVeiculo, setShowMaisDetalhesVeiculo] = useState(false);
+  const [clienteId, setClienteId] = useState(null);
+  const [buscaCliente, setBuscaCliente] = useState('');
+  const [resultadosCliente, setResultadosCliente] = useState([]);
+  const [buscaClienteFeita, setBuscaClienteFeita] = useState(false);
+  const buscaClienteDebounced = useDebouncedValue(buscaCliente);
+
+  useEffect(() => {
+    if (!buscaClienteDebounced.trim()) {
+      setResultadosCliente([]);
+      setBuscaClienteFeita(false);
+      return;
+    }
+    let cancelado = false;
+    crmDataClient.entities.Cliente.buscar(buscaClienteDebounced)
+      .then((rows) => {
+        if (!cancelado) {
+          setResultadosCliente(rows || []);
+          setBuscaClienteFeita(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelado) {
+          setResultadosCliente([]);
+          setBuscaClienteFeita(true);
+        }
+      });
+    return () => { cancelado = true; };
+  }, [buscaClienteDebounced]);
 
   const { data: motivosStatus = [] } = useQuery({
     queryKey: ['crm-motivos-status'],
@@ -396,6 +436,14 @@ export default function LeadForm({
     setCurrentStep(0);
   }, [lead?.id, open]);
 
+  useEffect(() => {
+    if (!open) return;
+    setClienteId(null);
+    setBuscaCliente('');
+    setResultadosCliente([]);
+    setBuscaClienteFeita(false);
+  }, [lead?.id, open]);
+
   const setUnidade = (unidadeId) => {
     const unidade = unidades.find((item) => item.id === unidadeId);
     setData((current) => ({
@@ -429,6 +477,13 @@ export default function LeadForm({
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    const nomeParts = (data.nome || '').trim().replace(/\s+/g, ' ').split(' ').filter((part) => part.length >= 2);
+    if (nomeParts.length < 2) {
+      setNomeError('Informe nome e sobrenome.');
+      setCurrentStep(steps.findIndex((step) => step.key === 'contato'));
+      return;
+    }
+    setNomeError('');
     if (!data.telefone) {
       setTelefoneError('Informe o telefone antes de salvar.');
       setCurrentStep(steps.findIndex((step) => step.key === 'contato'));
@@ -451,7 +506,7 @@ export default function LeadForm({
       }
     }
     setStatusRequirementError('');
-    onSave(data);
+    onSave({ ...data, clienteId });
   };
 
   return (
@@ -508,13 +563,78 @@ export default function LeadForm({
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
             {currentStepKey === 'contato' ? (
               <div className="space-y-4">
+                {!lead ? (
+                  clienteId ? (
+                    <div className="flex items-center justify-between rounded-none border p-3">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Cliente selecionado</p>
+                        <p className="text-sm font-medium">{data.nome}{data.telefone ? ` · ${data.telefone}` : ''}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setClienteId(null);
+                          set('nome', '');
+                          set('telefone', '');
+                          set('email', '');
+                          set('cpf_cnpj', '');
+                        }}
+                      >
+                        Trocar
+                      </Button>
+                    </div>
+                  ) : (
+                    <Field label="Buscar cliente existente">
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={buscaCliente}
+                          onChange={(event) => setBuscaCliente(event.target.value)}
+                          placeholder="Nome, telefone ou CPF/CNPJ..."
+                          className="h-9 rounded-none pl-9 text-sm"
+                        />
+                      </div>
+                      {resultadosCliente.length > 0 ? (
+                        <div className="flex flex-col divide-y rounded-none border">
+                          {resultadosCliente.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className="p-2 text-left text-sm hover:bg-accent"
+                              onClick={() => {
+                                setClienteId(item.id);
+                                set('nome', item.nome || '');
+                                set('telefone', item.telefone || '');
+                                set('email', item.email || '');
+                                set('cpf_cnpj', item.cpf_cnpj || '');
+                                setBuscaCliente('');
+                                setResultadosCliente([]);
+                                setBuscaClienteFeita(false);
+                              }}
+                            >
+                              {item.nome}{item.telefone ? ` · ${item.telefone}` : ''}
+                            </button>
+                          ))}
+                        </div>
+                      ) : buscaClienteFeita ? (
+                        <p className="px-1 text-xs text-muted-foreground">
+                          Nenhum cliente encontrado. Preencha os campos abaixo para cadastrar um novo.
+                        </p>
+                      ) : null}
+                    </Field>
+                  )
+                ) : null}
                 <Field label="Nome *">
-                  <Input required placeholder="Nome e sobrenome" value={data.nome} onChange={(event) => set('nome', event.target.value)} className="h-9 rounded-none text-sm" />
+                  <Input required disabled={Boolean(clienteId)} placeholder="Nome e sobrenome" value={data.nome} onChange={(event) => { set('nome', event.target.value); if (nomeError) setNomeError(''); }} className="h-9 rounded-none text-sm" />
+                  {nomeError ? <p className="text-xs font-semibold text-red-600">{nomeError}</p> : null}
                 </Field>
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Telefone *">
                     <Input
                       required
+                      disabled={Boolean(clienteId)}
                       inputMode="numeric"
                       placeholder="DDD + numero"
                       maxLength={11}
@@ -525,9 +645,12 @@ export default function LeadForm({
                     {telefoneError ? <p className="text-xs font-semibold text-red-600">{telefoneError}</p> : null}
                   </Field>
                   <Field label="E-mail">
-                    <Input type="email" value={data.email} onChange={(event) => set('email', event.target.value)} className="h-9 rounded-none text-sm" />
+                    <Input type="email" disabled={Boolean(clienteId)} value={data.email} onChange={(event) => set('email', event.target.value)} className="h-9 rounded-none text-sm" />
                   </Field>
                 </div>
+                <Field label="CPF/CNPJ">
+                  <Input disabled={Boolean(clienteId)} value={data.cpf_cnpj || ''} onChange={(event) => set('cpf_cnpj', event.target.value)} className="h-9 rounded-none text-sm" />
+                </Field>
               </div>
             ) : null}
 

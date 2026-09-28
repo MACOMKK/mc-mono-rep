@@ -171,12 +171,11 @@ export default function Leads() {
         };
       });
 
-      setFormOpen(false);
-      setEditing(null);
-
       return { previousLeads, tempId, id };
     },
     onSuccess: (saved, variables, context) => {
+      setFormOpen(false);
+      setEditing(null);
       const selectedResponsavel = responsaveis.find((item) => item.id === variables.data.responsavel_id) || null;
       const hydratedSaved = saved
         ? {

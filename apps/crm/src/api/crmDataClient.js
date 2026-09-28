@@ -140,6 +140,7 @@ function mapClienteRow(row = {}) {
     telefone_normalizado: row.telefone_normalizado || normalizePhone(row.telefone),
     email: row.email || '',
     email_normalizado: row.email_normalizado || normalizeEmail(row.email),
+    cpf_cnpj: row.cpf_cnpj || '',
     empresa: row.empresa || 'Macom Ananindeua',
     status_relacionamento: row.status_relacionamento || 'lead',
     observacoes: row.observacoes || '',
@@ -421,6 +422,7 @@ function mapClientePayload(data = {}) {
     telefone_normalizado: phone,
     email: email || null,
     email_normalizado: normalizeEmail(email) || null,
+    cpf_cnpj: data.cpf_cnpj?.trim() || null,
     empresa: normalizeEmpresa(data.empresa),
     status_relacionamento: data.status_relacionamento || 'lead',
     observacoes: data.observacoes || null,
@@ -749,6 +751,10 @@ const ClienteRepository = {
     return upsertCliente(data);
   },
 
+  async buscar(query) {
+    return crmApi.clientes.buscar(query);
+  },
+
   async update(id, data) {
     const payload = mapClientePayload(data);
     const row = await crmApi.clientes.update(id, payload);
@@ -786,6 +792,7 @@ const LeadRepository = {
 
     const result = await crmApi.leads.saveFull({
       leadId: null,
+      clienteId: data.clienteId || null,
       clientePayload,
       leadPayload,
       vehiclePayload,
