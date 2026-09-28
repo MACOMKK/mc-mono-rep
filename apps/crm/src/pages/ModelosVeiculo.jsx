@@ -208,8 +208,60 @@ export default function ModelosVeiculo() {
                       }}
                     />
                   </TableCell>
-                  <TableCell className="text-sm text-slate-700">{marcaNomePorId[modelo.marca_id] || '-'}</TableCell>
-                  <TableCell className="text-sm text-slate-700">{categoriaNomePorId[modelo.categoria_veiculo_id] || '-'}</TableCell>
+                  <TableCell>
+                    <Select
+                      value={modelo.marca_id}
+                      onValueChange={(marcaId) => {
+                        if (marcaId !== modelo.marca_id) {
+                          updateMutation.mutate({
+                            id: modelo.id,
+                            nome: modelo.nome,
+                            marca_id: marcaId,
+                            categoria_veiculo_id: modelo.categoria_veiculo_id,
+                            ativo: modelo.ativo,
+                            ano_inicio: modelo.ano_inicio ?? null,
+                            ano_fim: modelo.ano_fim ?? null,
+                          });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-9 w-40 rounded-none text-sm">
+                        <SelectValue placeholder="Selecione a marca">{marcaNomePorId[modelo.marca_id] || '-'}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="rounded-none">
+                        {marcas.map((marca) => (
+                          <SelectItem key={marca.id} value={marca.id}>{marca.nome}{!marca.ativo ? ' (inativa)' : ''}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell>
+                    <Select
+                      value={modelo.categoria_veiculo_id}
+                      onValueChange={(categoriaId) => {
+                        if (categoriaId !== modelo.categoria_veiculo_id) {
+                          updateMutation.mutate({
+                            id: modelo.id,
+                            nome: modelo.nome,
+                            marca_id: modelo.marca_id,
+                            categoria_veiculo_id: categoriaId,
+                            ativo: modelo.ativo,
+                            ano_inicio: modelo.ano_inicio ?? null,
+                            ano_fim: modelo.ano_fim ?? null,
+                          });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-9 w-40 rounded-none text-sm">
+                        <SelectValue placeholder="Selecione o segmento">{categoriaNomePorId[modelo.categoria_veiculo_id] || '-'}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="rounded-none">
+                        {categorias.map((categoria) => (
+                          <SelectItem key={categoria.id} value={categoria.id}>{categoria.nome}{!categoria.ativo ? ' (inativa)' : ''}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
                   <TableCell>
                     <Input
                       type="number"
