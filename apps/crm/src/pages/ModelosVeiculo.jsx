@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Save } from 'lucide-react';
+import { Plus, Save, Trash2 } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -68,6 +68,19 @@ export default function ModelosVeiculo() {
     },
     onError: (mutationError) => toast({
       title: 'Nao foi possivel atualizar o modelo',
+      description: mutationError.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => crmDataClient.entities.ModeloVeiculo.delete(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'] });
+      toast({ title: 'Modelo excluido', variant: 'success' });
+    },
+    onError: (mutationError) => toast({
+      title: 'Nao foi possivel excluir o modelo',
       description: mutationError.message,
       variant: 'destructive',
     }),
@@ -183,6 +196,7 @@ export default function ModelosVeiculo() {
                 <TableHead className="text-white">Ano inicio</TableHead>
                 <TableHead className="text-white">Ano fim</TableHead>
                 <TableHead className="text-white">Ativo</TableHead>
+                <TableHead className="text-white" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -322,6 +336,21 @@ export default function ModelosVeiculo() {
                         ano_fim: modelo.ano_fim ?? null,
                       })}
                     />
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 rounded-none text-red-600"
+                      onClick={() => {
+                        if (window.confirm(`Excluir o modelo "${modelo.nome}"?`)) {
+                          deleteMutation.mutate(modelo.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

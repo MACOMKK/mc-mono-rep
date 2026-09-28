@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Car, Plus } from 'lucide-react';
+import { ArrowLeft, Car, Plus, Trash2 } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle } from '@macom/ui';
@@ -22,6 +22,7 @@ export default function VeiculosHistorico() {
   const [novoCliente, setNovoCliente] = useState(null);
   const [transferindo, setTransferindo] = useState(false);
   const [erroTransferencia, setErroTransferencia] = useState(null);
+  const [excluindoId, setExcluindoId] = useState(null);
 
   const {
     data: veiculos = [],
@@ -58,6 +59,22 @@ export default function VeiculosHistorico() {
       setErroTransferencia(error.message || 'Não foi possível transferir o veículo.');
     } finally {
       setTransferindo(false);
+    }
+  };
+
+  const handleExcluir = async (item) => {
+    const descricao = [item.marca_nome, item.modelo_nome, item.placa || item.chassi].filter(Boolean).join(' ');
+    if (!window.confirm(`Excluir definitivamente o veículo "${descricao}"? Isso apaga o veículo, seus checklists e o registro no estoque do CRM. Não pode ser desfeito.`)) {
+      return;
+    }
+    setExcluindoId(item.id);
+    try {
+      await oficinaApi.veiculos.excluir(item.id);
+      refetch();
+    } catch (error) {
+      window.alert(error.message || 'Não foi possível excluir o veículo.');
+    } finally {
+      setExcluindoId(null);
     }
   };
 
@@ -134,6 +151,20 @@ export default function VeiculosHistorico() {
                     }}
                   >
                     Transferir
+                  </Button>
+                )}
+                {user?.isOficinaAdmin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:bg-destructive/10"
+                    disabled={excluindoId === item.id}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleExcluir(item);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 )}
               </div>

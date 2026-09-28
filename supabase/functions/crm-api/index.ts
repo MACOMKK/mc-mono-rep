@@ -446,6 +446,18 @@ function mapDatabaseError(error: unknown) {
     return 'Este veiculo ja foi vendido.';
   }
 
+  if (message.includes('violates foreign key constraint') && message.includes('modelos_veiculo')) {
+    return 'Nao e possivel excluir: existem veiculos ou versoes cadastrados neste modelo.';
+  }
+
+  if (message.includes('violates foreign key constraint') && message.includes('veiculos_estoque')) {
+    return 'Nao e possivel excluir: este veiculo possui proposta ou venda vinculada.';
+  }
+
+  if (message.includes('violates foreign key constraint') && message.includes('cores_veiculo')) {
+    return 'Nao e possivel excluir: existem veiculos cadastrados com esta cor.';
+  }
+
   if (message.includes('propostas_veiculo_check')) {
     return 'Selecione um veiculo do estoque ou descreva o veiculo da proposta.';
   }

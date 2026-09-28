@@ -1027,6 +1027,11 @@ const CorVeiculoRepository = {
     const row = await crmApi.cores_veiculo.create({ nome: data.nome });
     return mapCorVeiculoRow(row);
   },
+
+  async update(id, data) {
+    const row = await crmApi.cores_veiculo.update(id, { nome: data.nome });
+    return mapCorVeiculoRow(row);
+  },
 };
 
 const VeiculoEstoqueRepository = {

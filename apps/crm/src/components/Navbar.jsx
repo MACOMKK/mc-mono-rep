@@ -212,6 +212,11 @@ export default function Navbar({ realtime }) {
               icon: Car,
               path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/versoes-veiculo' : undefined,
             },
+            {
+              label: 'Cores de Veiculo',
+              icon: Car,
+              path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/cores-veiculo' : undefined,
+            },
           ]} />
           <NavMenu label="Pós-Vendas" items={[
             { label: 'Agenda Online', icon: Calendar, comingSoon: true },

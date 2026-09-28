@@ -23,6 +23,7 @@ const Pipelines = lazy(() => import('@/pages/Pipelines'));
 const MarcasVeiculo = lazy(() => import('@/pages/MarcasVeiculo'));
 const ModelosVeiculo = lazy(() => import('@/pages/ModelosVeiculo'));
 const VersoesVeiculo = lazy(() => import('@/pages/VersoesVeiculo'));
+const CoresVeiculo = lazy(() => import('@/pages/CoresVeiculo'));
 const Estoque = lazy(() => import('@/pages/Estoque'));
 const Propostas = lazy(() => import('@/pages/Propostas'));
 const Atendimento = lazy(() => import('@/pages/Atendimento'));
@@ -98,6 +99,7 @@ const CrmRoutes = () => {
           <Route path="/configuracoes/marcas-veiculo" element={<MarcasVeiculo />} />
           <Route path="/configuracoes/modelos-veiculo" element={<ModelosVeiculo />} />
           <Route path="/configuracoes/versoes-veiculo" element={<VersoesVeiculo />} />
+          <Route path="/configuracoes/cores-veiculo" element={<CoresVeiculo />} />
           <Route path="/estoque" element={<Estoque />} />
           <Route path="/propostas" element={<Propostas />} />
         </Route>

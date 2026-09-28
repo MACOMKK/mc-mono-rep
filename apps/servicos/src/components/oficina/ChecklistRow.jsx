@@ -52,7 +52,10 @@ export default function ChecklistRow({ item, onClick }) {
         <span className="text-xs text-muted-foreground">
           {new Date(item.data_entrada).toLocaleDateString('pt-BR')}
         </span>
-        <Badge variant={STATUS_VARIANT[item.status] || 'default'}>{STATUS_LABEL[item.status] || item.status}</Badge>
+        <div className="flex items-center gap-1.5">
+          {item.eh_teste && <Badge variant="outline">Teste</Badge>}
+          <Badge variant={STATUS_VARIANT[item.status] || 'default'}>{STATUS_LABEL[item.status] || item.status}</Badge>
+        </div>
       </div>
     </div>
   );

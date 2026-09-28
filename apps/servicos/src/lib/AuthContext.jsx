@@ -53,6 +53,7 @@ function normalizeServicosUser(authUser, authPayload = {}, oficinaRole = null) {
     hasOficinaAccess: Boolean(oficinaRole) && oficinaRole !== 'nenhum',
     isOficinaInspetor: oficinaRole === 'inspetor' || oficinaRole === 'gestor' || oficinaRole === 'admin',
     isOficinaGestor: oficinaRole === 'gestor' || oficinaRole === 'admin',
+    isOficinaAdmin: oficinaRole === 'admin',
     active: collaborator?.status !== 'inativo' && access?.ativo === true,
     system_access_id: access?.id || null,
     system_access_level: access?.nivel_acesso || null,

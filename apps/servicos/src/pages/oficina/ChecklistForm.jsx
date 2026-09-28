@@ -76,6 +76,7 @@ export default function ChecklistForm() {
   const [unidades, setUnidades] = useState([]);
   const [os, setOs] = useState('');
   const [km, setKm] = useState('');
+  const [ehTeste, setEhTeste] = useState(false);
   const [nivelCombustivel, setNivelCombustivel] = useState(0.5);
   const [pinturaSuja, setPinturaSuja] = useState(false);
   const [avarias, setAvarias] = useState([]);
@@ -258,6 +259,7 @@ export default function ChecklistForm() {
         unidadeId,
         os: os || undefined,
         km: km ? Number(km) : undefined,
+        ehTeste: user?.isOficinaAdmin && ehTeste,
       });
       setAvaliacaoId(row.id);
       if (aviso) setAvisoDonoDiferente(aviso);
@@ -483,6 +485,12 @@ export default function ChecklistForm() {
             <Input placeholder="O.S." value={os} onChange={(e) => setOs(e.target.value)} />
             <Input placeholder="Km" type="number" value={km} onChange={(e) => setKm(e.target.value)} />
           </div>
+          {!avaliacaoId && user?.isOficinaAdmin && (
+            <label htmlFor="ehTeste" className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+              <Checkbox id="ehTeste" checked={ehTeste} onCheckedChange={(checked) => setEhTeste(checked === true)} />
+              Marcar como checklist de teste (pode ser excluído depois)
+            </label>
+          )}
           <div className="flex justify-end">
             <Button type="button" onClick={handleIniciarOuAtualizarDados} disabled={salvando}>
               {salvando ? 'Salvando...' : 'Avançar'}

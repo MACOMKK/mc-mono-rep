@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Save } from 'lucide-react';
+import { Plus, Save, Trash2 } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -134,6 +134,19 @@ export default function Estoque() {
     },
     onError: (mutationError) => toast({
       title: 'Nao foi possivel atualizar o veiculo',
+      description: mutationError.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => crmDataClient.entities.VeiculoEstoque.delete(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque'] });
+      toast({ title: 'Veiculo excluido do estoque', variant: 'success' });
+    },
+    onError: (mutationError) => toast({
+      title: 'Nao foi possivel excluir o veiculo',
       description: mutationError.message,
       variant: 'destructive',
     }),
@@ -458,6 +471,7 @@ export default function Estoque() {
                 <TableHead className="text-white">Placa</TableHead>
                 <TableHead className="text-white">Condicao</TableHead>
                 <TableHead className="text-white">Status</TableHead>
+                {canConfigure ? <TableHead className="text-white" /> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -505,6 +519,23 @@ export default function Estoque() {
                         <span className="text-sm text-slate-700">{STATUS_OPTIONS.find((option) => option.value === veiculo.status)?.label || '-'}</span>
                       )}
                     </TableCell>
+                    {canConfigure ? (
+                      <TableCell>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8 rounded-none text-red-600"
+                          onClick={() => {
+                            if (window.confirm(`Excluir o veiculo "${veiculo.chassi}" do estoque? Isso remove apenas o registro de estoque.`)) {
+                              deleteMutation.mutate(veiculo.id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 );
               })}

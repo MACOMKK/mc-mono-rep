@@ -91,6 +91,7 @@ export default function ChecklistDetail() {
   const [editandoOs, setEditandoOs] = useState(false);
   const [salvandoOs, setSalvandoOs] = useState(false);
   const [erroOs, setErroOs] = useState(null);
+  const [excluindo, setExcluindo] = useState(false);
 
   useEffect(() => {
     oficinaApi.checklists
@@ -172,6 +173,21 @@ export default function ChecklistDetail() {
     }
   };
 
+  const handleExcluir = async () => {
+    if (!window.confirm(`Excluir definitivamente o checklist Nº ${row.numero}? Não pode ser desfeito.`)) {
+      return;
+    }
+    setExcluindo(true);
+    try {
+      await oficinaApi.checklists.excluir(id);
+      navigate('/oficina/checklists');
+    } catch (error) {
+      window.alert(error.message || 'Não foi possível excluir o checklist.');
+    } finally {
+      setExcluindo(false);
+    }
+  };
+
   if (carregando) {
     return <CarLoader inline />;
   }
@@ -224,6 +240,19 @@ export default function ChecklistDetail() {
               Registrar Saída
             </Button>
           )}
+          {row.eh_teste && user?.isOficinaAdmin && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10"
+              onClick={handleExcluir}
+              disabled={excluindo}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {excluindo ? 'Excluindo...' : 'Excluir'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -234,7 +263,10 @@ export default function ChecklistDetail() {
             {new Date(row.data_entrada).toLocaleString('pt-BR')}
           </p>
         </div>
-        <Badge variant={STATUS_VARIANT[row.status] || 'default'}>{STATUS_LABEL[row.status] || row.status}</Badge>
+        <div className="flex items-center gap-2">
+          {row.eh_teste && <Badge variant="outline">Teste</Badge>}
+          <Badge variant={STATUS_VARIANT[row.status] || 'default'}>{STATUS_LABEL[row.status] || row.status}</Badge>
+        </div>
       </div>
 
       {erroCompartilhar && (

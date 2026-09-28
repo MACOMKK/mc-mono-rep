@@ -114,7 +114,7 @@ export const oficinaApi = {
         historico: result.historico || [],
       };
     },
-    async iniciar({ veiculoId, clienteId, colaboradorId, unidadeId, os, km }) {
+    async iniciar({ veiculoId, clienteId, colaboradorId, unidadeId, os, km, ehTeste }) {
       const result = await invokeOficina({
         action: 'checklist_iniciar',
         veiculo_id: veiculoId,
@@ -123,8 +123,12 @@ export const oficinaApi = {
         unidade_id: unidadeId,
         os,
         km,
+        ...(ehTeste ? { eh_teste: true } : {}),
       });
       return { row: result.row || null, avisoDonoDiferente: result.aviso_dono_diferente || null };
+    },
+    async excluir(id) {
+      return invokeOficina({ action: 'checklist_excluir', id });
     },
     async atualizar(id, dados) {
       const result = await invokeOficina({ action: 'checklist_atualizar', id, ...dados });
@@ -259,6 +263,9 @@ export const oficinaApi = {
         observacoes,
       });
       return result.row || null;
+    },
+    async excluir(veiculoId) {
+      return invokeOficina({ action: 'veiculo_excluir', veiculo_id: veiculoId });
     },
   },
   cores: {

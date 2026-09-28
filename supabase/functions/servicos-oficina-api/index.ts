@@ -69,6 +69,9 @@ function mapDatabaseError(message: string) {
   if (message.includes('veiculos_estoque_veiculo_id_key')) {
     return 'Este veiculo ja esta no estoque do CRM.';
   }
+  if (message.includes('violates foreign key constraint') && message.includes('veiculos_estoque')) {
+    return 'Nao e possivel excluir: este veiculo possui proposta ou venda vinculada no CRM.';
+  }
   return message;
 }
 
@@ -105,6 +108,23 @@ function ensurePodeEditar(moduleRole: string | null) {
 function ensurePodeGerenciarEstoque(moduleRole: string | null) {
   if (!podeVerTodasUnidades(moduleRole)) {
     throw Object.assign(new Error('Apenas gestores e administradores podem promover o veiculo para o estoque.'), { status: 403 });
+  }
+}
+
+// Exclusao de veiculo e irreversivel e derruba checklists/estoque vinculados
+// (ver veiculo_excluir abaixo) -- por enquanto restrito so a admin (Camada 1),
+// mais estrito que as demais acoes de escrita do modulo (inspetor/gestor).
+function ensurePodeExcluirVeiculo(moduleRole: string | null) {
+  if (moduleRole !== 'admin') {
+    throw Object.assign(new Error('Apenas administradores podem excluir um veiculo por completo.'), { status: 403 });
+  }
+}
+
+// Mesma regra da exclusao de checklist (ver checklist_excluir abaixo): so admin, e so quando o
+// proprio checklist foi marcado como eh_teste na criacao.
+function ensurePodeExcluirChecklist(moduleRole: string | null) {
+  if (moduleRole !== 'admin') {
+    throw Object.assign(new Error('Apenas administradores podem excluir um checklist.'), { status: 403 });
   }
 }
 
@@ -472,6 +492,11 @@ Deno.serve(async (request) => {
       const unidadeId = body.unidade_id ? String(body.unidade_id) : collaborator?.unidade_id ? String(collaborator.unidade_id) : null;
       if (!unidadeId) return json({ error: 'unidade_id obrigatorio.' }, 400);
 
+      // eh_teste nao e aceito de qualquer solicitante -- so admin pode marcar o proprio
+      // checklist como teste na criacao (mesmo padrao de solicitacoes_pagamento.eh_teste no
+      // Financeiro, ver servicos-api/index.ts).
+      const ehTeste = body.eh_teste === true && moduleRole === 'admin';
+
       let avisoDonoDiferente = null;
       if (clienteId) {
         const veiculoRows = await sql.unsafe(
@@ -505,11 +530,11 @@ Deno.serve(async (request) => {
         return trx.unsafe(
           `
             insert into ${SERVICOS_SCHEMA}.checklist_avaliacoes
-              (veiculo_id, cliente_id, colaborador_id, os, km, unidade_id, numero)
-            values ($1, $2, $3, $4, $5, $6, $7)
+              (veiculo_id, cliente_id, colaborador_id, os, km, unidade_id, numero, eh_teste)
+            values ($1, $2, $3, $4, $5, $6, $7, $8)
             returning *;
           `,
-          [veiculoId, clienteId, colaboradorId, os, km, unidadeId, numero],
+          [veiculoId, clienteId, colaboradorId, os, km, unidadeId, numero, ehTeste],
         );
       });
 
@@ -1084,6 +1109,70 @@ Deno.serve(async (request) => {
       );
 
       return json({ row: rows[0] }, 201);
+    }
+
+    // Exclusao completa (fisica) do veiculo -- usada pra limpar dados de
+    // teste. Diferente de qualquer delete generico: apaga em cascata os
+    // checklists do veiculo (checklist_avaliacoes tem "on delete restrict"
+    // pra public.veiculos, entao precisa ser apagado primeiro; os filhos
+    // -- itens/avarias/fotos/historico -- ja cascateiam a partir dele) e a
+    // extensao de estoque no CRM antes do proprio public.veiculos. Se o
+    // veiculo tiver proposta/venda vinculada no CRM, o delete de
+    // veiculos_estoque falha por FK e mapDatabaseError devolve mensagem
+    // amigavel -- nesse caso nao ha exclusao parcial (tudo roda numa
+    // transacao so).
+    if (action === 'veiculo_excluir') {
+      ensurePodeExcluirVeiculo(moduleRole);
+      const veiculoId = String(body.veiculo_id || '');
+      if (!veiculoId) return json({ error: 'veiculo_id e obrigatorio.' }, 400);
+
+      await sql.begin(async (trx) => {
+        await trx.unsafe(`delete from ${SERVICOS_SCHEMA}.checklist_avaliacoes where veiculo_id = $1;`, [veiculoId]);
+        await trx.unsafe(`delete from gestao_crm.veiculos_estoque where veiculo_id = $1;`, [veiculoId]);
+        const rows = await trx.unsafe(`delete from public.veiculos where id = $1 returning id;`, [veiculoId]);
+        if (!rows[0]) {
+          throw Object.assign(new Error('Veiculo nao encontrado.'), { status: 404 });
+        }
+      });
+
+      return json({ success: true });
+    }
+
+    // Exclusao definitiva de um checklist isolado (sem mexer no veiculo) -- restrita a admin e
+    // a checklists marcados como eh_teste na criacao (ver checklist_iniciar acima), mesmo padrao
+    // de deletar_solicitacao no Financeiro (servicos-api/index.ts). checklist_itens/
+    // checklist_avarias/checklist_fotos/historico_checklist tem "on delete cascade" pra
+    // avaliacao_id/checklist_id, entao deletar a linha ja limpa as tabelas filhas -- so as fotos
+    // no Storage precisam ser removidas manualmente.
+    if (action === 'checklist_excluir') {
+      ensurePodeExcluirChecklist(moduleRole);
+      const id = String(body.id || '');
+      if (!id) return json({ error: 'id e obrigatorio.' }, 400);
+
+      const existingRows = await sql.unsafe(
+        `select eh_teste from ${SERVICOS_SCHEMA}.checklist_avaliacoes where id = $1 limit 1;`,
+        [id],
+      );
+      if (!existingRows[0]) return json({ error: 'Checklist nao encontrado.' }, 404);
+      if (existingRows[0].eh_teste !== true) {
+        throw Object.assign(new Error('Somente checklists marcados como teste podem ser excluidos.'), { status: 400 });
+      }
+
+      const fotos = await sql.unsafe(
+        `select storage_path from ${SERVICOS_SCHEMA}.checklist_fotos where avaliacao_id = $1 and storage_path is not null;`,
+        [id],
+      );
+
+      await sql.unsafe(`delete from ${SERVICOS_SCHEMA}.checklist_avaliacoes where id = $1;`, [id]);
+
+      const storageClient = createStorageAdminClient();
+      if (storageClient && fotos.length > 0) {
+        const paths = fotos.map((f: { storage_path: unknown }) => String(f.storage_path));
+        const { error } = await storageClient.storage.from(FOTOS_STORAGE_BUCKET).remove(paths);
+        if (error) console.error('Falha ao remover fotos do storage:', { paths, message: error.message });
+      }
+
+      return json({ success: true });
     }
 
     if (action === 'unidades_listar') {
