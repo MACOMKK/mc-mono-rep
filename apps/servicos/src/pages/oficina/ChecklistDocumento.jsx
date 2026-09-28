@@ -126,6 +126,19 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
   const seguranca = itensPorCategoria.seguranca || {};
   const pneus = itensPorCategoria.pneus || {};
 
+  // Numeracao sequencial das avarias que tem foto vinculada (hoje so
+  // "amassado" oferece esse fluxo, ver AvariaMap.jsx) -- usada pra ligar
+  // visualmente o marcador no diagrama (pagina 1) a foto correspondente na
+  // pagina de fotos (pagina 2).
+  const fotosPorAvariaId = new Map();
+  (row.fotos || []).forEach((foto) => {
+    if (foto.avaria_id) fotosPorAvariaId.set(foto.avaria_id, foto);
+  });
+  const numeroPorAvariaId = new Map();
+  avarias.forEach((avaria) => {
+    if (fotosPorAvariaId.has(avaria.id)) numeroPorAvariaId.set(avaria.id, numeroPorAvariaId.size + 1);
+  });
+
   return (
     <div>
       {!toolbarOculta && (
@@ -202,6 +215,7 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
             <img src={vehicleDiagram} alt="Diagrama do veículo" className="w-full" />
             {avarias.map((avaria) => {
               const tipo = AVARIA_TIPOS.find((t) => t.key === avaria.tipo);
+              const numeroFoto = numeroPorAvariaId.get(avaria.id);
               return (
                 <span
                   key={avaria.id}
@@ -209,6 +223,11 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
                   style={{ left: `${avaria.pos_x}%`, top: `${avaria.pos_y}%` }}
                 >
                   {tipo?.simbolo || '?'}
+                  {numeroFoto ? (
+                    <sup className="ml-[1px] rounded-full bg-[#E30613] px-[3px] text-[6.5pt] font-bold text-white">
+                      {numeroFoto}
+                    </sup>
+                  ) : null}
                 </span>
               );
             })}
@@ -431,17 +450,27 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
             FOTOS DO VEÍCULO
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            {row.fotos.map((foto, i) => (
-              <div key={foto.storage_path || i} className="border border-black p-1">
-                <img src={foto.url} alt={foto.legenda || foto.categoria} className="h-[45mm] w-full object-cover" />
-                <div className="mt-[2px] text-center text-[7.5pt] leading-tight">
-                  <b>
-                    {i + 1}. {foto.categoria}
-                  </b>
-                  {foto.legenda ? <div>{foto.legenda}</div> : null}
+            {row.fotos.map((foto, i) => {
+              const avariaVinculada = avarias.find((avaria) => avaria.id === foto.avaria_id);
+              const numeroFoto = foto.avaria_id ? numeroPorAvariaId.get(foto.avaria_id) : null;
+              return (
+                <div key={foto.storage_path || i} className="border border-black p-1">
+                  <img src={foto.url} alt={foto.legenda || foto.categoria} className="h-[45mm] w-full object-cover" />
+                  <div className="mt-[2px] text-center text-[7.5pt] leading-tight">
+                    <b>
+                      {i + 1}. {foto.categoria}
+                    </b>
+                    {numeroFoto ? (
+                      <div className="font-bold text-[#E30613]">
+                        Marca nº {numeroFoto} no diagrama
+                        {avariaVinculada ? ` (${AVARIA_TIPOS.find((t) => t.key === avariaVinculada.tipo)?.label || avariaVinculada.tipo})` : ''}
+                      </div>
+                    ) : null}
+                    {foto.legenda ? <div>{foto.legenda}</div> : null}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : null}

@@ -42,6 +42,7 @@ export const FOTO_CATEGORIAS = [
   'Lateral esquerda',
   'Interna',
   'Painel / Km',
+  'Medidor de combustível',
   'Motor',
   'Porta-malas',
   'Rodas / Pneus',

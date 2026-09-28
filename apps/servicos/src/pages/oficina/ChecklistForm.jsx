@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Lock } from 'lucide-react';
+import { ArrowLeft, Camera, Lock, Trash2 } from 'lucide-react';
 import {
   Button,
   CarLoader,
@@ -17,10 +17,12 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Spinner,
   Textarea,
 } from '@macom/ui';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
+import { comprimirChecklistFoto, uploadChecklistFoto } from '@/lib/checklistFotoUpload';
 import { useAuth } from '@/lib/AuthContext';
 import ClienteVeiculoPicker from '@/components/oficina/ClienteVeiculoPicker';
 import CombustivelGauge from '@/components/oficina/CombustivelGauge';
@@ -28,7 +30,9 @@ import AvariaMap from '@/components/oficina/AvariaMap';
 import ChecklistItensList from '@/components/oficina/ChecklistItensList';
 import FotoUploadGrid from '@/components/oficina/FotoUploadGrid';
 import AssinaturaModal from '@/components/oficina/AssinaturaModal';
-import { CATEGORIA_ITENS } from '@/lib/checklistItens';
+import { CATEGORIA_ITENS, MAX_FOTOS } from '@/lib/checklistItens';
+
+const CATEGORIA_FOTO_COMBUSTIVEL = 'Medidor de combustível';
 
 const COMUNICACOES_OPCOES = [
   { key: 'concessionarias', label: 'Das concessionárias Mitsubishi e/ou reparadores autorizados Mitsubishi' },
@@ -89,6 +93,9 @@ export default function ChecklistForm() {
   const [avisoDonoDiferente, setAvisoDonoDiferente] = useState(null);
   const [transferindo, setTransferindo] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(null);
+  const [enviandoFotoCombustivel, setEnviandoFotoCombustivel] = useState(false);
+  const [erroFotoCombustivel, setErroFotoCombustivel] = useState(null);
+  const fotoCombustivelInputRef = useRef(null);
 
   useEffect(() => {
     oficinaApi.unidades.listar().then(setUnidades).catch(() => {});
@@ -286,8 +293,49 @@ export default function ChecklistForm() {
     try {
       const row = await oficinaApi.avarias.adicionar(avaliacaoId, { tipo, posX: pos_x, posY: pos_y });
       setAvarias((atual) => [...atual, row]);
+      return row;
     } catch (error) {
       setErro(error.message || 'Não foi possível registrar a avaria.');
+      return null;
+    }
+  };
+
+  const handleFotoAmassado = async (avariaId, arquivo) => {
+    const comprimido = await comprimirChecklistFoto(arquivo);
+    const foto = await uploadChecklistFoto({ file: comprimido, avaliacaoId, categoria: 'Avaria', legenda: '', avariaId });
+    setFotos((atual) => [...atual, foto]);
+  };
+
+  const handleFotoCombustivel = async (arquivo) => {
+    if (fotos.length >= MAX_FOTOS) {
+      setErroFotoCombustivel(`Máximo de ${MAX_FOTOS} fotos por checklist.`);
+      return;
+    }
+    setEnviandoFotoCombustivel(true);
+    setErroFotoCombustivel(null);
+    try {
+      const comprimido = await comprimirChecklistFoto(arquivo);
+      const foto = await uploadChecklistFoto({
+        file: comprimido,
+        avaliacaoId,
+        categoria: CATEGORIA_FOTO_COMBUSTIVEL,
+        legenda: '',
+      });
+      setFotos((atual) => [...atual, foto]);
+    } catch (error) {
+      setErroFotoCombustivel(error.message || 'Não foi possível enviar a foto.');
+    } finally {
+      setEnviandoFotoCombustivel(false);
+    }
+  };
+
+  const handleRemoverFotoCombustivel = async (foto) => {
+    setErroFotoCombustivel(null);
+    try {
+      await oficinaApi.fotos.remover(avaliacaoId, foto.storage_path);
+      setFotos((atual) => atual.filter((item) => item.storage_path !== foto.storage_path));
+    } catch (error) {
+      setErroFotoCombustivel(error.message || 'Não foi possível remover a foto.');
     }
   };
 
@@ -509,12 +557,73 @@ export default function ChecklistForm() {
               Veículo com pintura suja, impossibilitando inspeção/identificação de riscos e danos.
             </label>
 
-            <AvariaMap avarias={avarias} onAdicionar={handleAdicionarAvaria} onRemover={handleRemoverAvaria} />
+            <AvariaMap
+              avarias={avarias}
+              avaliacaoId={avaliacaoId}
+              onAdicionar={handleAdicionarAvaria}
+              onRemover={handleRemoverAvaria}
+              onCapturarFotoAmassado={handleFotoAmassado}
+            />
           </div>
 
           <div className="flex flex-col items-center gap-3 rounded-xl border bg-card p-4">
             <h2 className="self-start text-sm font-semibold">Nível de combustível</h2>
             <CombustivelGauge value={nivelCombustivel} onChange={setNivelCombustivel} />
+
+            {(() => {
+              const fotoMedidor = fotos.find((foto) => foto.categoria === CATEGORIA_FOTO_COMBUSTIVEL);
+              return (
+                <div className="flex w-full max-w-xs flex-col items-center gap-2">
+                  {erroFotoCombustivel && <p className="text-xs text-destructive">{erroFotoCombustivel}</p>}
+                  <input
+                    ref={fotoCombustivelInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(event) => {
+                      const arquivo = event.target.files?.[0];
+                      event.target.value = '';
+                      if (arquivo) handleFotoCombustivel(arquivo);
+                    }}
+                  />
+                  {fotoMedidor ? (
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={fotoMedidor.url}
+                        alt="Foto do medidor de combustível"
+                        className="h-20 w-20 rounded-md border object-cover"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => handleRemoverFotoCombustivel(fotoMedidor)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Remover
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={enviandoFotoCombustivel}
+                      onClick={() => fotoCombustivelInputRef.current?.click()}
+                    >
+                      {enviandoFotoCombustivel ? (
+                        <Spinner className="mr-2 h-4 w-4" />
+                      ) : (
+                        <Camera className="mr-2 h-4 w-4" />
+                      )}
+                      {enviandoFotoCombustivel ? 'Enviando...' : 'Tirar/Escolher foto do medidor'}
+                    </Button>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="flex justify-between">

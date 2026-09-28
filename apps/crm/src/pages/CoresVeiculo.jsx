@@ -23,18 +23,35 @@ export default function CoresVeiculo() {
 
   const createMutation = useMutation({
     mutationFn: (data) => crmDataClient.entities.CorVeiculo.create(data),
-    onMutate: () => {
+    onMutate: async (data) => {
       setNovoNome('');
+      await queryClient.cancelQueries({ queryKey: ['crm-cores-veiculo'] });
+      const previousCores = queryClient.getQueryData(['crm-cores-veiculo']);
+      const tempId = `temp-${Date.now()}`;
+      queryClient.setQueryData(['crm-cores-veiculo'], (old = []) => (
+        [...old, { id: tempId, nome: data.nome, __optimistic: true }].sort((a, b) => a.nome.localeCompare(b.nome))
+      ));
+      return { previousCores, tempId };
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['crm-cores-veiculo'] });
+    onSuccess: (createdCor, _data, context) => {
+      queryClient.setQueryData(['crm-cores-veiculo'], (old = []) => (
+        old.map((cor) => (cor.id === context?.tempId ? createdCor : cor))
+      ));
       toast({ title: 'Cor criada', variant: 'success' });
     },
-    onError: (mutationError) => toast({
-      title: 'Nao foi possivel criar a cor',
-      description: mutationError.message,
-      variant: 'destructive',
-    }),
+    onError: (mutationError, _data, context) => {
+      if (context?.previousCores) {
+        queryClient.setQueryData(['crm-cores-veiculo'], context.previousCores);
+      }
+      toast({
+        title: 'Nao foi possivel criar a cor',
+        description: mutationError.message,
+        variant: 'destructive',
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['crm-cores-veiculo'] });
+    },
   });
 
   const updateMutation = useMutation({
@@ -95,10 +112,10 @@ export default function CoresVeiculo() {
         </div>
         <Button
           type="submit"
-          disabled={!novoNome.trim() || createMutation.isPending}
+          disabled={!novoNome.trim()}
           className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
         >
-          <Plus className="mr-2 h-4 w-4" /> {createMutation.isPending ? 'Criando...' : 'Adicionar'}
+          <Plus className="mr-2 h-4 w-4" /> Adicionar
         </Button>
       </form>
 
@@ -119,10 +136,12 @@ export default function CoresVeiculo() {
             </TableHeader>
             <TableBody>
               {cores.map((cor) => (
-                <TableRow key={cor.id}>
+                <TableRow key={cor.id} className={cor.__optimistic ? 'opacity-60' : undefined}>
                   <TableCell>
                     <Input
+                      key={cor.nome}
                       defaultValue={cor.nome}
+                      disabled={cor.__optimistic}
                       className="h-9 max-w-xs rounded-none"
                       onBlur={(event) => {
                         const nome = event.target.value.trim();
@@ -137,6 +156,7 @@ export default function CoresVeiculo() {
                       type="button"
                       variant="outline"
                       size="icon"
+                      disabled={cor.__optimistic}
                       className="h-9 w-9 rounded-none text-red-600"
                       onClick={() => {
                         if (window.confirm(`Excluir a cor "${cor.nome}"?`)) {

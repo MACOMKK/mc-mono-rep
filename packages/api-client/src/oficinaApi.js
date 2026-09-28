@@ -186,13 +186,14 @@ export const oficinaApi = {
     },
   },
   fotos: {
-    async registrar(avaliacaoId, { storagePath, categoria, legenda }) {
+    async registrar(avaliacaoId, { storagePath, categoria, legenda, avariaId }) {
       const result = await invokeOficina({
         action: 'checklist_foto_registrar',
         avaliacao_id: avaliacaoId,
         storage_path: storagePath,
         categoria,
         legenda,
+        avaria_id: avariaId,
       });
       return { row: result.row || null, url: result.url || null };
     },

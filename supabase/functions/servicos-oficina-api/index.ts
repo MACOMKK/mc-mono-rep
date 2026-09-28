@@ -808,13 +808,22 @@ Deno.serve(async (request) => {
       }
       await getAvaliacao(avaliacaoId, moduleRole, collaborator);
 
+      let avariaId = body.avaria_id ? String(body.avaria_id) : null;
+      if (avariaId) {
+        const avariaRows = await sql.unsafe(
+          `select id from ${SERVICOS_SCHEMA}.checklist_avarias where id = $1 and avaliacao_id = $2 limit 1;`,
+          [avariaId, avaliacaoId],
+        );
+        if (!avariaRows[0]) return json({ error: 'Avaria nao encontrada para este checklist.' }, 400);
+      }
+
       const rows = await sql.unsafe(
         `
-          insert into ${SERVICOS_SCHEMA}.checklist_fotos (avaliacao_id, storage_path, categoria, legenda)
-          values ($1, $2, $3, $4)
+          insert into ${SERVICOS_SCHEMA}.checklist_fotos (avaliacao_id, storage_path, categoria, legenda, avaria_id)
+          values ($1, $2, $3, $4, $5)
           returning *;
         `,
-        [avaliacaoId, storagePath, body.categoria ? String(body.categoria) : null, body.legenda ? String(body.legenda) : null],
+        [avaliacaoId, storagePath, body.categoria ? String(body.categoria) : null, body.legenda ? String(body.legenda) : null, avariaId],
       );
 
       await insertHistoricoChecklist(avaliacaoId, 'foto_adicionada', collaborator?.id ? String(collaborator.id) : null);

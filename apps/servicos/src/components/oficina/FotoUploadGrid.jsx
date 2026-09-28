@@ -2,25 +2,9 @@ import { useRef, useState } from 'react';
 import { Trash2, Upload } from 'lucide-react';
 
 import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Spinner } from '@macom/ui';
-import { isAllowedChecklistFotoMimeType, uploadChecklistFoto } from '@/lib/checklistFotoUpload';
+import { comprimirChecklistFoto, isAllowedChecklistFotoMimeType, uploadChecklistFoto } from '@/lib/checklistFotoUpload';
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { FOTO_CATEGORIAS, MAX_FOTOS } from '@/lib/checklistItens';
-
-async function comprimirFoto(file, maxDimensao = 1600, qualidade = 0.8) {
-  const bitmap = await createImageBitmap(file);
-  const escala = Math.min(1, maxDimensao / Math.max(bitmap.width, bitmap.height));
-  const largura = Math.round(bitmap.width * escala);
-  const altura = Math.round(bitmap.height * escala);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = largura;
-  canvas.height = altura;
-  const context = canvas.getContext('2d');
-  context.drawImage(bitmap, 0, 0, largura, altura);
-
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', qualidade));
-  return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
-}
 
 export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdicionada, onFotoAtualizada, onFotoRemovida, readOnly = false }) {
   const inputRef = useRef(null);
@@ -37,7 +21,7 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
 
   const processarArquivo = async (arquivo, id) => {
     try {
-      const comprimido = await comprimirFoto(arquivo);
+      const comprimido = await comprimirChecklistFoto(arquivo);
       const foto = await uploadChecklistFoto({ file: comprimido, avaliacaoId, categoria: FOTO_CATEGORIAS[0], legenda: '' });
       onFotoAdicionada?.(foto);
       removerPendente(id);
@@ -126,6 +110,12 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
         {fotos.map((foto, index) => (
           <div key={`${foto.storage_path}-${index}`} className="flex flex-col gap-3 rounded-xl border p-3">
             <img src={foto.url} alt={foto.categoria || 'Foto do veículo'} className="aspect-video w-full rounded-lg object-cover" />
+
+            {foto.avaria_id && (
+              <span className="w-fit rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                Vinculada a um amassado
+              </span>
+            )}
 
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium">Tipo da foto</label>
