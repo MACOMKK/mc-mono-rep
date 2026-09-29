@@ -89,6 +89,9 @@ export default function ChecklistForm() {
   const [comunicacoes, setComunicacoes] = useState([]);
   const [fotos, setFotos] = useState([]);
   const [assinaturaEntrada, setAssinaturaEntrada] = useState(null);
+  const [assinaturaEntradaNome, setAssinaturaEntradaNome] = useState(null);
+  const [assinaturaEntradaVinculo, setAssinaturaEntradaVinculo] = useState(null);
+  const [assinaturaEntradaDetalheVinculo, setAssinaturaEntradaDetalheVinculo] = useState(null);
   const [modalAssinaturaEntradaAberto, setModalAssinaturaEntradaAberto] = useState(false);
   const [avisoDonoDiferente, setAvisoDonoDiferente] = useState(null);
   const [transferindo, setTransferindo] = useState(false);
@@ -194,6 +197,9 @@ export default function ChecklistForm() {
         setComunicacoes(Array.isArray(row.comunicacoes) ? row.comunicacoes : []);
         setFotos(row.fotos || []);
         setAssinaturaEntrada(row.assinatura_entrada || null);
+        setAssinaturaEntradaNome(row.assinatura_entrada_nome || null);
+        setAssinaturaEntradaVinculo(row.assinatura_entrada_vinculo || null);
+        setAssinaturaEntradaDetalheVinculo(row.assinatura_entrada_detalhe_vinculo || null);
         setAvarias(avariasCarregadas || []);
         setItensPorCategoria((prev) => ({ ...prev, ...itensParaMapa(itens || []) }));
         if (row.assinatura_entrada) {
@@ -387,7 +393,12 @@ export default function ChecklistForm() {
     setSalvando(true);
     setErro(null);
     try {
-      await oficinaApi.checklists.atualizar(avaliacaoId, { assinatura_entrada: assinaturaEntrada });
+      await oficinaApi.checklists.atualizar(avaliacaoId, {
+        assinatura_entrada: assinaturaEntrada,
+        assinatura_entrada_nome: assinaturaEntradaNome,
+        assinatura_entrada_vinculo: assinaturaEntradaVinculo,
+        assinatura_entrada_detalhe_vinculo: assinaturaEntradaDetalheVinculo,
+      });
       await oficinaApi.checklists.concluirAvaliacao(avaliacaoId);
       limparRascunho();
       queryClient.invalidateQueries({ queryKey: ['oficina', 'checklists'] });
@@ -742,6 +753,18 @@ export default function ChecklistForm() {
             ) : (
               <p className="mt-1 text-sm text-muted-foreground">Ainda não capturada.</p>
             )}
+            {(assinaturaEntradaNome || assinaturaEntradaVinculo) && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {[
+                  assinaturaEntradaNome,
+                  assinaturaEntradaVinculo === 'Terceiro autorizado' || assinaturaEntradaVinculo === 'Outro'
+                    ? [assinaturaEntradaVinculo, assinaturaEntradaDetalheVinculo].filter(Boolean).join(' - ')
+                    : assinaturaEntradaVinculo,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            )}
             <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setModalAssinaturaEntradaAberto(true)}>
               {assinaturaEntrada ? 'Refazer assinatura' : 'Capturar assinatura'}
             </Button>
@@ -760,8 +783,11 @@ export default function ChecklistForm() {
             open={modalAssinaturaEntradaAberto}
             titulo="Assinatura do cliente na entrada"
             onCancel={() => setModalAssinaturaEntradaAberto(false)}
-            onConfirm={(dataUrl) => {
+            onConfirm={(dataUrl, { nome, vinculo, detalheVinculo }) => {
               setAssinaturaEntrada(dataUrl);
+              setAssinaturaEntradaNome(nome);
+              setAssinaturaEntradaVinculo(vinculo || null);
+              setAssinaturaEntradaDetalheVinculo(detalheVinculo || null);
               setModalAssinaturaEntradaAberto(false);
             }}
           />

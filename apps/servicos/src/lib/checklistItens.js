@@ -52,6 +52,8 @@ export const FOTO_CATEGORIAS = [
 
 export const MAX_FOTOS = 10;
 
+export const VINCULO_ASSINANTE = ['Proprietário', 'Funcionário', 'Terceiro autorizado', 'Outro'];
+
 export const STATUS_DOC_SEG = { OK: 'Conforme', AS: 'Ausente', AV: 'Avariado' };
 
 export const STATUS_PNEU = {

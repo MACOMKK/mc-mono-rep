@@ -1,6 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@macom/ui';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@macom/ui';
+import { VINCULO_ASSINANTE } from '@/lib/checklistItens';
 
 const SIGNATURE_CANVAS_WIDTH = 600;
 const SIGNATURE_CANVAS_HEIGHT = 220;
@@ -10,6 +23,10 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
   const drawingRef = useRef(false);
   const lastPointRef = useRef(null);
   const [isEmpty, setIsEmpty] = useState(true);
+  const [nome, setNome] = useState('');
+  const [vinculo, setVinculo] = useState('');
+  const [detalheVinculo, setDetalheVinculo] = useState('');
+  const exigeDetalheVinculo = vinculo === 'Terceiro autorizado' || vinculo === 'Outro';
 
   useEffect(() => {
     if (!open) return;
@@ -24,6 +41,9 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
     context.lineJoin = 'round';
     context.strokeStyle = '#0f172a';
     setIsEmpty(true);
+    setNome('');
+    setVinculo('');
+    setDetalheVinculo('');
   }, [open]);
 
   const getPoint = (event) => {
@@ -78,8 +98,12 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
 
   const handleConfirmar = () => {
     const canvas = canvasRef.current;
-    if (!canvas || isEmpty) return;
-    onConfirm(canvas.toDataURL('image/png'));
+    if (!canvas || isEmpty || !nome.trim()) return;
+    onConfirm(canvas.toDataURL('image/png'), {
+      nome: nome.trim(),
+      vinculo,
+      detalheVinculo: exigeDetalheVinculo ? detalheVinculo.trim() : '',
+    });
   };
 
   return (
@@ -92,6 +116,38 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
         <p className="text-sm text-muted-foreground">
           Use o mouse ou o dedo (em telas touch) para desenhar a assinatura.
         </p>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium">Nome de quem está assinando</label>
+            <Input value={nome} onChange={(event) => setNome(event.target.value)} placeholder="Nome completo" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium">Vínculo com o cliente</label>
+            <Select value={vinculo} onValueChange={setVinculo}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione (opcional)" />
+              </SelectTrigger>
+              <SelectContent>
+                {VINCULO_ASSINANTE.map((opcao) => (
+                  <SelectItem key={opcao} value={opcao}>
+                    {opcao}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {exigeDetalheVinculo && (
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <label className="text-xs font-medium">Qual é o vínculo? (ex.: mãe, pai, motorista)</label>
+              <Input
+                value={detalheVinculo}
+                onChange={(event) => setDetalheVinculo(event.target.value)}
+                placeholder="Especifique"
+              />
+            </div>
+          )}
+        </div>
 
         <canvas
           ref={canvasRef}
@@ -112,7 +168,7 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
             <Button type="button" variant="ghost" onClick={onCancel}>
               Cancelar
             </Button>
-            <Button type="button" onClick={handleConfirmar} disabled={isEmpty}>
+            <Button type="button" onClick={handleConfirmar} disabled={isEmpty || !nome.trim()}>
               Confirmar assinatura
             </Button>
           </div>

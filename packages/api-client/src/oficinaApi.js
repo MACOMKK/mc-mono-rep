@@ -138,13 +138,26 @@ export const oficinaApi = {
       const result = await invokeOficina({ action: 'checklist_concluir_avaliacao', id });
       return result.row || null;
     },
-    async finalizar(id, { entregaConferida, entregaObservacoes, assinaturaSaida } = {}) {
+    async finalizar(
+      id,
+      {
+        entregaConferida,
+        entregaObservacoes,
+        assinaturaSaida,
+        assinaturaSaidaNome,
+        assinaturaSaidaVinculo,
+        assinaturaSaidaDetalheVinculo,
+      } = {},
+    ) {
       const result = await invokeOficina({
         action: 'checklist_finalizar',
         id,
         entrega_conferida: entregaConferida,
         entrega_observacoes: entregaObservacoes,
         assinatura_saida: assinaturaSaida,
+        assinatura_saida_nome: assinaturaSaidaNome,
+        assinatura_saida_vinculo: assinaturaSaidaVinculo,
+        assinatura_saida_detalhe_vinculo: assinaturaSaidaDetalheVinculo,
       });
       return result.row || null;
     },

@@ -587,6 +587,20 @@ Deno.serve(async (request) => {
         const novo = body.assinatura_entrada ? String(body.assinatura_entrada) : null;
         if (novo !== (currentRow.assinatura_entrada ?? null)) campos.assinatura_entrada = novo;
       }
+      if (body.assinatura_entrada_nome !== undefined) {
+        const novo = body.assinatura_entrada_nome ? String(body.assinatura_entrada_nome) : null;
+        if (novo !== (currentRow.assinatura_entrada_nome ?? null)) campos.assinatura_entrada_nome = novo;
+      }
+      if (body.assinatura_entrada_vinculo !== undefined) {
+        const novo = body.assinatura_entrada_vinculo ? String(body.assinatura_entrada_vinculo) : null;
+        if (novo !== (currentRow.assinatura_entrada_vinculo ?? null)) campos.assinatura_entrada_vinculo = novo;
+      }
+      if (body.assinatura_entrada_detalhe_vinculo !== undefined) {
+        const novo = body.assinatura_entrada_detalhe_vinculo ? String(body.assinatura_entrada_detalhe_vinculo) : null;
+        if (novo !== (currentRow.assinatura_entrada_detalhe_vinculo ?? null)) {
+          campos.assinatura_entrada_detalhe_vinculo = novo;
+        }
+      }
       if (body.unidade_id !== undefined) {
         const novo = body.unidade_id ? String(body.unidade_id) : null;
         if (novo !== (currentRow.unidade_id ?? null)) campos.unidade_id = novo;
@@ -651,6 +665,11 @@ Deno.serve(async (request) => {
 
       const entregaObservacoes = body.entrega_observacoes ? String(body.entrega_observacoes) : null;
       const assinaturaSaida = body.assinatura_saida ? String(body.assinatura_saida) : null;
+      const assinaturaSaidaNome = body.assinatura_saida_nome ? String(body.assinatura_saida_nome) : null;
+      const assinaturaSaidaVinculo = body.assinatura_saida_vinculo ? String(body.assinatura_saida_vinculo) : null;
+      const assinaturaSaidaDetalheVinculo = body.assinatura_saida_detalhe_vinculo
+        ? String(body.assinatura_saida_detalhe_vinculo)
+        : null;
       const entregaConferida = Boolean(body.entrega_conferida);
 
       const rows = await sql.unsafe(
@@ -660,11 +679,22 @@ Deno.serve(async (request) => {
             data_saida = now(),
             entrega_conferida = $2,
             entrega_observacoes = $3,
-            assinatura_saida = coalesce($4, assinatura_saida)
+            assinatura_saida = coalesce($4, assinatura_saida),
+            assinatura_saida_nome = coalesce($5, assinatura_saida_nome),
+            assinatura_saida_vinculo = coalesce($6, assinatura_saida_vinculo),
+            assinatura_saida_detalhe_vinculo = coalesce($7, assinatura_saida_detalhe_vinculo)
           where id = $1
           returning *;
         `,
-        [id, entregaConferida, entregaObservacoes, assinaturaSaida],
+        [
+          id,
+          entregaConferida,
+          entregaObservacoes,
+          assinaturaSaida,
+          assinaturaSaidaNome,
+          assinaturaSaidaVinculo,
+          assinaturaSaidaDetalheVinculo,
+        ],
       );
 
       if (rows[0]) {

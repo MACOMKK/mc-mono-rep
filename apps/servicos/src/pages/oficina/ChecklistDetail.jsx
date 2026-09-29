@@ -28,6 +28,14 @@ import ChecklistDocumento from '@/pages/oficina/ChecklistDocumento';
 
 const STATUS_LABEL = { em_andamento: 'Em andamento', avaliado: 'Avaliado', finalizado: 'Finalizado' };
 const STATUS_VARIANT = { em_andamento: 'warning', avaliado: 'default', finalizado: 'success' };
+
+function formatarVinculoAssinante(vinculo, detalheVinculo) {
+  if (!vinculo) return null;
+  if ((vinculo === 'Terceiro autorizado' || vinculo === 'Outro') && detalheVinculo) {
+    return `${vinculo} - ${detalheVinculo}`;
+  }
+  return vinculo;
+}
 const CATEGORIAS = ['documentacao', 'seguranca', 'pneus'];
 const COMUNICACOES_LABEL = {
   concessionarias: 'Das concessionárias Mitsubishi e/ou reparadores autorizados Mitsubishi',
@@ -82,6 +90,9 @@ export default function ChecklistDetail() {
   const [entregaObservacoes, setEntregaObservacoes] = useState('');
   const [entregaConferida, setEntregaConferida] = useState(false);
   const [assinaturaSaida, setAssinaturaSaida] = useState(null);
+  const [assinaturaSaidaNome, setAssinaturaSaidaNome] = useState(null);
+  const [assinaturaSaidaVinculo, setAssinaturaSaidaVinculo] = useState(null);
+  const [assinaturaSaidaDetalheVinculo, setAssinaturaSaidaDetalheVinculo] = useState(null);
   const [modalAssinaturaAberto, setModalAssinaturaAberto] = useState(false);
   const [modalEntregaAberto, setModalEntregaAberto] = useState(false);
   const [finalizando, setFinalizando] = useState(false);
@@ -104,6 +115,9 @@ export default function ChecklistDetail() {
         setEntregaObservacoes(rowCarregado?.entrega_observacoes || '');
         setEntregaConferida(Boolean(rowCarregado?.entrega_conferida));
         setAssinaturaSaida(rowCarregado?.assinatura_saida || null);
+        setAssinaturaSaidaNome(rowCarregado?.assinatura_saida_nome || null);
+        setAssinaturaSaidaVinculo(rowCarregado?.assinatura_saida_vinculo || null);
+        setAssinaturaSaidaDetalheVinculo(rowCarregado?.assinatura_saida_detalhe_vinculo || null);
         setOs(rowCarregado?.os || '');
       })
       .finally(() => setCarregando(false));
@@ -121,6 +135,9 @@ export default function ChecklistDetail() {
         entregaConferida,
         entregaObservacoes: entregaObservacoes || undefined,
         assinaturaSaida,
+        assinaturaSaidaNome,
+        assinaturaSaidaVinculo,
+        assinaturaSaidaDetalheVinculo,
       });
       setRow(rowAtualizado);
       setModalEntregaAberto(false);
@@ -386,6 +403,16 @@ export default function ChecklistDetail() {
           ) : (
             <p className="mt-1 text-sm text-muted-foreground">—</p>
           )}
+          {(row.assinatura_entrada_nome || row.assinatura_entrada_vinculo) && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {[
+                row.assinatura_entrada_nome,
+                formatarVinculoAssinante(row.assinatura_entrada_vinculo, row.assinatura_entrada_detalhe_vinculo),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
         </div>
         <div className="rounded-lg border border-border bg-card p-3">
           <p className="text-xs text-muted-foreground">Assinatura do cliente (Saída)</p>
@@ -395,6 +422,16 @@ export default function ChecklistDetail() {
             </div>
           ) : (
             <p className="mt-1 text-sm text-muted-foreground">—</p>
+          )}
+          {(row.assinatura_saida_nome || row.assinatura_saida_vinculo) && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {[
+                row.assinatura_saida_nome,
+                formatarVinculoAssinante(row.assinatura_saida_vinculo, row.assinatura_saida_detalhe_vinculo),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
           )}
         </div>
       </div>
@@ -476,6 +513,13 @@ export default function ChecklistDetail() {
               ) : (
                 <p className="mt-1 text-sm text-muted-foreground">Ainda não capturada.</p>
               )}
+              {(assinaturaSaidaNome || assinaturaSaidaVinculo) && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {[assinaturaSaidaNome, formatarVinculoAssinante(assinaturaSaidaVinculo, assinaturaSaidaDetalheVinculo)]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              )}
               <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setModalAssinaturaAberto(true)}>
                 {assinaturaSaida ? 'Refazer assinatura' : 'Capturar assinatura'}
               </Button>
@@ -492,8 +536,11 @@ export default function ChecklistDetail() {
             open={modalAssinaturaAberto}
             titulo="Assinatura do cliente na saída"
             onCancel={() => setModalAssinaturaAberto(false)}
-            onConfirm={(dataUrl) => {
+            onConfirm={(dataUrl, { nome, vinculo, detalheVinculo }) => {
               setAssinaturaSaida(dataUrl);
+              setAssinaturaSaidaNome(nome);
+              setAssinaturaSaidaVinculo(vinculo || null);
+              setAssinaturaSaidaDetalheVinculo(detalheVinculo || null);
               setModalAssinaturaAberto(false);
             }}
           />
