@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { appClient } from '@/api/client';
 import { Button, Skeleton } from '@macom/ui';
 import AnnouncementDetailsDialog from '@/components/announcements/AnnouncementDetailsDialog';
+import { getImageFocusStyle } from '@/lib/announcementImage';
 
 const categoryLabels = {
   geral: 'Comunicado',
@@ -190,6 +191,7 @@ export default function HomeHighlightsCarousel({ disabled = false }) {
                     src={item.image_url}
                     alt={item.title}
                     className="absolute inset-0 h-full w-full object-cover"
+                    style={getImageFocusStyle(item)}
                   />
                   <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(11,27,61,0.88)_0%,rgba(11,27,61,0.74)_42%,rgba(11,27,61,0.4)_72%,rgba(11,27,61,0.22)_100%)]" />
                 </>

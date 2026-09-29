@@ -29,6 +29,7 @@ import AnnouncementDocumentReference from '../components/announcements/Announcem
 import AnnouncementInteractions from '../components/announcements/AnnouncementInteractions';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import Pagination, { usePaginatedItems } from '../components/Pagination';
+import { getImageFocusStyle } from '../lib/announcementImage';
 
 const priorityConfig = {
   urgente: { icon: AlertTriangle, class: 'bg-red-100 text-red-700 border-red-200' },
@@ -464,6 +465,7 @@ export default function Announcements() {
                         src={announcement.image_url}
                         alt={announcement.title}
                         className="h-52 w-full object-cover sm:h-64"
+                        style={getImageFocusStyle(announcement)}
                       />
                     </div>
                   ) : null}

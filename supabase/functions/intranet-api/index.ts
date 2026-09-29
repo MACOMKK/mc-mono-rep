@@ -75,6 +75,8 @@ const ENTITY_CONFIG = {
       'image_name',
       'image_type',
       'image_size',
+      'image_focus_x',
+      'image_focus_y',
       'document_ids',
       'links',
     ],
@@ -91,6 +93,8 @@ const ENTITY_CONFIG = {
       'image_name',
       'image_type',
       'image_size',
+      'image_focus_x',
+      'image_focus_y',
       'document_ids',
       'links',
     ],
@@ -1022,6 +1026,8 @@ function mapAnnouncement(
     image_name: row.imagem_nome || null,
     image_type: row.imagem_tipo || null,
     image_size: row.imagem_tamanho || null,
+    image_focus_x: Number(row.imagem_foco_x ?? 50),
+    image_focus_y: Number(row.imagem_foco_y ?? 50),
     document_ids: documents.map((document) => document.id),
     documents,
     links,
@@ -2714,6 +2720,8 @@ async function listHomeAnnouncements(limit = 5) {
         imagem_nome,
         imagem_tipo,
         imagem_tamanho,
+        imagem_foco_x,
+        imagem_foco_y,
         criado_em,
         atualizado_em,
         criado_por
@@ -3516,8 +3524,9 @@ async function createAnnouncement(payload: Record<string, unknown>, collaborator
     `
       insert into gestao_intranet.avisos (
         titulo, conteudo, categoria, prioridade, fixado, publica_em, expira_em,
-        imagem_url, imagem_path, imagem_nome, imagem_tipo, imagem_tamanho, criado_por
-      ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        imagem_url, imagem_path, imagem_nome, imagem_tipo, imagem_tamanho, criado_por,
+        imagem_foco_x, imagem_foco_y
+      ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
       returning *;
     `,
     [
@@ -3534,6 +3543,8 @@ async function createAnnouncement(payload: Record<string, unknown>, collaborator
       sanitized.image_type || null,
       sanitized.image_size || null,
       collaboratorId,
+      sanitized.image_focus_x ?? 50,
+      sanitized.image_focus_y ?? 50,
     ],
   );
 
@@ -3552,6 +3563,15 @@ async function createAnnouncement(payload: Record<string, unknown>, collaborator
 }
 
 function validateAnnouncementImage(payload: Record<string, unknown>) {
+  (['image_focus_x', 'image_focus_y'] as const).forEach((field) => {
+    if (!(field in payload) || payload[field] == null) return;
+    const value = Number(payload[field]);
+    if (!Number.isFinite(value) || value < 0 || value > 100) {
+      throw new Error('Ponto de foco da imagem invalido.');
+    }
+    payload[field] = Math.round(value * 100) / 100;
+  });
+
   const hasImagePayload =
     'image_url' in payload ||
     'image_path' in payload ||
@@ -3652,6 +3672,8 @@ async function updateAnnouncement(
   if ('image_name' in sanitized) assign('imagem_nome', sanitized.image_name);
   if ('image_type' in sanitized) assign('imagem_tipo', sanitized.image_type);
   if ('image_size' in sanitized) assign('imagem_tamanho', sanitized.image_size);
+  if (sanitized.image_focus_x != null) assign('imagem_foco_x', sanitized.image_focus_x);
+  if (sanitized.image_focus_y != null) assign('imagem_foco_y', sanitized.image_focus_y);
   assign('atualizado_em', new Date().toISOString());
 
   const rows = await runSql<Record<string, unknown>>(

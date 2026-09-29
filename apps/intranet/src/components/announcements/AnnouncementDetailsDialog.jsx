@@ -7,6 +7,7 @@ import { Badge, Button, Dialog, DialogContent, DialogHeader, DialogTitle } from 
 
 import AnnouncementDocumentReference from './AnnouncementDocumentReference';
 import { sanitizeUrl } from '@/lib/utils';
+import { getImageFocusStyle } from '@/lib/announcementImage';
 
 const categoryLabels = {
   geral: 'Geral',
@@ -49,6 +50,7 @@ export default function AnnouncementDetailsDialog({ announcement, open, onOpenCh
                 src={announcement.image_url}
                 alt={announcement.title}
                 className="h-48 w-full object-cover sm:h-72"
+                style={getImageFocusStyle(announcement)}
               />
             </div>
           ) : null}

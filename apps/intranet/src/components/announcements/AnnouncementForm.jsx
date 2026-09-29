@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ImagePlus, Plus, X } from 'lucide-react';
+import { Crosshair, ImagePlus, Plus, X } from 'lucide-react';
 
 import { appClient } from '@/api/client';
+import { getImageFocusStyle } from '@/lib/announcementImage';
+import ImageFocusPicker from './ImageFocusPicker';
 import {
   Button,
   Checkbox,
@@ -31,6 +33,8 @@ const emptyAnnouncementForm = {
   image_name: '',
   image_type: '',
   image_size: null,
+  image_focus_x: 50,
+  image_focus_y: 50,
   document_ids: [],
   links: [],
 };
@@ -67,6 +71,8 @@ function buildInitialForm(initialData) {
     image_name: initialData.image_name || '',
     image_type: initialData.image_type || '',
     image_size: initialData.image_size ?? null,
+    image_focus_x: initialData.image_focus_x ?? 50,
+    image_focus_y: initialData.image_focus_y ?? 50,
     document_ids: Array.isArray(initialData.document_ids) ? initialData.document_ids : [],
     links: Array.isArray(initialData.links)
       ? initialData.links.map((link) => ({ url: link.url || '', label: link.label || '' }))
@@ -86,6 +92,7 @@ export default function AnnouncementForm({
   });
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [focusPickerOpen, setFocusPickerOpen] = useState(false);
 
   const { data: documents = [] } = useQuery({
     queryKey: ['documents-picker'],
@@ -107,7 +114,8 @@ export default function AnnouncementForm({
 
     try {
       const uploadResult = await appClient.storage.uploadAnnouncementImage(file);
-      setForm((prev) => ({ ...prev, ...uploadResult }));
+      setForm((prev) => ({ ...prev, ...uploadResult, image_focus_x: 50, image_focus_y: 50 }));
+      setFocusPickerOpen(true);
     } catch (error) {
       setForm((prev) => ({
         ...prev,
@@ -143,7 +151,14 @@ export default function AnnouncementForm({
       image_name: '',
       image_type: '',
       image_size: null,
+      image_focus_x: 50,
+      image_focus_y: 50,
     }));
+  };
+
+  const confirmImageFocus = ({ x, y }) => {
+    setForm((prev) => ({ ...prev, image_focus_x: x, image_focus_y: y }));
+    setFocusPickerOpen(false);
   };
 
   const addLink = () => {
@@ -295,6 +310,19 @@ export default function AnnouncementForm({
             />
           </label>
 
+          {form.image_url ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full gap-2 px-3 sm:w-auto"
+              onClick={() => setFocusPickerOpen(true)}
+              disabled={uploading}
+            >
+              <Crosshair className="h-4 w-4" />
+              Ajustar enquadramento
+            </Button>
+          ) : null}
+
           {form.image_name ? (
             <Button type="button" variant="ghost" className="w-full gap-2 px-3 sm:w-auto" onClick={clearImage}>
               <X className="h-4 w-4" />
@@ -309,6 +337,7 @@ export default function AnnouncementForm({
               src={form.image_url}
               alt="Preview da imagem do aviso"
               className="h-40 w-full object-cover"
+              style={getImageFocusStyle(form)}
             />
           </div>
         ) : (
@@ -322,6 +351,17 @@ export default function AnnouncementForm({
         ) : null}
 
         {uploadError ? <p className="text-xs text-destructive">{uploadError}</p> : null}
+
+        {focusPickerOpen ? (
+          <ImageFocusPicker
+            key={form.image_url}
+            open={focusPickerOpen}
+            imageUrl={form.image_url}
+            initialFocus={{ x: form.image_focus_x, y: form.image_focus_y }}
+            onCancel={() => setFocusPickerOpen(false)}
+            onConfirm={confirmImageFocus}
+          />
+        ) : null}
       </div>
 
       <div className="flex items-center gap-3">
