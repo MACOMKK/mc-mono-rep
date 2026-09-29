@@ -27,15 +27,39 @@ export async function comprimirChecklistFoto(file, maxDimensao = 1600, qualidade
   return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
 }
 
+const UPLOAD_TIMEOUT_MS = 30000;
+
+// O storage.upload do supabase-js nao aceita AbortSignal/timeout -- envolve
+// num Promise.race pra nao deixar a UI travada indefinidamente em rede ruim.
+// Nao cancela o upload de fato em andamento no browser, so libera a UI com
+// uma mensagem clara pra permitir tentar de novo.
+function comTimeout(promise, timeoutMs, mensagem) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error(mensagem)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
+}
+
 // Upload direto pro storage (RLS gated por servicos_oficina_pode_editar, ver
 // migration 20260917040000) e so depois registra o metadado na avaliacao --
 // mesmo padrao de uploadAnexo (anexoUpload.js) no Financeiro.
 export async function uploadChecklistFoto({ file, avaliacaoId, categoria, legenda, avariaId }) {
   const extension = file.name.split('.').pop();
   const path = `${avaliacaoId}/${crypto.randomUUID()}.${extension}`;
-  const { error: uploadError } = await supabase.storage
-    .from(oficinaApi.storage.bucket)
-    .upload(path, file, { upsert: false, contentType: file.type });
+  const { error: uploadError } = await comTimeout(
+    supabase.storage.from(oficinaApi.storage.bucket).upload(path, file, { upsert: false, contentType: file.type }),
+    UPLOAD_TIMEOUT_MS,
+    'Envio da foto demorou demais. Verifique sua internet e tente novamente.',
+  );
   if (uploadError) throw uploadError;
 
   const { url } = await oficinaApi.fotos.registrar(avaliacaoId, { storagePath: path, categoria, legenda, avariaId });

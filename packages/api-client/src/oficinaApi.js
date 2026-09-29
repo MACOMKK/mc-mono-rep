@@ -14,9 +14,46 @@ function toError(message, status = 500, code, details, hint) {
   return error;
 }
 
+const DEFAULT_TIMEOUT_MS = 20000;
+
+// Combina um AbortSignal externo (ex.: vindo do React Query, cancelado quando a
+// query fica obsoleta) com um timeout interno -- aborta se qualquer um dos dois
+// disparar primeiro. Sem lib externa: AbortSignal.any() ainda nao tem suporte
+// garantido no target do projeto.
+function createRequestSignal(externalSignal, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort(new DOMException('Tempo de conexao esgotado.', 'TimeoutError'));
+  }, timeoutMs);
+
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort(externalSignal.reason);
+    else externalSignal.addEventListener('abort', () => controller.abort(externalSignal.reason), { once: true });
+  }
+
+  return { signal: controller.signal, cancel: () => clearTimeout(timeoutId) };
+}
+
+async function fetchComTimeout(url, options, externalSignal, timeoutMs) {
+  const { signal, cancel } = createRequestSignal(externalSignal, timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal });
+  } catch (error) {
+    // Cancelamento intencional (ex.: React Query descartou uma busca obsoleta) --
+    // propaga como abort puro, sem mensagem de erro pro usuario.
+    if (externalSignal?.aborted) throw error;
+    if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
+      throw toError('Tempo de conexao esgotado. Verifique sua internet e tente novamente.', 0, 'timeout');
+    }
+    throw error;
+  } finally {
+    cancel();
+  }
+}
+
 // Chama a edge function servicos-oficina-api -- separada de servicos-api
 // (Financeiro) de proposito, ver apps/servicos/CLAUDE.md.
-async function invokeOficina(body = {}, accessTokenOverride) {
+async function invokeOficina(body = {}, accessTokenOverride, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   assertSupabaseConfigured();
 
   const { data } = accessTokenOverride
@@ -28,15 +65,20 @@ async function invokeOficina(body = {}, accessTokenOverride) {
     throw toError('Sessao expirada. Faca login novamente.', 401, 'auth_required');
   }
 
-  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/servicos-oficina-api`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${token}`,
+  const response = await fetchComTimeout(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/servicos-oficina-api`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    signal,
+    timeoutMs,
+  );
 
   const result = await response.json().catch(() => ({}));
 
@@ -58,18 +100,23 @@ async function invokeOficina(body = {}, accessTokenOverride) {
 // o visitante nao tem sessao Supabase, entao autentica no gateway so com a
 // anon key -- a autorizacao de verdade e o token assinado que vai no body,
 // validado dentro da propria action checklist_publico_obter.
-async function invokeOficinaPublico(body = {}) {
+async function invokeOficinaPublico(body = {}, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   assertSupabaseConfigured();
 
-  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/servicos-oficina-api`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+  const response = await fetchComTimeout(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/servicos-oficina-api`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    signal,
+    timeoutMs,
+  );
 
   const result = await response.json().catch(() => ({}));
 
@@ -230,8 +277,8 @@ export const oficinaApi = {
     },
   },
   clientes: {
-    async buscar(busca) {
-      const result = await invokeOficina({ action: 'cliente_buscar', busca });
+    async buscar(busca, { signal } = {}) {
+      const result = await invokeOficina({ action: 'cliente_buscar', busca }, undefined, { signal });
       return result.rows || [];
     },
     async criar({ nome, telefone, email, cpfCnpj }) {
@@ -240,8 +287,8 @@ export const oficinaApi = {
     },
   },
   veiculos: {
-    async buscar(busca) {
-      const result = await invokeOficina({ action: 'veiculo_buscar', busca });
+    async buscar(busca, { signal } = {}) {
+      const result = await invokeOficina({ action: 'veiculo_buscar', busca }, undefined, { signal });
       return result.rows || [];
     },
     async listar(busca) {

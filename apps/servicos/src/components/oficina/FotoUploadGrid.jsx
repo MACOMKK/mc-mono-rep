@@ -19,9 +19,14 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
     });
   };
 
-  const processarArquivo = async (arquivo, id) => {
+  // Processa um arquivo por vez -- upar varias fotos em paralelo sobrecarrega
+  // conexoes ruins (tablet em rede fraca), entao o handler abaixo aguarda cada
+  // uma terminar antes de disparar a proxima.
+  const processarArquivo = async (arquivoOriginal, id, arquivoJaComprimido) => {
+    setPendentes((atual) => atual.map((item) => (item._id === id ? { ...item, _status: 'enviando' } : item)));
     try {
-      const comprimido = await comprimirChecklistFoto(arquivo);
+      const comprimido = arquivoJaComprimido || (await comprimirChecklistFoto(arquivoOriginal));
+      setPendentes((atual) => atual.map((item) => (item._id === id ? { ...item, _arquivoComprimido: comprimido } : item)));
       const foto = await uploadChecklistFoto({ file: comprimido, avaliacaoId, categoria: FOTO_CATEGORIAS[0], legenda: '' });
       onFotoAdicionada?.(foto);
       removerPendente(id);
@@ -31,7 +36,12 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
     }
   };
 
-  const handleSelecionarArquivos = (event) => {
+  const handleTentarNovamente = (item) => {
+    setErro(null);
+    processarArquivo(item._arquivoOriginal, item._id, item._arquivoComprimido);
+  };
+
+  const handleSelecionarArquivos = async (event) => {
     const arquivos = Array.from(event.target.files || []);
     event.target.value = '';
     if (arquivos.length === 0) return;
@@ -42,20 +52,22 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
     }
 
     setErro(null);
-    arquivos.forEach((arquivo) => {
-      if (!isAllowedChecklistFotoMimeType(arquivo)) return;
+    for (const arquivo of arquivos) {
+      if (!isAllowedChecklistFotoMimeType(arquivo)) continue;
       const id = crypto.randomUUID();
       const otimista = {
         _id: id,
         _status: 'enviando',
+        _arquivoOriginal: arquivo,
         storage_path: `temp-${id}`,
         categoria: FOTO_CATEGORIAS[0],
         legenda: '',
         url: URL.createObjectURL(arquivo),
       };
       setPendentes((atual) => [...atual, otimista]);
-      processarArquivo(arquivo, id);
-    });
+      // eslint-disable-next-line no-await-in-loop -- upload sequencial e intencional (evitar sobrecarregar rede fraca)
+      await processarArquivo(arquivo, id);
+    }
   };
 
   const handleAtualizarCampo = async (foto, campo, valor) => {
@@ -177,16 +189,21 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
               {foto._status === 'erro' ? (
                 <>
                   <p className="text-xs text-destructive">Falha ao enviar esta foto.</p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="self-center text-destructive hover:text-destructive"
-                    onClick={() => removerPendente(foto._id)}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Remover
-                  </Button>
+                  <div className="flex justify-center gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleTentarNovamente(foto)}>
+                      Tentar novamente
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => removerPendente(foto._id)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Remover
+                    </Button>
+                  </div>
                 </>
               ) : (
                 <p className="text-center text-xs text-muted-foreground">Enviando...</p>

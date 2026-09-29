@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Plus, Search } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { supabase } from '@macom/api-client/supabaseClient';
-import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@macom/ui';
+import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Spinner } from '@macom/ui';
 
-function useDebouncedValue(value, delay = 200) {
+function useDebouncedValue(value, delay = 300) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
     const timeout = setTimeout(() => setDebounced(value), delay);
@@ -211,28 +212,24 @@ export function VeiculoForm({ onCriado, onCancelar }) {
 
 export default function ClienteVeiculoPicker({ tipo, value, onChange, label }) {
   const [busca, setBusca] = useState('');
-  const [resultados, setResultados] = useState([]);
   const [mostrarForm, setMostrarForm] = useState(false);
-  const [erroBusca, setErroBusca] = useState(null);
   const buscaDebounced = useDebouncedValue(busca);
+  const termoBusca = buscaDebounced.trim();
+  const termoValido = termoBusca.length >= 2;
 
-  useEffect(() => {
-    if (!buscaDebounced.trim()) {
-      setResultados([]);
-      setErroBusca(null);
-      return;
-    }
-    const buscar = tipo === 'cliente' ? oficinaApi.clientes.buscar : oficinaApi.veiculos.buscar;
-    buscar(buscaDebounced)
-      .then((rows) => {
-        setResultados(rows);
-        setErroBusca(null);
-      })
-      .catch((error) => {
-        setResultados([]);
-        setErroBusca(error.message || 'Falha ao buscar.');
-      });
-  }, [buscaDebounced, tipo]);
+  const {
+    data: resultados = [],
+    isFetching: buscando,
+    error: erroBuscaQuery,
+  } = useQuery({
+    queryKey: ['oficina', tipo, 'busca', termoBusca],
+    queryFn: ({ signal }) =>
+      (tipo === 'cliente' ? oficinaApi.clientes.buscar : oficinaApi.veiculos.buscar)(termoBusca, { signal }),
+    enabled: termoValido,
+    staleTime: 30_000,
+    retry: 1,
+  });
+  const erroBusca = termoValido ? erroBuscaQuery?.message || null : null;
 
   if (value) {
     const descricao =
@@ -261,13 +258,14 @@ export default function ClienteVeiculoPicker({ tipo, value, onChange, label }) {
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           placeholder={tipo === 'cliente' ? 'Buscar cliente por nome/telefone...' : 'Buscar veículo por placa/chassi...'}
-          className="pl-9"
+          className="pl-9 pr-9"
         />
+        {buscando && <Spinner className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" />}
       </div>
 
       {erroBusca && <p className="text-xs text-destructive">{erroBusca}</p>}
 
-      {resultados.length > 0 && (
+      {termoValido && resultados.length > 0 && (
         <div className="flex flex-col divide-y rounded-lg border">
           {resultados.map((item) => (
             <button
@@ -277,7 +275,6 @@ export default function ClienteVeiculoPicker({ tipo, value, onChange, label }) {
               onClick={() => {
                 onChange(item);
                 setBusca('');
-                setResultados([]);
               }}
             >
               {tipo === 'cliente'
