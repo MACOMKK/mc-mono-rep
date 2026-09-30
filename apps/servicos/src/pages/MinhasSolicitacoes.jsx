@@ -44,6 +44,7 @@ import {
   STATUS_LABEL,
   STATUS_VARIANT,
   toDateOnly,
+  toLocalDateOnly,
   truncarTitulo,
 } from '@/lib/financeiroFormat';
 import SolicitacaoDrawer from '@/components/SolicitacaoDrawer';
@@ -96,6 +97,8 @@ export default function MinhasSolicitacoes() {
   const [valorResetToken, setValorResetToken] = useState(0);
   const [vencimentoFiltro, setVencimentoFiltro] = useState(null);
   const [vencimentoResetToken, setVencimentoResetToken] = useState(0);
+  const [criacaoFiltro, setCriacaoFiltro] = useState(null);
+  const [criacaoResetToken, setCriacaoResetToken] = useState(0);
 
   const solicitacoesQuery = useQuery({
     queryKey: ['servicos', 'solicitacoes', 'minhas'],
@@ -208,6 +211,12 @@ export default function MinhasSolicitacoes() {
       const dia = toDateOnly(row.vencimento_efetivo);
       if (!dia || dia < vencimentoFiltro.from || dia > vencimentoFiltro.to) return false;
     }
+    if (criacaoFiltro) {
+      // criado_em e timestamp de verdade: converte pro dia local (mesmo dia que formatData mostra
+      // no drawer), senao solicitacoes criadas depois das 21h (UTC-3) cairiam no dia seguinte.
+      const dia = row.criado_em ? toLocalDateOnly(new Date(row.criado_em)) : null;
+      if (!dia || dia < criacaoFiltro.from || dia > criacaoFiltro.to) return false;
+    }
     const termo = normalize(busca);
     if (!termo) return true;
     return normalize(buildSolicitacaoSearchText(row)).includes(termo);
@@ -305,6 +314,7 @@ export default function MinhasSolicitacoes() {
     formaPagamentoFiltro !== FORMA_PAGAMENTO_FILTRO_TODAS,
     Boolean(valorFiltro),
     Boolean(vencimentoFiltro),
+    Boolean(criacaoFiltro),
   ].filter(Boolean).length;
 
   function handleClearFiltros() {
@@ -320,6 +330,8 @@ export default function MinhasSolicitacoes() {
     setValorResetToken((current) => current + 1);
     setVencimentoFiltro(null);
     setVencimentoResetToken((current) => current + 1);
+    setCriacaoFiltro(null);
+    setCriacaoResetToken((current) => current + 1);
   }
 
   function renderFooter() {
@@ -540,6 +552,12 @@ export default function MinhasSolicitacoes() {
           </Select>
 
           <VencimentoRangeFilter onChange={setVencimentoFiltro} resetToken={vencimentoResetToken} />
+
+          <VencimentoRangeFilter
+            label="Data de criação"
+            onChange={setCriacaoFiltro}
+            resetToken={criacaoResetToken}
+          />
 
           <ValorRangeFilter onChange={setValorFiltro} resetToken={valorResetToken} />
         </FiltersDrawer>
