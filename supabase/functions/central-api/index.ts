@@ -51,7 +51,7 @@ const ENTITY_CONFIG = {
     ],
   },
   contatos: {
-    schema: 'public',
+    schema: 'gestao_ativos',
     table: 'contatos',
     orderBy: 'nome',
     allowedFields: ['tipo', 'nome', 'identificador', 'nome_contato', 'telefone', 'email', 'descricao', 'unidade_id'],
@@ -1479,10 +1479,10 @@ async function validateContatosUniqueFields(payload: Record<string, unknown>, ex
 
   const rows = excludeId
     ? await sql.unsafe(
-        'select id from public.contatos where telefone = $1 and id <> $2 limit 1;',
+        'select id from gestao_ativos.contatos where telefone = $1 and id <> $2 limit 1;',
         [telefone, excludeId],
       )
-    : await sql.unsafe('select id from public.contatos where telefone = $1 limit 1;', [telefone]);
+    : await sql.unsafe('select id from gestao_ativos.contatos where telefone = $1 limit 1;', [telefone]);
 
   if (rows[0]) {
     throw new Error('Ja existe um contato com este telefone.');

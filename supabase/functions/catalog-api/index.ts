@@ -44,7 +44,7 @@ const ENTITY_CONFIG = {
     ],
   },
   contatos: {
-    schema: 'public',
+    schema: 'gestao_ativos',
     table: 'contatos',
     orderBy: 'nome',
     allowedFields: ['tipo', 'nome', 'identificador', 'nome_contato', 'telefone', 'email', 'descricao', 'unidade_id'],
