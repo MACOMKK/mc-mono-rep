@@ -33,6 +33,11 @@ const ENTITY_CONFIG = {
       'empresa',
       'status_relacionamento',
       'observacoes',
+      'endereco',
+      'bairro',
+      'municipio',
+      'uf',
+      'cep',
     ],
   },
   leads: {
@@ -338,6 +343,10 @@ function mapDatabaseError(error: unknown) {
     return 'Ja existe outro cliente com este CPF/CNPJ.';
   }
 
+  if (message.includes('idx_clientes_telefones_adicionais_normalizado_unique')) {
+    return 'Este telefone ja esta cadastrado (como principal ou contato adicional de outro cliente).';
+  }
+
   if (message.includes('categorias_veiculo_nome_key')) {
     return 'Ja existe uma categoria com este nome.';
   }
@@ -537,6 +546,11 @@ const CLIENTE_IDENTITY_FIELDS = [
   'email_normalizado',
   'cpf_cnpj',
   'cpf_cnpj_normalizado',
+  'endereco',
+  'bairro',
+  'municipio',
+  'uf',
+  'cep',
 ] as const;
 
 const CLIENTE_EXTENSAO_FIELDS = [
@@ -867,7 +881,13 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
     // sem qualificacao (buildAccessScope conta com esse nome de range-table).
     return `
       select ${countExpr}clientes.*, p.nome, p.telefone, p.telefone_normalizado,
-        p.email, p.email_normalizado, p.cpf_cnpj
+        p.email, p.email_normalizado, p.cpf_cnpj,
+        p.endereco, p.bairro, p.municipio, p.uf, p.cep,
+        (
+          select coalesce(json_agg(json_build_object('id', t.id, 'telefone', t.telefone, 'tipo', t.tipo) order by t.criado_em), '[]'::json)
+          from public.clientes_telefones_adicionais t
+          where t.cliente_id = p.id
+        ) as telefones_adicionais
       from ${CRM_SCHEMA}.clientes_crm as clientes
       join public.clientes p on p.id = clientes.id
     `;
@@ -1166,6 +1186,50 @@ Deno.serve(async (request) => {
       );
 
       return json({ rows });
+    }
+
+    // Contato adicional (ex.: WhatsApp, financeiro, frota) alem do telefone
+    // principal de public.clientes.telefone -- nao participa da deduplicacao
+    // de cliente feita em 'create'/'update' (que so olha telefone/email
+    // principais), so complementa o cadastro para uso futuro (ex. escolher
+    // qual numero notificar).
+    if (action === 'cliente_contato_adicionar') {
+      const clienteId = String(body.cliente_id || '');
+      const telefoneRaw = String(body.telefone || '').trim();
+      const tipo = body.tipo ? String(body.tipo).trim() : null;
+      if (!clienteId || !telefoneRaw) {
+        return json({ error: 'cliente_id e telefone sao obrigatorios.' }, 400);
+      }
+      const digits = telefoneRaw.replace(/\D/g, '');
+      if (digits.length < 10 || digits.length > 11) {
+        return json({ error: 'Telefone invalido. Informe DDD + numero (10 ou 11 digitos).' }, 400);
+      }
+
+      await ensureEntityAccess('clientes', clienteId, access, collaborator);
+
+      const insertQuery = buildInsertQuery('public', 'clientes_telefones_adicionais', {
+        cliente_id: clienteId,
+        telefone: digits,
+        telefone_normalizado: digits,
+        tipo,
+      });
+      const rows = await sql.unsafe(insertQuery.text, insertQuery.values);
+      return json({ row: rows[0] });
+    }
+
+    if (action === 'cliente_contato_remover') {
+      const contatoId = String(body.id || '');
+      if (!contatoId) return json({ error: 'id obrigatorio.' }, 400);
+
+      const contatoRows = await sql.unsafe(
+        'select cliente_id from public.clientes_telefones_adicionais where id = $1 limit 1;',
+        [contatoId],
+      );
+      if (!contatoRows[0]) return json({ error: 'Contato nao encontrado.' }, 404);
+
+      await ensureEntityAccess('clientes', String(contatoRows[0].cliente_id), access, collaborator);
+      await sql.unsafe('delete from public.clientes_telefones_adicionais where id = $1;', [contatoId]);
+      return json({ success: true });
     }
 
     if (action === 'get_distribution_config') {

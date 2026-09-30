@@ -16,7 +16,7 @@ import { useEmpresa } from '@/context/EmpresaContext';
 import { useUnidadesEmpresa } from '@/hooks/useUnidadesEmpresa';
 import { cn } from '@/lib/utils';
 import ListPagination from '@/components/ListPagination';
-import { Ban, Building2, Car, Clock3, History, Mail, Paperclip, Pencil, Phone, Save, Search, Tag, UserRound, X } from 'lucide-react';
+import { Ban, Building2, Car, Clock3, History, Mail, MapPin, Paperclip, Pencil, Phone, Plus, Save, Search, Tag, Trash2, UserRound, X } from 'lucide-react';
 
 import { ACTIVE_LEAD_STATUSES as ACTIVE_LEAD_STATUSES_LIST, LEAD_STATUS_LABEL, LEAD_STATUS_STYLE } from '@/lib/leadStatus';
 
@@ -74,6 +74,13 @@ function formatDate(value) {
   }).format(date);
 }
 
+function formatEndereco(cliente) {
+  const linha1 = [cliente.endereco, cliente.bairro].filter(Boolean).join(', ');
+  const linha2 = [cliente.municipio, cliente.uf].filter(Boolean).join(' - ');
+  const partes = [linha1, linha2, cliente.cep].filter(Boolean);
+  return partes.join(' | ') || null;
+}
+
 function dateOnlyAsLocal(value) {
   if (!value) return null;
   return `${String(value).slice(0, 10)}T00:00:00`;
@@ -101,6 +108,8 @@ export default function Clientes() {
   const [periodoFim, setPeriodoFim] = useState('');
   const [cancelingVendaId, setCancelingVendaId] = useState(null);
   const [cancelamentoForm, setCancelamentoForm] = useState({ motivo_cancelamento: '' });
+  const [novoContatoTelefone, setNovoContatoTelefone] = useState('');
+  const [novoContatoTipo, setNovoContatoTipo] = useState('');
   const { empresa } = useEmpresa();
   const { empresas: EMPRESAS } = useUnidadesEmpresa();
   const { user } = useAuth();
@@ -449,6 +458,42 @@ export default function Clientes() {
     },
   });
 
+  const addContatoMutation = useMutation({
+    mutationFn: ({ clienteId, telefone, tipo }) => crmDataClient.entities.Cliente.adicionarContato(clienteId, { telefone, tipo }),
+    onSuccess: (novoContato) => {
+      setSelected((current) => current ? {
+        ...current,
+        telefones_adicionais: [...(current.telefones_adicionais || []), novoContato],
+      } : current);
+      setNovoContatoTelefone('');
+      setNovoContatoTipo('');
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel adicionar o contato',
+        description: error.message || 'Revise o telefone informado.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const removeContatoMutation = useMutation({
+    mutationFn: (contatoId) => crmDataClient.entities.Cliente.removerContato(contatoId),
+    onSuccess: (_result, contatoId) => {
+      setSelected((current) => current ? {
+        ...current,
+        telefones_adicionais: (current.telefones_adicionais || []).filter((contato) => contato.id !== contatoId),
+      } : current);
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel remover o contato',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const cancelVendaMutation = useMutation({
     mutationFn: ({ vendaId, data }) => crmDataClient.entities.Venda.cancelar(vendaId, data),
     onSuccess: () => {
@@ -639,6 +684,9 @@ export default function Clientes() {
                       {selected.telefone ? <span className="flex items-center gap-2"><Phone className="h-4 w-4" />{selected.telefone}</span> : null}
                       {selected.email ? <span className="flex items-center gap-2"><Mail className="h-4 w-4" />{selected.email}</span> : null}
                       {selected.cpf_cnpj ? <span className="flex items-center gap-2">{selected.cpf_cnpj}</span> : null}
+                      {formatEndereco(selected) ? (
+                        <span className="flex items-center gap-2"><MapPin className="h-4 w-4 shrink-0" />{formatEndereco(selected)}</span>
+                      ) : null}
                       <span className="flex items-center gap-2"><Building2 className="h-4 w-4" />{selected.empresa}</span>
                     </div>
                   </div>
@@ -655,6 +703,87 @@ export default function Clientes() {
                     {editing ? 'Cancelar' : 'Editar'}
                   </Button>
                 </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Contatos adicionais
+                  </Label>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {(selected.telefones_adicionais || []).length} contato(s)
+                  </span>
+                </div>
+
+                {(selected.telefones_adicionais || []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Nenhum contato adicional cadastrado.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {selected.telefones_adicionais.map((contato) => (
+                      <div key={contato.id} className="flex items-center justify-between gap-3 bg-slate-50 p-2.5">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span>{contato.telefone}</span>
+                          {contato.tipo ? (
+                            <Badge variant="outline" className="rounded-sm text-[10px] uppercase tracking-wider">
+                              {contato.tipo}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-red-600"
+                          onClick={() => removeContatoMutation.mutate(contato.id)}
+                          disabled={removeContatoMutation.isPending}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!novoContatoTelefone.trim()) return;
+                    addContatoMutation.mutate({
+                      clienteId: selected.id,
+                      telefone: novoContatoTelefone,
+                      tipo: novoContatoTipo || null,
+                    });
+                  }}
+                  className="mt-3 flex items-center gap-2"
+                >
+                  <Input
+                    value={novoContatoTelefone}
+                    onChange={(event) => setNovoContatoTelefone(event.target.value)}
+                    placeholder="Novo telefone"
+                    className="h-8 rounded-none text-sm"
+                  />
+                  <Select value={novoContatoTipo} onValueChange={setNovoContatoTipo}>
+                    <SelectTrigger className="h-8 w-36 shrink-0 rounded-none text-sm">
+                      <SelectValue placeholder="Tipo" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-none">
+                      <SelectItem value="WhatsApp">WhatsApp</SelectItem>
+                      <SelectItem value="Financeiro">Financeiro</SelectItem>
+                      <SelectItem value="Frota">Frota</SelectItem>
+                      <SelectItem value="Outro">Outro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="submit"
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8 shrink-0 rounded-none"
+                    disabled={addContatoMutation.isPending || !novoContatoTelefone.trim()}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </form>
               </div>
 
               {editing ? (
@@ -694,6 +823,26 @@ export default function Clientes() {
                           <SelectItem value="pos_venda">Pos-venda</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Endereco</Label>
+                      <Input value={formData?.endereco || ''} onChange={(event) => updateField('endereco', event.target.value)} className="h-9 rounded-none text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Bairro</Label>
+                      <Input value={formData?.bairro || ''} onChange={(event) => updateField('bairro', event.target.value)} className="h-9 rounded-none text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">CEP</Label>
+                      <Input value={formData?.cep || ''} onChange={(event) => updateField('cep', event.target.value)} className="h-9 rounded-none text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Municipio</Label>
+                      <Input value={formData?.municipio || ''} onChange={(event) => updateField('municipio', event.target.value)} className="h-9 rounded-none text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">UF</Label>
+                      <Input value={formData?.uf || ''} maxLength={2} onChange={(event) => updateField('uf', event.target.value.toUpperCase())} className="h-9 rounded-none text-sm" />
                     </div>
                     <div className="col-span-2 space-y-1">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Observacoes gerais</Label>

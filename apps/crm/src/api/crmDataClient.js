@@ -144,6 +144,12 @@ function mapClienteRow(row = {}) {
     empresa: row.empresa || 'Macom Ananindeua',
     status_relacionamento: row.status_relacionamento || 'lead',
     observacoes: row.observacoes || '',
+    endereco: row.endereco || '',
+    bairro: row.bairro || '',
+    municipio: row.municipio || '',
+    uf: row.uf || '',
+    cep: row.cep || '',
+    telefones_adicionais: row.telefones_adicionais || [],
     ...mapBaseDates(row),
   };
 }
@@ -426,6 +432,11 @@ function mapClientePayload(data = {}) {
     empresa: normalizeEmpresa(data.empresa),
     status_relacionamento: data.status_relacionamento || 'lead',
     observacoes: data.observacoes || null,
+    endereco: data.endereco?.trim() || null,
+    bairro: data.bairro?.trim() || null,
+    municipio: data.municipio?.trim() || null,
+    uf: data.uf?.trim().toUpperCase() || null,
+    cep: data.cep?.trim() || null,
   };
 }
 
@@ -769,6 +780,14 @@ const ClienteRepository = {
     });
 
     return mapClienteRow(row);
+  },
+
+  async adicionarContato(clienteId, { telefone, tipo }) {
+    return crmApi.clientes.adicionarContato({ clienteId, telefone, tipo });
+  },
+
+  async removerContato(contatoId) {
+    return crmApi.clientes.removerContato(contatoId);
   },
 };
 

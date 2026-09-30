@@ -185,6 +185,19 @@ export const crmApi = {
       const result = await invokeCrm({ action: 'cliente_buscar', busca });
       return result?.rows || [];
     },
+    async adicionarContato({ clienteId, telefone, tipo }) {
+      const result = await invokeCrm({
+        action: 'cliente_contato_adicionar',
+        cliente_id: clienteId,
+        telefone,
+        tipo,
+      });
+      return result.row || null;
+    },
+    async removerContato(id) {
+      await invokeCrm({ action: 'cliente_contato_remover', id });
+      return { id };
+    },
   },
   leads: {
     ...buildEntity('leads'),
