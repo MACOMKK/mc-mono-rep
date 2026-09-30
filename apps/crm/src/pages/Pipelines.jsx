@@ -6,6 +6,16 @@ import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -134,6 +144,7 @@ export default function Pipelines() {
   const [pipelineSelecionadoId, setPipelineSelecionadoId] = useState(null);
   const [novoPipelineAberto, setNovoPipelineAberto] = useState(false);
   const [novaEtapaAberta, setNovaEtapaAberta] = useState(false);
+  const [etapaParaExcluir, setEtapaParaExcluir] = useState(null);
 
   const { data: pipelines = [], isLoading: carregandoPipelines } = useQuery({
     queryKey: ['crm-pipelines'],
@@ -176,14 +187,31 @@ export default function Pipelines() {
       cor,
       ordem: etapas.length,
     }),
-    onMutate: () => {
+    onMutate: async ({ nome, cor }) => {
       setNovaEtapaAberta(false);
+      const queryKey = ['crm-etapas-pipeline', pipelineSelecionadoId];
+      await queryClient.cancelQueries({ queryKey });
+      const etapasAnteriores = queryClient.getQueryData(queryKey);
+      const etapaTemporaria = {
+        id: `temp-${Date.now()}`,
+        pipeline_id: pipelineSelecionadoId,
+        nome,
+        cor,
+        ordem: etapas.length,
+        chave_sistema: null,
+        _otimista: true,
+      };
+      queryClient.setQueryData(queryKey, (atual = []) => [...atual, etapaTemporaria]);
+      return { etapasAnteriores, queryKey };
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-etapas-pipeline', pipelineSelecionadoId] });
       toast({ title: 'Etapa criada', variant: 'success' });
     },
-    onError: (error) => toast({ title: 'Nao foi possivel criar a etapa', description: error.message, variant: 'destructive' }),
+    onError: (error, _variables, context) => {
+      if (context) queryClient.setQueryData(context.queryKey, context.etapasAnteriores);
+      toast({ title: 'Nao foi possivel criar a etapa', description: error.message, variant: 'destructive' });
+    },
   });
 
   const atualizarEtapaMutation = useMutation({
@@ -196,11 +224,21 @@ export default function Pipelines() {
 
   const excluirEtapaMutation = useMutation({
     mutationFn: (id) => crmDataClient.entities.EtapaPipeline.delete(id),
+    onMutate: async (id) => {
+      const queryKey = ['crm-etapas-pipeline', pipelineSelecionadoId];
+      await queryClient.cancelQueries({ queryKey });
+      const etapasAnteriores = queryClient.getQueryData(queryKey);
+      queryClient.setQueryData(queryKey, (atual = []) => atual.filter((etapa) => etapa.id !== id));
+      return { etapasAnteriores, queryKey };
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-etapas-pipeline', pipelineSelecionadoId] });
       toast({ title: 'Etapa excluida', variant: 'success' });
     },
-    onError: (error) => toast({ title: 'Nao foi possivel excluir a etapa', description: error.message, variant: 'destructive' }),
+    onError: (error, _id, context) => {
+      if (context) queryClient.setQueryData(context.queryKey, context.etapasAnteriores);
+      toast({ title: 'Nao foi possivel excluir a etapa', description: error.message, variant: 'destructive' });
+    },
   });
 
   if (!podeConfigurar) {
@@ -308,9 +346,9 @@ export default function Pipelines() {
                           variant="outline"
                           size="icon"
                           className="ml-auto h-8 w-8 rounded-none text-red-600 disabled:opacity-30"
-                          disabled={Boolean(etapa.chave_sistema)}
+                          disabled={Boolean(etapa.chave_sistema) || Boolean(etapa._otimista)}
                           title={etapa.chave_sistema ? 'Etapas de sistema nao podem ser excluidas' : 'Excluir etapa'}
-                          onClick={() => excluirEtapaMutation.mutate(etapa.id)}
+                          onClick={() => setEtapaParaExcluir(etapa)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -352,6 +390,29 @@ export default function Pipelines() {
         saving={criarEtapaMutation.isPending}
         onSave={(data) => criarEtapaMutation.mutate(data)}
       />
+
+      <AlertDialog open={Boolean(etapaParaExcluir)} onOpenChange={(open) => !open && setEtapaParaExcluir(null)}>
+        <AlertDialogContent className="rounded-none">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-black uppercase tracking-widest">Excluir etapa</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir a etapa "{etapaParaExcluir?.nome}"? Essa acao nao pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-none text-xs font-bold uppercase tracking-wider">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-none bg-red-600 text-xs font-bold uppercase tracking-wider hover:bg-red-700"
+              onClick={() => {
+                excluirEtapaMutation.mutate(etapaParaExcluir.id);
+                setEtapaParaExcluir(null);
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
