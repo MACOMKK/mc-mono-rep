@@ -3,6 +3,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Save, Trash2 } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -51,6 +61,7 @@ export default function Estoque() {
   const [novaVersaoNome, setNovaVersaoNome] = useState('');
   const [corDialogOpen, setCorDialogOpen] = useState(false);
   const [novaCorNome, setNovaCorNome] = useState('');
+  const [veiculoParaExcluir, setVeiculoParaExcluir] = useState(null);
 
   const { data: veiculos = [], isLoading, error } = useQuery({
     queryKey: ['crm-veiculos-estoque'],
@@ -526,11 +537,7 @@ export default function Estoque() {
                           variant="outline"
                           size="icon"
                           className="h-8 w-8 rounded-none text-red-600"
-                          onClick={() => {
-                            if (window.confirm(`Excluir o veiculo "${veiculo.chassi}" do estoque? Isso remove apenas o registro de estoque.`)) {
-                              deleteMutation.mutate(veiculo.id);
-                            }
-                          }}
+                          onClick={() => setVeiculoParaExcluir(veiculo)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -684,6 +691,30 @@ export default function Estoque() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={Boolean(veiculoParaExcluir)} onOpenChange={(open) => !open && setVeiculoParaExcluir(null)}>
+        <AlertDialogContent className="rounded-none">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-black uppercase tracking-widest">Excluir veiculo do estoque</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o veiculo "{veiculoParaExcluir?.chassi}" do estoque? Isso remove apenas o
+              registro de estoque, nao o cadastro do veiculo. Essa acao nao pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-none text-xs font-bold uppercase tracking-wider">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-none bg-red-600 text-xs font-bold uppercase tracking-wider hover:bg-red-700"
+              onClick={() => {
+                deleteMutation.mutate(veiculoParaExcluir.id);
+                setVeiculoParaExcluir(null);
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

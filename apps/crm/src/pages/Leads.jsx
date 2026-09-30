@@ -7,6 +7,16 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Plus, LayoutGrid, List, Search, RotateCcw } from 'lucide-react';
 import LeadForm from '@/components/leads/LeadForm';
 import MotivoStatusSelect from '@/components/leads/MotivoStatusSelect';
@@ -540,11 +550,10 @@ export default function Leads() {
     },
   });
 
+  const [attachmentParaExcluir, setAttachmentParaExcluir] = useState(null);
+
   const deleteAttachment = (attachment) => {
-    const fileName = attachment.metadados?.nome || attachment.descricao || 'este anexo';
-    const confirmed = window.confirm(`Excluir ${fileName}?`);
-    if (!confirmed) return;
-    deleteAttachmentMutation.mutate(attachment);
+    setAttachmentParaExcluir(attachment);
   };
 
   const handleDragEnd = (result) => {
@@ -894,6 +903,29 @@ export default function Leads() {
           </Dialog>
         );
       })()}
+
+      <AlertDialog open={Boolean(attachmentParaExcluir)} onOpenChange={(open) => !open && setAttachmentParaExcluir(null)}>
+        <AlertDialogContent className="rounded-none">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-black uppercase tracking-widest">Excluir anexo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir "{attachmentParaExcluir?.metadados?.nome || attachmentParaExcluir?.descricao || 'este anexo'}"? Essa acao nao pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-none text-xs font-bold uppercase tracking-wider">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-none bg-red-600 text-xs font-bold uppercase tracking-wider hover:bg-red-700"
+              onClick={() => {
+                deleteAttachmentMutation.mutate(attachmentParaExcluir);
+                setAttachmentParaExcluir(null);
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

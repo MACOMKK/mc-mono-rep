@@ -1,5 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -96,6 +106,7 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
   }, [atendimentos, evento?.id, evento?.lead_id, leads]);
 
   const [data, setData] = useState(() => createInitialData(evento, availableLeads.length ? availableLeads : leads, initialLeadId));
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const selectedLead = leads.find((lead) => lead.id === data.lead_id);
   const isClosed = ['concluida', 'cancelada'].includes(evento?.status);
   const needsResult = data.status === 'concluida';
@@ -160,6 +171,7 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto rounded-none p-0 gap-0">
         <DialogHeader className="bg-[#1a1a1a] px-6 py-4">
@@ -330,11 +342,7 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
                 type="button"
                 variant="destructive"
                 className="rounded-none text-xs font-bold uppercase tracking-wider"
-                onClick={() => {
-                  const confirmed = window.confirm('Excluir esta atividade?');
-                  if (!confirmed) return;
-                  onDelete(evento.id);
-                }}
+                onClick={() => setConfirmandoExclusao(true)}
               >
                 Excluir
               </Button>
@@ -351,5 +359,29 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
         </form>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={confirmandoExclusao} onOpenChange={setConfirmandoExclusao}>
+      <AlertDialogContent className="rounded-none">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="text-sm font-black uppercase tracking-widest">Excluir atividade</AlertDialogTitle>
+          <AlertDialogDescription>
+            Tem certeza que deseja excluir esta atividade? Essa acao nao pode ser desfeita.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel className="rounded-none text-xs font-bold uppercase tracking-wider">Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            className="rounded-none bg-red-600 text-xs font-bold uppercase tracking-wider hover:bg-red-700"
+            onClick={() => {
+              setConfirmandoExclusao(false);
+              onDelete(evento.id);
+            }}
+          >
+            Excluir
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

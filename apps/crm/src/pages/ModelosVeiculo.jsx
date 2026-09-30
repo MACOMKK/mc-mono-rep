@@ -3,6 +3,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Save, Trash2 } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +26,7 @@ export default function ModelosVeiculo() {
   const queryClient = useQueryClient();
   const canConfigure = user?.role === 'admin' || user?.role === 'manager';
   const [novoNome, setNovoNome] = useState('');
+  const [modeloParaExcluir, setModeloParaExcluir] = useState(null);
   const [novaMarcaId, setNovaMarcaId] = useState('');
   const [novaCategoriaId, setNovaCategoriaId] = useState('');
   const [novoAnoInicio, setNovoAnoInicio] = useState('');
@@ -343,11 +354,7 @@ export default function ModelosVeiculo() {
                       variant="outline"
                       size="icon"
                       className="h-9 w-9 rounded-none text-red-600"
-                      onClick={() => {
-                        if (window.confirm(`Excluir o modelo "${modelo.nome}"?`)) {
-                          deleteMutation.mutate(modelo.id);
-                        }
-                      }}
+                      onClick={() => setModeloParaExcluir(modelo)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -364,6 +371,29 @@ export default function ModelosVeiculo() {
           <Save className="h-3.5 w-3.5" /> Salvando...
         </div>
       ) : null}
+
+      <AlertDialog open={Boolean(modeloParaExcluir)} onOpenChange={(open) => !open && setModeloParaExcluir(null)}>
+        <AlertDialogContent className="rounded-none">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-black uppercase tracking-widest">Excluir modelo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o modelo "{modeloParaExcluir?.nome}"? Essa acao nao pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-none text-xs font-bold uppercase tracking-wider">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-none bg-red-600 text-xs font-bold uppercase tracking-wider hover:bg-red-700"
+              onClick={() => {
+                deleteMutation.mutate(modeloParaExcluir.id);
+                setModeloParaExcluir(null);
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

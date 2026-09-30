@@ -3,6 +3,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Save, Trash2 } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +24,7 @@ export default function CoresVeiculo() {
   const queryClient = useQueryClient();
   const canConfigure = user?.role === 'admin' || user?.role === 'manager';
   const [novoNome, setNovoNome] = useState('');
+  const [corParaExcluir, setCorParaExcluir] = useState(null);
 
   const { data: cores = [], isLoading, error } = useQuery({
     queryKey: ['crm-cores-veiculo'],
@@ -158,11 +169,7 @@ export default function CoresVeiculo() {
                       size="icon"
                       disabled={cor.__optimistic}
                       className="h-9 w-9 rounded-none text-red-600"
-                      onClick={() => {
-                        if (window.confirm(`Excluir a cor "${cor.nome}"?`)) {
-                          deleteMutation.mutate(cor.id);
-                        }
-                      }}
+                      onClick={() => setCorParaExcluir(cor)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -179,6 +186,29 @@ export default function CoresVeiculo() {
           <Save className="h-3.5 w-3.5" /> Salvando...
         </div>
       ) : null}
+
+      <AlertDialog open={Boolean(corParaExcluir)} onOpenChange={(open) => !open && setCorParaExcluir(null)}>
+        <AlertDialogContent className="rounded-none">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-black uppercase tracking-widest">Excluir cor</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir a cor "{corParaExcluir?.nome}"? Essa acao nao pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-none text-xs font-bold uppercase tracking-wider">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-none bg-red-600 text-xs font-bold uppercase tracking-wider hover:bg-red-700"
+              onClick={() => {
+                deleteMutation.mutate(corParaExcluir.id);
+                setCorParaExcluir(null);
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
