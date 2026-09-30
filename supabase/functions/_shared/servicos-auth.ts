@@ -111,6 +111,47 @@ export async function getServicosModuleRole(
   return rows[0]?.papel || (modulo === 'oficina' ? 'nenhum' : 'usuario');
 }
 
+// Mesma logica de getServicosAccess + getServicosModuleRole acima, mas numa
+// unica query (LEFT JOIN em permissoes_modulo) -- usada só por
+// getServicosAuthContext para economizar 1 round-trip de rede por invocacao
+// (medido em ~350ms em producao, ver plano de otimizacao de performance).
+// Mantem as duas funcoes separadas acima intactas/exportadas, caso algo mais
+// venha a precisar delas isoladamente.
+async function getServicosAccessAndModuleRole(sql: SqlClient, collaboradorId: string, modulo: string) {
+  const rows = await sql.unsafe(
+    `
+      select aus.*, pm.papel as _modulo_papel
+      from public.acessos_usuario_sistema aus
+      join public.sistemas s on s.id = aus.sistema_id
+      left join ${SERVICOS_SCHEMA}.permissoes_modulo pm
+        on pm.colaborador_id = aus.colaborador_id and pm.modulo = $3
+      where aus.colaborador_id = $1
+        and aus.ativo = true
+        and s.slug = $2
+        and s.ativo = true
+      limit 1;
+    `,
+    [collaboradorId, SERVICOS_SYSTEM_SLUG, modulo],
+  );
+
+  const row = rows[0];
+  if (!row) return { access: null as Record<string, unknown> | null, moduleRole: null as string | null };
+
+  const { _modulo_papel, ...access } = row as Record<string, unknown> & { _modulo_papel: string | null };
+  const accessLevel = getAccessLevel(access);
+
+  let moduleRole: string | null;
+  if (accessLevel === 'admin') {
+    moduleRole = 'admin';
+  } else if (!accessLevel) {
+    moduleRole = null;
+  } else {
+    moduleRole = _modulo_papel || (modulo === 'oficina' ? 'nenhum' : 'usuario');
+  }
+
+  return { access, moduleRole };
+}
+
 export type ServicosAuthContext = {
   user: { id: string; email?: string };
   collaborator: Record<string, unknown> | null;
@@ -142,12 +183,21 @@ export async function getServicosAuthContext(
     return cached.context;
   }
 
-  const user = await getAuthenticatedUser(token, supabaseUrl, supabaseAnonKey);
+  // auth.getUser() (chamada de rede pra API de Auth do Supabase) e a conexao
+  // inicial do postgres.js (custo fixo alto medido em producao, ~1,3s, ver
+  // plano de otimizacao de performance) sao independentes uma da outra --
+  // dispara as duas em paralelo em vez de esperar a auth terminar pra so
+  // depois abrir a conexao. `select 1` so serve pra forcar a conexao lazy do
+  // postgres.js a abrir agora; getCurrentCollaborator reaproveita a mesma
+  // conexao ja aberta na sequencia.
+  const [user] = await Promise.all([
+    getAuthenticatedUser(token, supabaseUrl, supabaseAnonKey),
+    sql.unsafe('select 1;'),
+  ]);
   const collaborator = await getCurrentCollaborator(sql, user);
-  const access = collaborator?.id ? await getServicosAccess(sql, String(collaborator.id)) : null;
-  const moduleRole = collaborator?.id
-    ? await getServicosModuleRole(sql, String(collaborator.id), access, modulo)
-    : null;
+  const { access, moduleRole } = collaborator?.id
+    ? await getServicosAccessAndModuleRole(sql, String(collaborator.id), modulo)
+    : { access: null, moduleRole: null };
 
   const context: ServicosAuthContext = { user, collaborator, access, moduleRole };
   authContextCache.set(cacheKey, { expiresAt: Date.now() + AUTH_CONTEXT_TTL_MS, context });

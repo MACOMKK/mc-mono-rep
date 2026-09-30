@@ -497,37 +497,39 @@ Deno.serve(async (request) => {
       // Financeiro, ver servicos-api/index.ts).
       const ehTeste = body.eh_teste === true && moduleRole === 'admin';
 
-      let avisoDonoDiferente = null;
-      if (clienteId) {
-        const veiculoRows = await sql.unsafe(
-          `
-            select v.cliente_atual_id, c.nome as cliente_atual_nome
-            from public.veiculos v
-            left join public.clientes c on c.id = v.cliente_atual_id
-            where v.id = $1
-            limit 1;
-          `,
-          [veiculoId],
-        );
-        const veiculoAtual = veiculoRows[0];
-        if (veiculoAtual?.cliente_atual_id && veiculoAtual.cliente_atual_id !== clienteId) {
-          avisoDonoDiferente = { atual_id: veiculoAtual.cliente_atual_id, atual_nome: veiculoAtual.cliente_atual_nome };
-        }
-      }
-
       // Numeracao por unidade (nao mais uma sequence global): trava com um
       // advisory lock escopado a unidade pra serializar criacoes concorrentes
       // na mesma unidade, calcula o proximo numero e insere na mesma
       // transacao -- a constraint unique(unidade_id, numero) da migration
-      // cobre qualquer brecha residual.
+      // cobre qualquer brecha residual. A checagem de "dono diferente" tambem
+      // entra aqui (era 1 round-trip sequencial antes da transacao) --
+      // mesma lógica, so que agora paga o custo de rede junto com o resto.
+      let avisoDonoDiferente: { atual_id: unknown; atual_nome: unknown } | null = null;
       const rows = await sql.begin(async (trx) => {
+        if (clienteId) {
+          const veiculoRows = await trx.unsafe(
+            `
+              select v.cliente_atual_id, c.nome as cliente_atual_nome
+              from public.veiculos v
+              left join public.clientes c on c.id = v.cliente_atual_id
+              where v.id = $1
+              limit 1;
+            `,
+            [veiculoId],
+          );
+          const veiculoAtual = veiculoRows[0];
+          if (veiculoAtual?.cliente_atual_id && veiculoAtual.cliente_atual_id !== clienteId) {
+            avisoDonoDiferente = { atual_id: veiculoAtual.cliente_atual_id, atual_nome: veiculoAtual.cliente_atual_nome };
+          }
+        }
+
         await trx.unsafe(`select pg_advisory_xact_lock(hashtextextended($1::text, 0));`, [unidadeId]);
         const proximoRows = await trx.unsafe(
           `select coalesce(max(numero), 0) + 1 as proximo from ${SERVICOS_SCHEMA}.checklist_avaliacoes where unidade_id = $1;`,
           [unidadeId],
         );
         const numero = Number(proximoRows[0].proximo);
-        return trx.unsafe(
+        const insertRows = await trx.unsafe(
           `
             insert into ${SERVICOS_SCHEMA}.checklist_avaliacoes
               (veiculo_id, cliente_id, colaborador_id, os, km, unidade_id, numero, eh_teste)
@@ -536,9 +538,12 @@ Deno.serve(async (request) => {
           `,
           [veiculoId, clienteId, colaboradorId, os, km, unidadeId, numero, ehTeste],
         );
+        await trx.unsafe(
+          `insert into ${SERVICOS_SCHEMA}.historico_checklist (checklist_id, evento, autor_id, observacao) values ($1, $2, $3, $4);`,
+          [String(insertRows[0].id), 'criado', collaborator?.id ? String(collaborator.id) : null, null],
+        );
+        return insertRows;
       });
-
-      await insertHistoricoChecklist(String(rows[0].id), 'criado', collaborator?.id ? String(collaborator.id) : null);
 
       return json({ row: rows[0], aviso_dono_diferente: avisoDonoDiferente }, 201);
     }
