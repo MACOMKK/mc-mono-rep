@@ -5,6 +5,7 @@ import { Crosshair, ImagePlus, Plus, X } from 'lucide-react';
 import { appClient } from '@/api/client';
 import { getImageFocusStyle } from '@/lib/announcementImage';
 import ImageFocusPicker from './ImageFocusPicker';
+import { usePendingUpload } from '@/lib/usePendingUpload';
 import {
   Button,
   Checkbox,
@@ -93,6 +94,7 @@ export default function AnnouncementForm({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [focusPickerOpen, setFocusPickerOpen] = useState(false);
+  const pendingImage = usePendingUpload(appClient.storage.deleteAnnouncementImage);
 
   const { data: documents = [] } = useQuery({
     queryKey: ['documents-picker'],
@@ -114,6 +116,7 @@ export default function AnnouncementForm({
 
     try {
       const uploadResult = await appClient.storage.uploadAnnouncementImage(file);
+      pendingImage.track(uploadResult.image_path);
       setForm((prev) => ({ ...prev, ...uploadResult, image_focus_x: 50, image_focus_y: 50 }));
       setFocusPickerOpen(true);
     } catch (error) {
@@ -143,6 +146,7 @@ export default function AnnouncementForm({
   };
 
   const clearImage = () => {
+    pendingImage.discard();
     setUploadError('');
     setForm((prev) => ({
       ...prev,
@@ -178,6 +182,7 @@ export default function AnnouncementForm({
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    pendingImage.markSubmitted();
     await onSubmit({
       ...form,
       publish_date: datetimeLocalToIso(form.publish_date),

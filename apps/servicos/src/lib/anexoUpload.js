@@ -9,6 +9,19 @@ export function isAllowedAnexoMimeType(file) {
   return ALLOWED_ANEXO_MIME_TYPES.includes(file.type);
 }
 
+// Upload vai direto pro Storage e so depois a servicos-api registra a linha -- se o registro
+// falhar (409 de duplicado, permissao, rede), o arquivo ficaria orfao no bucket. Apaga o upload
+// e repropaga o erro original; falha na limpeza e so logada pra nao mascarar o erro real.
+export async function registrarOuDescartarUpload(path, registrar) {
+  try {
+    return await registrar();
+  } catch (error) {
+    const { error: removeError } = await supabase.storage.from(financeiroApi.storage.bucket).remove([path]);
+    if (removeError) console.error('Falha ao descartar upload orfao:', { path, message: removeError.message });
+    throw error;
+  }
+}
+
 export async function uploadAnexo({
   file,
   solicitacaoId,
@@ -24,17 +37,19 @@ export async function uploadAnexo({
     .upload(path, file, { upsert: false });
   if (uploadError) throw uploadError;
 
-  return financeiroApi.anexos.registrar({
-    solicitacaoId,
-    parcelaId,
-    tipoAnexo,
-    nomeArquivo: file.name,
-    tipoMime: file.type || 'application/octet-stream',
-    tamanhoBytes: file.size,
-    storagePath: path,
-    sigiloso,
-    assinaturasNecessarias,
-  });
+  return registrarOuDescartarUpload(path, () =>
+    financeiroApi.anexos.registrar({
+      solicitacaoId,
+      parcelaId,
+      tipoAnexo,
+      nomeArquivo: file.name,
+      tipoMime: file.type || 'application/octet-stream',
+      tamanhoBytes: file.size,
+      storagePath: path,
+      sigiloso,
+      assinaturasNecessarias,
+    }),
+  );
 }
 
 // Correcao de anexo enviado errado numa solicitacao ja `pago` (ver substituir_anexo na
@@ -47,12 +62,14 @@ export async function substituirAnexo({ file, anexoId, solicitacaoId, tipoAnexo 
     .upload(path, file, { upsert: false });
   if (uploadError) throw uploadError;
 
-  return financeiroApi.anexos.substituir({
-    id: anexoId,
-    storagePath: path,
-    nomeArquivo: file.name,
-    tipoMime: file.type || 'application/octet-stream',
-    tamanhoBytes: file.size,
-    motivo,
-  });
+  return registrarOuDescartarUpload(path, () =>
+    financeiroApi.anexos.substituir({
+      id: anexoId,
+      storagePath: path,
+      nomeArquivo: file.name,
+      tipoMime: file.type || 'application/octet-stream',
+      tamanhoBytes: file.size,
+      motivo,
+    }),
+  );
 }

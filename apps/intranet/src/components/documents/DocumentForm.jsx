@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { appClient } from '@/api/client';
 import { Button, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Spinner, Textarea } from '@macom/ui';
 import { Upload } from 'lucide-react';
+import { usePendingUpload } from '@/lib/usePendingUpload';
 
 const EMPTY_FORM = {
   title: '',
@@ -44,6 +45,7 @@ export default function DocumentForm({ initialData = null, onSubmit, isLoading, 
   const [uploadError, setUploadError] = useState('');
   const [form, setForm] = useState(() => normalizeInitialData(initialData));
   const [uploading, setUploading] = useState(false);
+  const pendingFile = usePendingUpload(appClient.storage.deleteDocumentFile);
   const canSubmit = Boolean(
     form.company &&
     form.file_path &&
@@ -76,6 +78,7 @@ export default function DocumentForm({ initialData = null, onSubmit, isLoading, 
         company: selectedCompany?.name || form.company,
         category: form.category,
       });
+      pendingFile.track(uploadResult.file_path);
       setForm((prev) => ({ ...prev, ...uploadResult }));
     } catch (error) {
       setForm((prev) => ({
@@ -105,6 +108,7 @@ export default function DocumentForm({ initialData = null, onSubmit, isLoading, 
     if (payload.visibility !== 'nivel') {
       payload.minimum_access_level = null;
     }
+    pendingFile.markSubmitted();
     onSubmit(payload);
   };
 

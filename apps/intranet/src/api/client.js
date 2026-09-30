@@ -163,6 +163,26 @@ async function uploadAvatar(file, collaboratorId) {
   };
 }
 
+async function removeFromBucket(bucket, filePath) {
+  assertSupabaseConfigured();
+  const normalizedPath = String(filePath || '').trim();
+  if (!normalizedPath) return true;
+
+  const { error } = await supabase.storage.from(bucket).remove([normalizedPath]);
+  if (error) {
+    throw normalizeFunctionError(error, 'Falha ao remover arquivo enviado.');
+  }
+  return true;
+}
+
+function deleteAnnouncementImage(filePath) {
+  return removeFromBucket(ANNOUNCEMENT_IMAGE_STORAGE_BUCKET, filePath);
+}
+
+function deleteDocumentFile(filePath) {
+  return removeFromBucket(DOCUMENT_STORAGE_BUCKET, filePath);
+}
+
 async function deleteAvatar(filePath) {
   assertSupabaseConfigured();
   const normalizedPath = String(filePath || '').trim();
@@ -293,7 +313,9 @@ export const appClient = {
 
   storage: {
     uploadFile,
+    deleteDocumentFile,
     uploadAnnouncementImage,
+    deleteAnnouncementImage,
     uploadBirthdayTemplateImage,
     uploadAvatar,
     deleteAvatar,

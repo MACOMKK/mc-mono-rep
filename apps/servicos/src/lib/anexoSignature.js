@@ -2,6 +2,7 @@ import { PDFDocument } from 'pdf-lib';
 import { embedSignatureImage, stampSignature } from '@macom/pdf-signature';
 import { financeiroApi } from '@macom/api-client/financeiroApi';
 import { supabase } from '@macom/api-client/supabaseClient';
+import { registrarOuDescartarUpload } from './anexoUpload';
 
 // Assina um anexo individual (nao o "PDF unico" mesclado) e substitui o arquivo original pela
 // versao carimbada: mesmo padrao de path de uploadAnexo (anexoUpload.js), so que sobrescrevendo
@@ -24,13 +25,15 @@ export async function signAnexo({ anexo, signatureUrl, signerName, posicao, empr
     .upload(path, blob, { upsert: false, contentType: 'application/pdf' });
   if (uploadError) throw uploadError;
 
-  return financeiroApi.anexos.assinar({
-    id: anexo.id,
-    storagePath: path,
-    nomeArquivo: anexo.nome_arquivo,
-    tamanhoBytes: blob.size,
-    posicao,
-  });
+  return registrarOuDescartarUpload(path, () =>
+    financeiroApi.anexos.assinar({
+      id: anexo.id,
+      storagePath: path,
+      nomeArquivo: anexo.nome_arquivo,
+      tamanhoBytes: blob.size,
+      posicao,
+    }),
+  );
 }
 
 // Sobe o PDF unico (ja mesclado e carimbado com a assinatura em handleConfirmarPosicaoAssinatura)
@@ -47,13 +50,15 @@ export async function persistPdfUnicoAssinado({ solicitacaoId, pdfDoc, numero, p
     .upload(path, blob, { upsert: false, contentType: 'application/pdf' });
   if (uploadError) throw uploadError;
 
-  return financeiroApi.anexos.registrar({
-    solicitacaoId,
-    tipoAnexo: 'pdf_unificado',
-    nomeArquivo: `anexos-assinado-${numero || solicitacaoId}.pdf`,
-    tipoMime: 'application/pdf',
-    tamanhoBytes: blob.size,
-    storagePath: path,
-    posicaoAssinatura: posicao,
-  });
+  return registrarOuDescartarUpload(path, () =>
+    financeiroApi.anexos.registrar({
+      solicitacaoId,
+      tipoAnexo: 'pdf_unificado',
+      nomeArquivo: `anexos-assinado-${numero || solicitacaoId}.pdf`,
+      tipoMime: 'application/pdf',
+      tamanhoBytes: blob.size,
+      storagePath: path,
+      posicaoAssinatura: posicao,
+    }),
+  );
 }
