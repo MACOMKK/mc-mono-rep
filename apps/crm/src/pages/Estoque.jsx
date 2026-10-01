@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Save, Trash2 } from 'lucide-react';
+import { Car, Pencil, Plus, RotateCcw, Save, Search, Star, Trash2, X } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -36,6 +36,24 @@ const STATUS_OPTIONS = [
   { value: 'vendido', label: 'Vendido' },
 ];
 
+const ABAS_CONDICAO = [
+  { value: 'todos', label: 'Todos' },
+  { value: 'novo', label: 'Novos' },
+  { value: 'seminovo', label: 'Seminovos' },
+];
+
+const SITUACAO_OPTIONS = [
+  { value: 'estoque', label: 'Estoque' },
+  { value: 'saida_demonstracao', label: 'Saida demonstracao' },
+  { value: 'imobilizado', label: 'Imobilizado' },
+];
+
+const SITUACAO_BADGE_CLASS = {
+  estoque: 'bg-emerald-100 text-emerald-700',
+  saida_demonstracao: 'bg-amber-100 text-amber-700',
+  imobilizado: 'bg-slate-200 text-slate-700',
+};
+
 const emptyForm = {
   modelo_id: '',
   versao_id: '',
@@ -46,7 +64,77 @@ const emptyForm = {
   condicao: 'novo',
   status: 'disponivel',
   preco: '',
+  situacao: 'estoque',
+  vendedor_reserva_id: '',
+  cliente_reserva_id: '',
+  cliente_reserva_nome: '',
 };
+
+function useDebouncedValue(value, delay = 300) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timeout);
+  }, [value, delay]);
+  return debounced;
+}
+
+function ClienteReservaField({ value, nome, onSelect, onClear }) {
+  const [busca, setBusca] = useState('');
+  const buscaDebounced = useDebouncedValue(busca);
+  const [resultados, setResultados] = useState([]);
+
+  useEffect(() => {
+    if (!buscaDebounced.trim()) {
+      setResultados([]);
+      return undefined;
+    }
+    let cancelado = false;
+    crmDataClient.entities.Cliente.buscar(buscaDebounced)
+      .then((rows) => { if (!cancelado) setResultados(rows || []); })
+      .catch(() => { if (!cancelado) setResultados([]); });
+    return () => { cancelado = true; };
+  }, [buscaDebounced]);
+
+  if (value && nome) {
+    return (
+      <div className="flex items-center justify-between gap-2 border px-3 py-2 text-sm">
+        <span>{nome}</span>
+        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={onClear}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={busca}
+          onChange={(event) => setBusca(event.target.value)}
+          placeholder="Nome, telefone ou CPF/CNPJ..."
+          className="h-9 rounded-none pl-8"
+        />
+      </div>
+      {resultados.length > 0 ? (
+        <div className="max-h-40 divide-y overflow-y-auto border">
+          {resultados.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="block w-full p-2 text-left text-sm hover:bg-accent"
+              onClick={() => { onSelect(item); setBusca(''); setResultados([]); }}
+            >
+              {item.nome}{item.telefone ? ` - ${item.telefone}` : ''}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export default function Estoque() {
   const { user } = useAuth();
@@ -54,7 +142,11 @@ export default function Estoque() {
   const canConfigure = user?.role === 'admin' || user?.role === 'manager';
 
   const [form, setForm] = useState(emptyForm);
-  const [filtros, setFiltros] = useState({ marca: '', modelo: '', versao: '', chassi: '', cor: '', placa: '' });
+  const [filtros, setFiltros] = useState({
+    marca: '', modelo: '', chassi: '', placa: '', cor: '', km: '', preco: '', condicao: '', status: '',
+  });
+  const [abaCondicao, setAbaCondicao] = useState('todos');
+  const [busca, setBusca] = useState('');
   const [modeloDialogOpen, setModeloDialogOpen] = useState(false);
   const [novoModelo, setNovoModelo] = useState(emptyNovoModelo);
   const [versaoDialogOpen, setVersaoDialogOpen] = useState(false);
@@ -62,6 +154,9 @@ export default function Estoque() {
   const [corDialogOpen, setCorDialogOpen] = useState(false);
   const [novaCorNome, setNovaCorNome] = useState('');
   const [veiculoParaExcluir, setVeiculoParaExcluir] = useState(null);
+  const [novoVeiculoDialogOpen, setNovoVeiculoDialogOpen] = useState(false);
+  const [reservaDialogVeiculo, setReservaDialogVeiculo] = useState(null);
+  const [reservaForm, setReservaForm] = useState({ vendedor_reserva_id: '', cliente_reserva_id: '', cliente_reserva_nome: '' });
 
   const { data: veiculos = [], isLoading, error } = useQuery({
     queryKey: ['crm-veiculos-estoque'],
@@ -94,6 +189,12 @@ export default function Estoque() {
     queryFn: () => crmDataClient.entities.CorVeiculo.list('nome'),
   });
 
+  const { data: vendedores = [] } = useQuery({
+    queryKey: ['crm-responsaveis'],
+    queryFn: () => crmDataClient.entities.Responsavel.list(),
+    enabled: canConfigure,
+  });
+
   const marcaNomePorId = useMemo(() => Object.fromEntries(marcas.map((marca) => [marca.id, marca.nome])), [marcas]);
   const modeloPorId = useMemo(() => Object.fromEntries(modelos.map((modelo) => [modelo.id, modelo])), [modelos]);
   const versaoNomePorId = useMemo(() => Object.fromEntries(versoes.map((versao) => [versao.id, versao.nome])), [versoes]);
@@ -109,17 +210,33 @@ export default function Estoque() {
       const modelo = modeloPorId[veiculo.modelo_id];
       const marcaNome = modelo ? (marcaNomePorId[modelo.marca_id] || '') : '';
       const modeloNome = modelo?.nome || '';
-      const versaoNome = versaoNomePorId[veiculo.versao_id] || '';
+
+      if (abaCondicao === 'novo' && veiculo.condicao !== 'novo') return false;
+      if (abaCondicao === 'seminovo' && veiculo.condicao === 'novo') return false;
 
       if (filtros.marca && !marcaNome.toLowerCase().includes(termo(filtros.marca))) return false;
       if (filtros.modelo && !modeloNome.toLowerCase().includes(termo(filtros.modelo))) return false;
-      if (filtros.versao && !versaoNome.toLowerCase().includes(termo(filtros.versao))) return false;
       if (filtros.chassi && !veiculo.chassi.toLowerCase().includes(termo(filtros.chassi))) return false;
-      if (filtros.cor && !veiculo.cor.toLowerCase().includes(termo(filtros.cor))) return false;
-      if (filtros.placa && !veiculo.placa.toLowerCase().includes(termo(filtros.placa))) return false;
+      if (filtros.cor && !(veiculo.cor || '').toLowerCase().includes(termo(filtros.cor))) return false;
+      if (filtros.placa && !(veiculo.placa || '').toLowerCase().includes(termo(filtros.placa))) return false;
+      if (filtros.km && Number(veiculo.km || 0) > Number(filtros.km)) return false;
+      if (filtros.preco && Number(veiculo.preco || 0) > Number(filtros.preco)) return false;
+      if (filtros.condicao && veiculo.condicao !== filtros.condicao) return false;
+      if (filtros.status && veiculo.status !== filtros.status) return false;
+
+      if (busca.trim()) {
+        const alvo = `${marcaNome} ${modeloNome} ${veiculo.chassi} ${veiculo.placa || ''}`.toLowerCase();
+        if (!alvo.includes(termo(busca))) return false;
+      }
       return true;
     });
-  }, [veiculos, filtros, modeloPorId, marcaNomePorId, versaoNomePorId]);
+  }, [veiculos, filtros, abaCondicao, busca, modeloPorId, marcaNomePorId]);
+
+  const resumoEstoque = useMemo(() => ({
+    total: veiculosFiltrados.length,
+    novos: veiculosFiltrados.filter((veiculo) => veiculo.condicao === 'novo').length,
+    seminovos: veiculosFiltrados.filter((veiculo) => veiculo.condicao !== 'novo').length,
+  }), [veiculosFiltrados]);
 
   const createMutation = useMutation({
     mutationFn: (data) => crmDataClient.entities.VeiculoEstoque.create(data),
@@ -128,6 +245,7 @@ export default function Estoque() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque'] });
+      setNovoVeiculoDialogOpen(false);
       toast({ title: 'Veiculo adicionado ao estoque', variant: 'success' });
     },
     onError: (mutationError) => toast({
@@ -253,215 +371,208 @@ export default function Estoque() {
       condicao: form.condicao,
       status: form.status,
       preco: form.preco ? Number(form.preco) : null,
+      situacao: form.situacao,
+      vendedor_reserva_id: form.vendedor_reserva_id || null,
+      cliente_reserva_id: form.cliente_reserva_id || null,
     });
+  };
+
+  const abrirReservaDialog = (veiculo) => {
+    setReservaDialogVeiculo(veiculo);
+    setReservaForm({
+      vendedor_reserva_id: veiculo.vendedor_reserva_id || '',
+      cliente_reserva_id: veiculo.cliente_reserva_id || '',
+      cliente_reserva_nome: veiculo.cliente_reserva_nome || '',
+    });
+  };
+
+  const handleSalvarReserva = () => {
+    updateMutation.mutate({
+      id: reservaDialogVeiculo.id,
+      ...reservaDialogVeiculo,
+      vendedor_reserva_id: reservaForm.vendedor_reserva_id || null,
+      cliente_reserva_id: reservaForm.cliente_reserva_id || null,
+    });
+    setReservaDialogVeiculo(null);
   };
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-6">
-      <div className="mb-5 border-b pb-5">
-        <h1 className="text-xl font-black uppercase tracking-widest">Estoque</h1>
-        <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground">
-          Veiculos fisicos disponiveis para venda, identificados por chassi/placa. Reaproveita o
-          catalogo de Marca / Modelo / Versao usado no cadastro de leads.
-        </p>
-      </div>
-
-      {canConfigure ? (
-        <form onSubmit={handleCreate} className="mb-5 grid gap-3 border-b bg-white p-5 md:grid-cols-4">
-          <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-wider">Modelo</Label>
-            <div className="flex gap-1">
-              <Select
-                value={form.modelo_id}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, modelo_id: value, versao_id: '' }))}
-              >
-                <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione o modelo" /></SelectTrigger>
-                <SelectContent className="rounded-none">
-                  {modelos.map((modelo) => (
-                    <SelectItem key={modelo.id} value={modelo.id}>
-                      {marcaNomePorId[modelo.marca_id] || '-'} {modelo.nome}{!modelo.ativo ? ' (inativo)' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4 border-b pb-5">
+        <div className="flex gap-3">
+          <div className="w-1.5 shrink-0 bg-primary" />
+          <div>
+            <h1 className="text-xl font-black uppercase tracking-widest">Estoque</h1>
+            <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground">
+              Veiculos fisicos disponiveis para venda, identificados por chassi/placa. Reaproveita o
+              catalogo de Marca / Modelo / Versao usado no cadastro de leads.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex border border-border bg-white">
+            {ABAS_CONDICAO.map((aba) => (
+              <button
+                key={aba.value}
                 type="button"
-                variant="outline"
-                className="h-9 shrink-0 rounded-none px-2"
-                title="Nao encontrei o modelo"
-                onClick={() => setModeloDialogOpen(true)}
+                onClick={() => setAbaCondicao(aba.value)}
+                className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
+                  abaCondicao === aba.value ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
+                }`}
               >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
+                {aba.label}
+              </button>
+            ))}
           </div>
-          <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-wider">Versao</Label>
-            <div className="flex gap-1">
-              <Select
-                value={form.versao_id}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, versao_id: value }))}
-                disabled={!form.modelo_id}
-              >
-                <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione a versao" /></SelectTrigger>
-                <SelectContent className="rounded-none">
-                  {versoesDoModelo.map((versao) => (
-                    <SelectItem key={versao.id} value={versao.id}>{versao.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-9 shrink-0 rounded-none px-2"
-                title="Nao encontrei a versao"
-                disabled={!form.modelo_id}
-                onClick={() => setVersaoDialogOpen(true)}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-wider">Chassi</Label>
-            <Input
-              value={form.chassi}
-              onChange={(event) => setForm((prev) => ({ ...prev, chassi: event.target.value }))}
-              placeholder="Ex.: 93XATGK1WVCT33302"
-              className="h-9 rounded-none"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-wider">Placa</Label>
-            <Input
-              value={form.placa}
-              onChange={(event) => setForm((prev) => ({ ...prev, placa: event.target.value }))}
-              placeholder="Ex.: ABC1D23"
-              className="h-9 rounded-none"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-wider">Cor</Label>
-            <div className="flex gap-1">
-              <Select
-                value={form.cor_id}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, cor_id: value }))}
-              >
-                <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione a cor" /></SelectTrigger>
-                <SelectContent className="rounded-none">
-                  {cores.map((cor) => (
-                    <SelectItem key={cor.id} value={cor.id}>{cor.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-9 shrink-0 rounded-none px-2"
-                title="Nao encontrei a cor"
-                onClick={() => setCorDialogOpen(true)}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-wider">Km</Label>
-            <Input
-              type="number"
-              min="0"
-              value={form.km}
-              onChange={(event) => setForm((prev) => ({ ...prev, km: event.target.value }))}
-              className="h-9 rounded-none"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-wider">Preco</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.preco}
-              onChange={(event) => setForm((prev) => ({ ...prev, preco: event.target.value }))}
-              className="h-9 rounded-none"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-wider">Condicao</Label>
-            <Select value={form.condicao} onValueChange={(value) => setForm((prev) => ({ ...prev, condicao: value }))}>
-              <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent className="rounded-none">
-                {CONDICAO_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-wider">Status</Label>
-            <Select value={form.status} onValueChange={(value) => setForm((prev) => ({ ...prev, status: value }))}>
-              <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent className="rounded-none">
-                {STATUS_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-end md:col-span-2">
+          {canConfigure ? (
             <Button
-              type="submit"
-              disabled={!form.chassi.trim() || !form.modelo_id || createMutation.isPending}
+              type="button"
+              onClick={() => setNovoVeiculoDialogOpen(true)}
               className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
             >
-              <Plus className="mr-2 h-4 w-4" /> {createMutation.isPending ? 'Adicionando...' : 'Adicionar ao estoque'}
+              <Plus className="mr-2 h-4 w-4" /> Adicionar veiculo
             </Button>
-          </div>
-        </form>
-      ) : null}
-
-      <div className="mb-4 grid gap-3 border bg-white p-4 md:grid-cols-6">
-        <Input
-          value={filtros.marca}
-          onChange={(event) => setFiltros((prev) => ({ ...prev, marca: event.target.value }))}
-          placeholder="Marca"
-          className="h-9 rounded-none"
-        />
-        <Input
-          value={filtros.modelo}
-          onChange={(event) => setFiltros((prev) => ({ ...prev, modelo: event.target.value }))}
-          placeholder="Modelo"
-          className="h-9 rounded-none"
-        />
-        <Input
-          value={filtros.versao}
-          onChange={(event) => setFiltros((prev) => ({ ...prev, versao: event.target.value }))}
-          placeholder="Versao"
-          className="h-9 rounded-none"
-        />
-        <Input
-          value={filtros.chassi}
-          onChange={(event) => setFiltros((prev) => ({ ...prev, chassi: event.target.value }))}
-          placeholder="Chassi"
-          className="h-9 rounded-none"
-        />
-        <Input
-          value={filtros.cor}
-          onChange={(event) => setFiltros((prev) => ({ ...prev, cor: event.target.value }))}
-          placeholder="Cor"
-          className="h-9 rounded-none"
-        />
-        <Input
-          value={filtros.placa}
-          onChange={(event) => setFiltros((prev) => ({ ...prev, placa: event.target.value }))}
-          placeholder="Placa"
-          className="h-9 rounded-none"
-        />
+          ) : null}
+        </div>
       </div>
 
-      <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-        Lista de veiculos em estoque ({veiculosFiltrados.length})
-      </p>
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {[
+          { label: 'Total de veiculos', valor: resumoEstoque.total, icon: Car },
+          { label: 'Novos', valor: resumoEstoque.novos, icon: Star },
+          { label: 'Seminovos', valor: resumoEstoque.seminovos, icon: RotateCcw },
+        ].map((card) => (
+          <div key={card.label} className="relative flex items-center gap-4 overflow-hidden border bg-white p-5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary">
+              <card.icon className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{card.label}</p>
+              <p className="mt-1 text-3xl font-black">{card.valor}</p>
+            </div>
+            <card.icon className="pointer-events-none absolute -bottom-2 -right-2 h-20 w-20 text-muted-foreground/10" />
+          </div>
+        ))}
+      </div>
+
+      <div className="mb-5 grid gap-3 border bg-white p-4 md:grid-cols-5">
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Marca</Label>
+          <Input
+            value={filtros.marca}
+            onChange={(event) => setFiltros((prev) => ({ ...prev, marca: event.target.value }))}
+            placeholder="Selecione a marca"
+            className="h-9 rounded-none"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Modelo</Label>
+          <Input
+            value={filtros.modelo}
+            onChange={(event) => setFiltros((prev) => ({ ...prev, modelo: event.target.value }))}
+            placeholder="Selecione o modelo"
+            className="h-9 rounded-none"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Chassi</Label>
+          <Input
+            value={filtros.chassi}
+            onChange={(event) => setFiltros((prev) => ({ ...prev, chassi: event.target.value }))}
+            placeholder="Ex.: 93XATGK1WVCT33302"
+            className="h-9 rounded-none"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Placa</Label>
+          <Input
+            value={filtros.placa}
+            onChange={(event) => setFiltros((prev) => ({ ...prev, placa: event.target.value }))}
+            placeholder="Ex.: ABC1D23"
+            className="h-9 rounded-none"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Cor</Label>
+          <Input
+            value={filtros.cor}
+            onChange={(event) => setFiltros((prev) => ({ ...prev, cor: event.target.value }))}
+            placeholder="Selecione a cor"
+            className="h-9 rounded-none"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Km (ate)</Label>
+          <Input
+            type="number"
+            min="0"
+            value={filtros.km}
+            onChange={(event) => setFiltros((prev) => ({ ...prev, km: event.target.value }))}
+            className="h-9 rounded-none"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Preco (ate)</Label>
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            value={filtros.preco}
+            onChange={(event) => setFiltros((prev) => ({ ...prev, preco: event.target.value }))}
+            className="h-9 rounded-none"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Condicao</Label>
+          <Select
+            value={filtros.condicao || 'todas'}
+            onValueChange={(value) => setFiltros((prev) => ({ ...prev, condicao: value === 'todas' ? '' : value }))}
+          >
+            <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent className="rounded-none">
+              <SelectItem value="todas">Todas</SelectItem>
+              {CONDICAO_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Status</Label>
+          <Select
+            value={filtros.status || 'todos'}
+            onValueChange={(value) => setFiltros((prev) => ({ ...prev, status: value === 'todos' ? '' : value }))}
+          >
+            <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent className="rounded-none">
+              <SelectItem value="todos">Todos</SelectItem>
+              {STATUS_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-end">
+          <Button type="button" className="h-9 w-full rounded-none bg-primary text-xs font-bold uppercase tracking-wider hover:bg-primary/90">
+            <Search className="mr-2 h-4 w-4" /> Filtrar
+          </Button>
+        </div>
+      </div>
+
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+          Lista de veiculos em estoque ({veiculosFiltrados.length})
+        </p>
+        <div className="relative w-full max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={busca}
+            onChange={(event) => setBusca(event.target.value)}
+            placeholder="Buscar na lista..."
+            className="h-9 rounded-none pl-8"
+          />
+        </div>
+      </div>
 
       {isLoading ? <p className="py-10 text-sm text-muted-foreground">Carregando estoque...</p> : null}
       {error ? <p className="py-10 text-sm text-red-600">{error.message}</p> : null}
@@ -481,6 +592,8 @@ export default function Estoque() {
                 <TableHead className="text-white">Cor</TableHead>
                 <TableHead className="text-white">Placa</TableHead>
                 <TableHead className="text-white">Condicao</TableHead>
+                <TableHead className="text-white">Situacao</TableHead>
+                <TableHead className="text-white">Reserva</TableHead>
                 <TableHead className="text-white">Status</TableHead>
                 {canConfigure ? <TableHead className="text-white" /> : null}
               </TableRow>
@@ -512,6 +625,45 @@ export default function Estoque() {
                       ) : (
                         <span className="text-sm text-slate-700">{CONDICAO_OPTIONS.find((option) => option.value === veiculo.condicao)?.label || '-'}</span>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      {canConfigure ? (
+                        <Select
+                          value={veiculo.situacao}
+                          onValueChange={(situacao) => updateMutation.mutate({ id: veiculo.id, ...veiculo, situacao })}
+                        >
+                          <SelectTrigger className={`h-8 w-40 rounded-none text-xs ${SITUACAO_BADGE_CLASS[veiculo.situacao] || ''}`}><SelectValue /></SelectTrigger>
+                          <SelectContent className="rounded-none">
+                            {SITUACAO_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className={`inline-block px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${SITUACAO_BADGE_CLASS[veiculo.situacao] || ''}`}>
+                          {SITUACAO_OPTIONS.find((option) => option.value === veiculo.situacao)?.label || '-'}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs leading-tight">
+                          <p className="font-semibold text-slate-700">{veiculo.vendedor_reserva_nome || '-'}</p>
+                          <p className="text-muted-foreground">{veiculo.cliente_reserva_nome || '-'}</p>
+                        </div>
+                        {canConfigure ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-7 w-7 shrink-0 rounded-none"
+                            title="Editar reserva"
+                            onClick={() => abrirReservaDialog(veiculo)}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {canConfigure ? (
@@ -556,6 +708,200 @@ export default function Estoque() {
           <Save className="h-3.5 w-3.5" /> Salvando...
         </div>
       ) : null}
+
+      <Dialog open={novoVeiculoDialogOpen} onOpenChange={(open) => { setNovoVeiculoDialogOpen(open); if (!open) setForm(emptyForm); }}>
+        <DialogContent className="rounded-none sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-black uppercase tracking-widest">Adicionar veiculo ao estoque</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreate} className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Modelo</Label>
+              <div className="flex gap-1">
+                <Select
+                  value={form.modelo_id}
+                  onValueChange={(value) => setForm((prev) => ({ ...prev, modelo_id: value, versao_id: '' }))}
+                >
+                  <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione o modelo" /></SelectTrigger>
+                  <SelectContent className="rounded-none">
+                    {modelos.map((modelo) => (
+                      <SelectItem key={modelo.id} value={modelo.id}>
+                        {marcaNomePorId[modelo.marca_id] || '-'} {modelo.nome}{!modelo.ativo ? ' (inativo)' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 shrink-0 rounded-none px-2"
+                  title="Nao encontrei o modelo"
+                  onClick={() => setModeloDialogOpen(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Versao</Label>
+              <div className="flex gap-1">
+                <Select
+                  value={form.versao_id}
+                  onValueChange={(value) => setForm((prev) => ({ ...prev, versao_id: value }))}
+                  disabled={!form.modelo_id}
+                >
+                  <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione a versao" /></SelectTrigger>
+                  <SelectContent className="rounded-none">
+                    {versoesDoModelo.map((versao) => (
+                      <SelectItem key={versao.id} value={versao.id}>{versao.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 shrink-0 rounded-none px-2"
+                  title="Nao encontrei a versao"
+                  disabled={!form.modelo_id}
+                  onClick={() => setVersaoDialogOpen(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Chassi</Label>
+              <Input
+                value={form.chassi}
+                onChange={(event) => setForm((prev) => ({ ...prev, chassi: event.target.value }))}
+                placeholder="Ex.: 93XATGK1WVCT33302"
+                className="h-9 rounded-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Placa</Label>
+              <Input
+                value={form.placa}
+                onChange={(event) => setForm((prev) => ({ ...prev, placa: event.target.value }))}
+                placeholder="Ex.: ABC1D23"
+                className="h-9 rounded-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Cor</Label>
+              <div className="flex gap-1">
+                <Select
+                  value={form.cor_id}
+                  onValueChange={(value) => setForm((prev) => ({ ...prev, cor_id: value }))}
+                >
+                  <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione a cor" /></SelectTrigger>
+                  <SelectContent className="rounded-none">
+                    {cores.map((cor) => (
+                      <SelectItem key={cor.id} value={cor.id}>{cor.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 shrink-0 rounded-none px-2"
+                  title="Nao encontrei a cor"
+                  onClick={() => setCorDialogOpen(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Km</Label>
+              <Input
+                type="number"
+                min="0"
+                value={form.km}
+                onChange={(event) => setForm((prev) => ({ ...prev, km: event.target.value }))}
+                className="h-9 rounded-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Preco</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.preco}
+                onChange={(event) => setForm((prev) => ({ ...prev, preco: event.target.value }))}
+                className="h-9 rounded-none"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Condicao</Label>
+              <Select value={form.condicao} onValueChange={(value) => setForm((prev) => ({ ...prev, condicao: value }))}>
+                <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent className="rounded-none">
+                  {CONDICAO_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Status</Label>
+              <Select value={form.status} onValueChange={(value) => setForm((prev) => ({ ...prev, status: value }))}>
+                <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent className="rounded-none">
+                  {STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Situacao</Label>
+              <Select value={form.situacao} onValueChange={(value) => setForm((prev) => ({ ...prev, situacao: value }))}>
+                <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent className="rounded-none">
+                  {SITUACAO_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Vendedor da reserva</Label>
+              <Select
+                value={form.vendedor_reserva_id || 'nenhum'}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, vendedor_reserva_id: value === 'nenhum' ? '' : value }))}
+              >
+                <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent className="rounded-none">
+                  <SelectItem value="nenhum">Nenhum</SelectItem>
+                  {vendedores.map((vendedor) => (
+                    <SelectItem key={vendedor.id} value={vendedor.id}>{vendedor.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Cliente da reserva</Label>
+              <ClienteReservaField
+                value={form.cliente_reserva_id}
+                nome={form.cliente_reserva_nome}
+                onSelect={(item) => setForm((prev) => ({ ...prev, cliente_reserva_id: item.id, cliente_reserva_nome: item.nome }))}
+                onClear={() => setForm((prev) => ({ ...prev, cliente_reserva_id: '', cliente_reserva_nome: '' }))}
+              />
+            </div>
+            <DialogFooter className="md:col-span-2">
+              <Button
+                type="submit"
+                disabled={!form.chassi.trim() || !form.modelo_id || createMutation.isPending}
+                className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
+              >
+                <Plus className="mr-2 h-4 w-4" /> {createMutation.isPending ? 'Adicionando...' : 'Adicionar ao estoque'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={modeloDialogOpen} onOpenChange={(open) => { setModeloDialogOpen(open); if (!open) setNovoModelo(emptyNovoModelo); }}>
         <DialogContent className="rounded-none sm:max-w-md">
@@ -689,6 +1035,57 @@ export default function Estoque() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(reservaDialogVeiculo)} onOpenChange={(open) => !open && setReservaDialogVeiculo(null)}>
+        <DialogContent className="rounded-none sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-black uppercase tracking-widest">Editar reserva</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Vendedor</Label>
+              <Select
+                value={reservaForm.vendedor_reserva_id || 'nenhum'}
+                onValueChange={(value) => setReservaForm((prev) => ({ ...prev, vendedor_reserva_id: value === 'nenhum' ? '' : value }))}
+              >
+                <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent className="rounded-none">
+                  <SelectItem value="nenhum">Nenhum</SelectItem>
+                  {vendedores.map((vendedor) => (
+                    <SelectItem key={vendedor.id} value={vendedor.id}>{vendedor.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Cliente</Label>
+              <ClienteReservaField
+                value={reservaForm.cliente_reserva_id}
+                nome={reservaForm.cliente_reserva_nome}
+                onSelect={(item) => setReservaForm((prev) => ({ ...prev, cliente_reserva_id: item.id, cliente_reserva_nome: item.nome }))}
+                onClear={() => setReservaForm((prev) => ({ ...prev, cliente_reserva_id: '', cliente_reserva_nome: '' }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
+              onClick={() => setReservaDialogVeiculo(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
+              onClick={handleSalvarReserva}
+            >
+              Salvar reserva
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

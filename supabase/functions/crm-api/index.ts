@@ -174,7 +174,15 @@ const ENTITY_CONFIG = {
     table: 'veiculos_estoque',
     orderBy: 'criado_em',
     orderDirection: 'desc',
-    allowedFields: ['condicao', 'status', 'preco', 'observacoes'],
+    allowedFields: [
+      'condicao',
+      'status',
+      'preco',
+      'observacoes',
+      'situacao',
+      'vendedor_reserva_id',
+      'cliente_reserva_id',
+    ],
   },
   pipelines: {
     table: 'pipelines',
@@ -453,6 +461,14 @@ function mapDatabaseError(error: unknown) {
 
   if (message.includes('vendas_veiculo_estoque_id_key') || message.includes('Este veiculo ja foi vendido')) {
     return 'Este veiculo ja foi vendido.';
+  }
+
+  if (message.includes('Este veiculo esta reservado para outro vendedor')) {
+    return 'Este veiculo esta reservado para outro vendedor.';
+  }
+
+  if (message.includes('chk_veiculos_estoque_reserva_consistente')) {
+    return 'Para marcar como reservado, selecione vendedor e cliente da reserva.';
   }
 
   if (message.includes('violates foreign key constraint') && message.includes('modelos_veiculo')) {
@@ -868,10 +884,15 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
   if (entity === 'veiculos_estoque') {
     return `
       select ${countExpr}ve.*,
-        (row_to_json(v)::jsonb || jsonb_build_object('cor', cv.nome))::json as veiculo
+        (row_to_json(v)::jsonb || jsonb_build_object('cor', cv.nome))::json as veiculo,
+        vr.nome as vendedor_reserva_nome,
+        cr.nome as cliente_reserva_nome
       from ${CRM_SCHEMA}.veiculos_estoque ve
       join public.veiculos v on v.id = ve.veiculo_id
       left join public.cores_veiculo cv on cv.id = v.cor_id
+      left join public.colaboradores vr on vr.id = ve.vendedor_reserva_id
+      left join ${CRM_SCHEMA}.clientes_crm crc on crc.id = ve.cliente_reserva_id
+      left join public.clientes cr on cr.id = crc.id
     `;
   }
 

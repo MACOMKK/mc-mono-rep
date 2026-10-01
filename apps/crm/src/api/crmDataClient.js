@@ -352,6 +352,11 @@ function mapVeiculoEstoqueRow(row = {}) {
     status: row.status || 'disponivel',
     preco: row.preco ?? null,
     observacoes: row.observacoes || '',
+    situacao: row.situacao || 'estoque',
+    vendedor_reserva_id: row.vendedor_reserva_id || '',
+    vendedor_reserva_nome: row.vendedor_reserva_nome || '',
+    cliente_reserva_id: row.cliente_reserva_id || '',
+    cliente_reserva_nome: row.cliente_reserva_nome || '',
     ...mapBaseDates(row),
   };
 }
@@ -1072,6 +1077,9 @@ const VeiculoEstoqueRepository = {
         status: data.status || 'disponivel',
         preco: data.preco || null,
         observacoes: data.observacoes || null,
+        situacao: data.situacao || 'estoque',
+        vendedor_reserva_id: data.vendedor_reserva_id || null,
+        cliente_reserva_id: data.cliente_reserva_id || null,
       },
     });
     return mapVeiculoEstoqueRow({ ...result.estoque, veiculo: result.veiculo });
@@ -1093,6 +1101,9 @@ const VeiculoEstoqueRepository = {
         status: data.status || 'disponivel',
         preco: data.preco || null,
         observacoes: data.observacoes || null,
+        situacao: data.situacao || 'estoque',
+        vendedor_reserva_id: data.vendedor_reserva_id || null,
+        cliente_reserva_id: data.cliente_reserva_id || null,
       },
     });
     return mapVeiculoEstoqueRow({ ...result.estoque, veiculo: result.veiculo });

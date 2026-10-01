@@ -144,6 +144,11 @@ export default function Propostas() {
     return [marca, modelo?.nome, veiculo.chassi].filter(Boolean).join(' ');
   };
 
+  const veiculoSelecionado = useMemo(
+    () => veiculos.find((item) => item.id === form.veiculo_estoque_id) || null,
+    [veiculos, form.veiculo_estoque_id],
+  );
+
   const { data: responsaveis = [] } = useQuery({
     queryKey: ['crm-responsaveis'],
     queryFn: () => crmDataClient.entities.Responsavel.list(),
@@ -399,17 +404,36 @@ export default function Propostas() {
               <Label className="text-xs font-bold uppercase tracking-wider">Veiculo do estoque</Label>
               <Select
                 value={form.veiculo_estoque_id}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, veiculo_estoque_id: value, veiculo_descricao: '' }))}
+                onValueChange={(value) => {
+                  const veiculo = veiculos.find((item) => item.id === value);
+                  setForm((prev) => ({
+                    ...prev,
+                    veiculo_estoque_id: value,
+                    veiculo_descricao: '',
+                    vendedor_id: veiculo?.status === 'reservado' && veiculo.vendedor_reserva_id
+                      ? veiculo.vendedor_reserva_id
+                      : prev.vendedor_id,
+                  }));
+                }}
               >
                 <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione (ou descreva abaixo)" /></SelectTrigger>
                 <SelectContent className="rounded-none">
                   {veiculosDisponiveis.map((veiculo) => (
-                    <SelectItem key={veiculo.id} value={veiculo.id}>{veiculoLabel(veiculo.id)}</SelectItem>
+                    <SelectItem key={veiculo.id} value={veiculo.id}>
+                      {veiculoLabel(veiculo.id)}{veiculo.status === 'reservado' ? ' (reservado)' : ''}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {veiculosDisponiveis.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Nenhum veiculo disponivel no estoque no momento.</p>
+              ) : null}
+              {veiculoSelecionado?.status === 'reservado' ? (
+                <p className="text-xs font-bold text-amber-700">
+                  {veiculoSelecionado.vendedor_reserva_id
+                    ? `Reservado para ${veiculoSelecionado.vendedor_reserva_nome || 'outro vendedor'}. So esse vendedor pode propor para este veiculo.`
+                    : 'Veiculo reservado sem vendedor definido na reserva. Nenhuma proposta pode ser criada enquanto isso nao for corrigido no Estoque.'}
+                </p>
               ) : null}
             </div>
 
