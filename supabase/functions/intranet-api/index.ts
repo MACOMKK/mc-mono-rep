@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { updateColaboradorSignature } from '../_shared/signature.ts';
+import { notificar } from '../_shared/notificacoes.ts';
 
 const databaseUrl = Deno.env.get('DATABASE_URL');
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -1384,84 +1385,9 @@ function uniqIds(values: unknown[]) {
   return Array.from(new Set(values.map((item) => String(item || '').trim()).filter(Boolean)));
 }
 
-function notificationReferenceId(value: unknown) {
-  const normalized = String(value || '').trim();
-  return normalized || null;
-}
-
-function mapNotification(row: Record<string, unknown>) {
-  return {
-    id: row.id,
-    collaborator_id: row.colaborador_id,
-    type: row.tipo || 'geral',
-    title: row.titulo,
-    message: row.mensagem || '',
-    link: row.link || null,
-    reference_type: row.referencia_tipo || null,
-    reference_id: row.referencia_id || null,
-    read_at: row.lida_em || null,
-    created_by_id: row.criado_por || null,
-    created_date: row.criado_em,
-    read: Boolean(row.lida_em),
-  };
-}
-
-async function listNotifications(collaboratorId: string | null, limit = 20) {
-  if (!collaboratorId) return { items: [], unread_count: 0 };
-  const rows = await runSql<Record<string, unknown>>(
-    `
-      select *
-      from gestao_intranet.notificacoes
-      where colaborador_id = $1::uuid
-      order by criado_em desc
-      limit $2;
-    `,
-    [collaboratorId, Math.min(Math.max(Number(limit) || 20, 1), 50)],
-  );
-  const countRows = await runSql<Record<string, unknown>>(
-    `
-      select count(*)::int as total
-      from gestao_intranet.notificacoes
-      where colaborador_id = $1::uuid
-        and lida_em is null;
-    `,
-    [collaboratorId],
-  );
-  return {
-    items: rows.map(mapNotification),
-    unread_count: Number(countRows[0]?.total || 0),
-  };
-}
-
-async function markNotificationRead(collaboratorId: string | null, id: string) {
-  if (!collaboratorId || !id) return null;
-  const rows = await runSql<Record<string, unknown>>(
-    `
-      update gestao_intranet.notificacoes
-      set lida_em = coalesce(lida_em, now())
-      where id = $1::uuid
-        and colaborador_id = $2::uuid
-      returning *;
-    `,
-    [id, collaboratorId],
-  );
-  return rows[0] ? mapNotification(rows[0]) : null;
-}
-
-async function markAllNotificationsRead(collaboratorId: string | null) {
-  if (!collaboratorId) return { success: true };
-  await runSql(
-    `
-      update gestao_intranet.notificacoes
-      set lida_em = coalesce(lida_em, now())
-      where colaborador_id = $1::uuid
-        and lida_em is null;
-    `,
-    [collaboratorId],
-  );
-  return { success: true };
-}
-
+// Sino da intranet -- gravacao (e Web Push, se `push`) delegada ao helper generico cross-app
+// (`notificacoes.notificacoes`, sistema 'intranet'). Leitura/marcar como lida ficam na Edge
+// Function generica `notificacoes-api`, nao aqui.
 async function createNotifications(
   recipientIds: unknown[],
   payload: {
@@ -1473,30 +1399,27 @@ async function createNotifications(
     referenceId?: unknown;
     createdBy?: string | null;
     excludeIds?: unknown[];
+    // Tambem empurra Web Push (app fechado/em background) pros dispositivos inscritos -- so pra
+    // eventos que merecem interromper o usuario (aviso/documento novo), nao pra edicao/remocao.
+    push?: boolean;
   },
 ) {
-  const excluded = new Set(uniqIds(payload.excludeIds || []));
-  const recipients = uniqIds(recipientIds).filter((id) => !excluded.has(id));
-  if (recipients.length === 0 || !payload.title) return;
-
-  await runSql(
-    `
-      insert into gestao_intranet.notificacoes (
-        colaborador_id, tipo, titulo, mensagem, link, referencia_tipo, referencia_id, criado_por
-      )
-      select unnest($1::uuid[]), $2, $3, $4, $5, $6, $7::uuid, $8::uuid;
-    `,
-    [
-      recipients,
-      payload.type || 'geral',
-      payload.title,
-      payload.message || null,
-      payload.link || null,
-      payload.referenceType || null,
-      notificationReferenceId(payload.referenceId),
-      payload.createdBy || null,
-    ],
-  );
+  if (!sql) throw new Error('Conexao com banco indisponivel.');
+  // Sem withTimeout aqui: o insert ja tem statement_timeout na conexao, e um push lento nao pode
+  // fazer a criacao do aviso/documento falhar.
+  await notificar(sql, {
+    sistema: INTRANET_SYSTEM_SLUG,
+    destinatarios: recipientIds,
+    tipo: payload.type,
+    titulo: payload.title,
+    mensagem: payload.message,
+    link: payload.link,
+    referenciaTipo: payload.referenceType,
+    referenciaId: payload.referenceId,
+    criadoPor: payload.createdBy,
+    excluir: payload.excludeIds,
+    push: payload.push,
+  });
 }
 
 async function fetchActiveCollaboratorIds(filters: { departmentId?: unknown; positionId?: unknown } = {}) {
@@ -1567,6 +1490,7 @@ async function notifyDocumentAudience(
     referenceId: document.id,
     createdBy: actorId,
     excludeIds: [actorId],
+    push: action === 'created',
   });
 }
 
@@ -1596,6 +1520,7 @@ async function notifyAnnouncementAudience(
     referenceId: announcement.id,
     createdBy: actorId,
     excludeIds: [actorId],
+    push: action === 'created',
   });
 }
 
@@ -4978,19 +4903,6 @@ Deno.serve(async (request) => {
         [context.collaboratorId],
       );
       return json({ success: true });
-    }
-
-    if (resource === 'notifications') {
-      if (action === 'list') {
-        return json({ data: await listNotifications(context.collaboratorId, limit || 20) });
-      }
-      if (action === 'mark_read') {
-        return json({ data: await markNotificationRead(context.collaboratorId, id || String(payload.id || '')) });
-      }
-      if (action === 'mark_all_read') {
-        return json({ data: await markAllNotificationsRead(context.collaboratorId) });
-      }
-      return json({ error: 'Acao de notificacao invalida.' }, 400);
     }
 
     if (resource === 'googleCalendar') {

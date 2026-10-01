@@ -18,6 +18,11 @@ const baseConfig = createAppConfig(import.meta.url, {
 export default mergeConfig(baseConfig, {
   plugins: [
     VitePWA({
+      // SW proprio (src/sw.js) em vez de generateSW: precisa tratar Web Push alem do cache
+      // offline -- ver comentario no topo de src/sw.js.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       manifestFilename: 'manifest.json',
       includeAssets: ['favicon.svg', 'pwa-icons/*.png'],
@@ -37,23 +42,8 @@ export default mergeConfig(baseConfig, {
           { src: '/pwa-icons/maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,woff2,woff,png,ico}'],
-        navigateFallback: '/index.html',
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.hostname.endsWith('.supabase.co'),
-            handler: 'NetworkOnly',
-          },
-          {
-            urlPattern: ({ request }) => ['script', 'style', 'image', 'font'].includes(request.destination),
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'app-shell-assets',
-              expiration: { maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 },
-            },
-          },
-        ],
       },
       devOptions: { enabled: false },
     }),

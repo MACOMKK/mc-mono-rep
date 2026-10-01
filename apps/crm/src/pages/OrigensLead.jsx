@@ -62,7 +62,7 @@ export default function OrigensLead() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 md:px-6">
+    <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-6">
       <div className="mb-5 border-b pb-5">
         <h1 className="text-xl font-black uppercase tracking-widest">Origens de Lead</h1>
         <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground">

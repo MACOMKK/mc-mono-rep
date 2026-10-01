@@ -263,7 +263,7 @@ export default function Propostas() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 md:px-6">
+    <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-6">
       <div className="mb-5 flex items-center justify-between border-b pb-5">
         <div>
           <h1 className="text-xl font-black uppercase tracking-widest">Propostas</h1>

@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Bell, CheckCheck, Download, ExternalLink, LogOut, Settings } from 'lucide-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, Bell, BellOff, BellRing, CheckCheck, Download, ExternalLink, LogOut, Settings } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useNotificacoes } from '@macom/notifications';
+import { usePushNotifications } from '@macom/push';
 
 import { appClient } from '@/api/client';
-import { supabase } from '@/api/supabaseClient';
 import PasswordChangeForm from '@/components/auth/PasswordChangeForm';
 import { useAuth } from '@/lib/AuthContext';
 import { useInstallPrompt } from '@/lib/useInstallPrompt';
@@ -33,8 +34,28 @@ function formatNotificationDate(value) {
 export default function Header() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { canInstall, promptInstall } = useInstallPrompt();
+  // Header e o unico consumidor de push na intranet e fica montado em toda a area autenticada --
+  // por isso chama o hook direto, sem o PushContext que o servicos precisou (la ha 3 consumidores).
+  const push = usePushNotifications({ sistema: 'intranet' });
+  // Acesso por IP confiavel entra sem login nem colaborador -- sem sino e sem push.
+  const isTrustedIpAccess = user?.auth_mode === 'trusted_ip';
+  const {
+    items: notifications,
+    unreadItems: unreadNotifications,
+    unreadCount,
+    markRead,
+    markAllRead,
+  } = useNotificacoes({
+    sistema: 'intranet',
+    colaboradorId: user?.collaborator_id || user?.id,
+    enabled: Boolean(user) && !isTrustedIpAccess,
+    onNew: (notification) => {
+      if (notification.titulo) {
+        toast.info(notification.titulo, { description: notification.mensagem || undefined });
+      }
+    },
+  });
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -49,13 +70,11 @@ export default function Header() {
     },
     enabled: Boolean(user),
   });
-  const { data: notificationsData } = useQuery({
-    queryKey: ['notifications'],
-    queryFn: () => appClient.notifications.list(20),
-    enabled: Boolean(user),
-    // Realtime ja invalida esta query; o polling e so fallback (5 min para poupar Log Ingestion).
-    refetchInterval: 300000,
-  });
+  // subscribe()/unsubscribe() guardam o erro em push.error em vez de rejeitar a Promise.
+  useEffect(() => {
+    if (push.error) toast.error(push.error.message);
+  }, [push.error]);
+
   const displayName = currentProfile?.name || user?.full_name || user?.email || 'Usuario';
   const displayEmail = currentProfile?.email || user?.email || '';
   const photoUrl = currentProfile?.photo_url || '';
@@ -66,19 +85,6 @@ export default function Header() {
     .map((part) => part[0])
     .join('')
     .toUpperCase() || 'U';
-  const notifications = Array.isArray(notificationsData?.items) ? notificationsData.items : [];
-  const unreadNotifications = notifications.filter((notification) => !notification.read);
-  const unreadCount = Number(notificationsData?.unread_count || 0);
-
-  const markReadMutation = useMutation({
-    mutationFn: (id) => appClient.notifications.markRead(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
-  });
-
-  const markAllReadMutation = useMutation({
-    mutationFn: () => appClient.notifications.markAllRead(),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
-  });
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -93,37 +99,6 @@ export default function Header() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  useEffect(() => {
-    const collaboratorId = user?.collaborator_id || user?.id;
-    if (!collaboratorId || !supabase) return undefined;
-
-    const channel = supabase
-      .channel(`intranet-notifications:${collaboratorId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'gestao_intranet',
-          table: 'notificacoes',
-          filter: `colaborador_id=eq.${collaboratorId}`,
-        },
-        (payload) => {
-          queryClient.invalidateQueries({ queryKey: ['notifications'] });
-          const notification = payload.new || {};
-          if (notification.titulo) {
-            toast.info(notification.titulo, {
-              description: notification.mensagem || undefined,
-            });
-          }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [queryClient, user?.collaborator_id, user?.id]);
 
   const handleOpenPassword = () => {
     setProfileOpen(false);
@@ -142,7 +117,7 @@ export default function Header() {
 
   const handleOpenNotification = (notification) => {
     if (!notification?.read) {
-      markReadMutation.mutate(notification.id);
+      markRead(notification.id);
     }
     setNotificationsOpen(false);
     if (notification?.link) {
@@ -221,7 +196,7 @@ export default function Header() {
                   {unreadCount > 0 ? (
                     <button
                       type="button"
-                      onClick={() => markAllReadMutation.mutate()}
+                      onClick={markAllRead}
                       className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#E30613] transition-colors hover:text-[#141414]"
                     >
                       <CheckCheck className="h-3.5 w-3.5" />
@@ -230,8 +205,28 @@ export default function Header() {
                   ) : null}
                 </div>
 
-                <div className="border-b border-slate-100 px-4 pb-2">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 pb-2">
                   <h2 className="text-sm font-bold uppercase tracking-wide text-[#141414]">Notificacoes</h2>
+                  {!isTrustedIpAccess && push.supported && push.permission !== 'denied' ? (
+                    <button
+                      type="button"
+                      disabled={push.loading}
+                      onClick={() => (push.subscribed ? push.unsubscribe() : push.subscribe())}
+                      title={
+                        push.subscribed
+                          ? 'Desativar notificacoes com a intranet fechada'
+                          : 'Receber notificacoes de novos avisos e documentos mesmo com a intranet fechada'
+                      }
+                      className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 transition-colors hover:text-[#141414] disabled:opacity-50"
+                    >
+                      {push.subscribed ? (
+                        <BellRing className="h-3.5 w-3.5 text-[#E30613]" />
+                      ) : (
+                        <BellOff className="h-3.5 w-3.5" />
+                      )}
+                      {push.subscribed ? 'Ativadas no dispositivo' : 'Ativar no dispositivo'}
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">

@@ -38,6 +38,27 @@ export async function sendPushToColaborador(sql: any, sistema: string, colaborad
     `select id, endpoint, p256dh, auth, last_seen_em from public.push_subscriptions where colaborador_id = $1 and sistema = $2;`,
     [colaboradorId, sistema],
   );
+  await sendToSubscriptions(sql, subs, payload);
+}
+
+// Variante em lote de `sendPushToColaborador` -- pra notificacoes de audiencia ampla (ex.: aviso
+// novo da intranet pra todos os colaboradores ativos), busca as inscricoes de todos numa query so
+// em vez de uma por colaborador.
+// deno-lint-ignore no-explicit-any
+export async function sendPushToColaboradores(sql: any, sistema: string, colaboradorIds: string[], payload: PushPayload) {
+  if (!ensureVapidConfigured()) return;
+  const ids = [...new Set(colaboradorIds.filter(Boolean))];
+  if (!ids.length) return;
+
+  const subs = await sql.unsafe(
+    `select id, endpoint, p256dh, auth, last_seen_em from public.push_subscriptions where colaborador_id = any($1::uuid[]) and sistema = $2;`,
+    [ids, sistema],
+  );
+  await sendToSubscriptions(sql, subs, payload);
+}
+
+// deno-lint-ignore no-explicit-any
+async function sendToSubscriptions(sql: any, subs: any[], payload: PushPayload) {
   if (!subs.length) return;
 
   const body = JSON.stringify({

@@ -132,7 +132,7 @@ export default function ConfiguracaoDistribuicao() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 md:px-6">
+    <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-6">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4 border-b pb-5">
         <div>
           <h1 className="text-xl font-black uppercase tracking-widest">Distribuicao de Leads</h1>

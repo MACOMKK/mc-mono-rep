@@ -33,6 +33,8 @@ neste único repositório e compartilham banco/auth.
 - **`config`** — factories de ESLint, Tailwind, PostCSS e `jsconfig` reutilizados pelos apps
 - **`validation`** — schemas de validação (Zod) compartilhados
 - **`test-utils`** — helpers/mocks para testes
+- **`push`** — Web Push (inscrição do dispositivo, heartbeat, handlers para service worker)
+- **`notifications`** — sino in-app genérico (client da `notificacoes-api` + hook `useNotificacoes`)
 
 Antes de duplicar lógica (validação, chamada de API, componente de UI),
 verifique se já existe em um desses pacotes.
@@ -44,6 +46,8 @@ Projeto Supabase único e compartilhado por todos os apps.
 **Edge Functions** (`supabase/functions/`), uma por domínio: `central-api`,
 `admin-create-user`, `catalog-api`, `plataforma-api`, `crm-api`,
 `intranet-api`, `relatorios-api`, `servicos-api`, `processa-fila-email`, `enviar-termo-gmail`.
+Além delas, Edge Functions genéricas sem domínio, usadas por qualquer app: `push-api` (cadastro de
+dispositivos para Web Push) e `notificacoes-api` (leitura do sino in-app).
 
 **Schemas** (`supabase/migrations/`):
 - `public` — entidades globais (colaboradores, sistemas, acessos_usuario_sistema)
@@ -136,6 +140,28 @@ Não há CI configurado (`.github/`) — validar localmente antes de subir.
   erro) usando `sendGmail` do mesmo `_shared/email.ts`; o Termo de Posse (`enviar-termo-gmail`) é a
   única exceção síncrona, e também usa o `sendGmail` compartilhado. Detalhes, causa raiz de falhas
   conhecidas e status da generalização entre apps: ver `EMAIL_NOTIFICACOES_STATUS.md` (raiz).
+- **Notificação in-app (sino) + Web Push**: estrutura genérica e cross-app, separada por
+  `sistema` (slug de `public.sistemas`). Um app novo ganha sino e push sem criar tabela, endpoint
+  nem service worker de push próprio:
+  - Gravar: `notificar(sql, { sistema, destinatarios, titulo, mensagem?, link?, tipo?,
+    referenciaTipo?, referenciaId?, criadoPor?, excluir?, push? })`, de
+    `supabase/functions/_shared/notificacoes.ts`. Grava em `notificacoes.notificacoes` e, com
+    `push: true`, envia Web Push (`sendPushToColaboradores` de `_shared/push.ts`). Nunca montar o
+    `insert` na mão. Reservar `push: true` para eventos que merecem interromper o usuário.
+  - Ler e marcar como lida: Edge Function genérica `notificacoes-api` (actions `list`, `mark_read`,
+    `mark_all_read`, sempre escopadas ao colaborador do JWT).
+  - Frontend: o hook `useNotificacoes({ sistema, colaboradorId, enabled, onNew })` de
+    `@macom/notifications` cuida da lista, das não lidas, de marcar como lida e do Realtime. O app
+    só desenha a UI do sino. Push por dispositivo: `usePushNotifications({ sistema })` de
+    `@macom/push` (cadastro via Edge Function `push-api`).
+  - Service worker: app PWA (`vite-plugin-pwa` com `strategies: 'injectManifest'`) chama
+    `registerPushHandlers()` de `@macom/push/swHandlers` no próprio `src/sw.js`. App sem PWA copia
+    `packages/push/push-sw.js` para `public/`.
+  - Limpeza automática: cron `notificacoes-cleanup-daily` (lidas > 90 dias, não lidas > 180 dias).
+  - Status (2026-10-01): a `intranet` é o primeiro app no modelo genérico. O `servicos` ainda usa
+    `gestao_servicos.notificacoes`, `insertNotificacao` próprio e uma cópia local dos handlers em
+    `src/sw.js`. Migrar quando for conveniente; ele tem particularidades (registro na timeline da
+    solicitação, lembretes por cron).
 - Regras de negócio muito específicas de um app (modelo de permissões, entidades
   de domínio, particularidades de backend) vivem no `CLAUDE.md` próprio do app —
   já existe para `central`, `crm`, `intranet`, `relatorios` e `servicos`. `admin`

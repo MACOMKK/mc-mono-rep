@@ -205,31 +205,6 @@ export const intranetApi = {
       return result.data || result;
     },
   },
-  notifications: {
-    async list(limit = 20) {
-      const result = await invokeIntranet({
-        resource: 'notifications',
-        action: 'list',
-        limit,
-      });
-      return result.data || result;
-    },
-    async markRead(id) {
-      const result = await invokeIntranet({
-        resource: 'notifications',
-        action: 'mark_read',
-        id,
-      });
-      return result.data || result;
-    },
-    async markAllRead() {
-      const result = await invokeIntranet({
-        resource: 'notifications',
-        action: 'mark_all_read',
-      });
-      return result.data || result;
-    },
-  },
   accessLogs: {
     async list({ limit = 25, offset = 0 } = {}) {
       const result = await invokeIntranet({

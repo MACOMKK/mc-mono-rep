@@ -40,6 +40,21 @@ permissão correspondente — não assumir que acesso ao sistema implica acesso 
   - Operações padrão: `list`, `filter`, `create`, `update`, `delete`
   - Storage buckets: avisos (2MB), documentos (5MB), avatares
   - Integração com Google Calendar para sincronizar eventos
+  - Notificações: usa a estrutura genérica cross-app (ver "Notificação in-app (sino) + Web Push"
+    no `CLAUDE.md` raiz), com sistema `intranet`. Os `notify*Audience` decidem quem recebe e
+    chamam `createNotifications`, um wrapper fino de `notificar()` de `_shared/notificacoes.ts`,
+    em criação, edição e remoção. **Só a criação de aviso e documento** usa `push: true`. O sino
+    do `Header.jsx` usa `useNotificacoes` de `@macom/notifications`, que lê pela `notificacoes-api`,
+    não pelo `intranet-api`. O usuário ativa o push por dispositivo no dropdown do sino. No acesso
+    por IP confiável (`auth_mode === 'trusted_ip'`, sem colaborador) o sino e o push ficam
+    desligados. O service worker é próprio (`src/sw.js`, `strategies: 'injectManifest'`) e
+    registra os handlers de push via `registerPushHandlers()` de `@macom/push/swHandlers`.
+  - `gestao_intranet.notificacoes` foi removida pela migration `20261001130000` (tirada da
+    publication `supabase_realtime` e dropada junto com a função de limpeza antiga). O histórico
+    antigo do sino foi descartado de propósito, sem cópia para a tabela genérica.
+  - Pendências conhecidas das notificações: a audiência (`fetchActiveCollaboratorIds`) é "todos
+    os colaboradores ativos", sem filtrar acesso à intranet nem `mod_avisos`/`mod_documentos =
+    none`; e um aviso com `publica_em` no futuro notifica na criação, não na data de publicação.
   - Log de acessos: toda chamada `action: 'me'` bem-sucedida grava um registro em
     `gestao_plataforma.logs_acesso` (via `registrarAcessoIntranet`), e `resource: 'accessLogs'`
     (`action: 'list'`, admin-only) lista o histórico paginado — consumido pela seção

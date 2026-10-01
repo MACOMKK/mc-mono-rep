@@ -245,23 +245,51 @@ export default function Pipelines() {
     return <div className="p-8 text-sm text-muted-foreground">Apenas gestores e administradores podem configurar pipelines.</div>;
   }
 
-  const handleDragEnd = (result) => {
+  const handleDragEnd = async (result) => {
     if (!result.destination || result.destination.index === result.source.index) return;
 
-    const reordenadas = Array.from(etapas);
-    const [removida] = reordenadas.splice(result.source.index, 1);
-    reordenadas.splice(result.destination.index, 0, removida);
+    const sourceIndex = result.source.index;
+    const destIndex = result.destination.index;
+    const queryKey = ['crm-etapas-pipeline', pipelineSelecionadoId];
+    const etapasAnteriores = etapas;
 
-    queryClient.setQueryData(['crm-etapas-pipeline', pipelineSelecionadoId], reordenadas);
-    reordenadas.forEach((etapa, index) => {
-      if (etapa.ordem !== index) {
-        atualizarEtapaMutation.mutate({ id: etapa.id, pipeline_id: etapa.pipeline_id, nome: etapa.nome, cor: etapa.cor, ordem: index });
-      }
+    const reordenadas = Array.from(etapas);
+    const [movida] = reordenadas.splice(sourceIndex, 1);
+    reordenadas.splice(destIndex, 0, movida);
+    queryClient.setQueryData(queryKey, reordenadas);
+
+    // A coluna (pipeline_id, ordem) e unica, entao trocar a posicao de duas
+    // etapas nao pode ser feito em paralelo: passamos a etapa movida por um
+    // valor temporario (-1) antes de deslocar as demais, uma a uma, para
+    // nunca colidir com uma posicao ja ocupada.
+    const atualizarOrdem = (etapa, ordem) => crmDataClient.entities.EtapaPipeline.update(etapa.id, {
+      pipeline_id: etapa.pipeline_id,
+      nome: etapa.nome,
+      cor: etapa.cor,
+      ordem,
     });
+
+    try {
+      await atualizarOrdem(movida, -1);
+      if (sourceIndex > destIndex) {
+        for (let k = sourceIndex - 1; k >= destIndex; k -= 1) {
+          await atualizarOrdem(etapasAnteriores[k], k + 1);
+        }
+      } else {
+        for (let k = sourceIndex + 1; k <= destIndex; k += 1) {
+          await atualizarOrdem(etapasAnteriores[k], k - 1);
+        }
+      }
+      await atualizarOrdem(movida, destIndex);
+      await queryClient.invalidateQueries({ queryKey });
+    } catch (error) {
+      queryClient.setQueryData(queryKey, etapasAnteriores);
+      toast({ title: 'Nao foi possivel reordenar as etapas', description: error.message, variant: 'destructive' });
+    }
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 md:px-6">
+    <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-6">
       <div className="mb-5 border-b pb-5">
         <h1 className="text-xl font-black uppercase tracking-widest">Pipelines</h1>
         <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground">
