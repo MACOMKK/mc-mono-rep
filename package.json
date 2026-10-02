@@ -26,6 +26,7 @@
     "dev:intranet": "npm --prefix apps/intranet run dev",
     "build": "vite build --configLoader runner",
     "sync:favicons": "node scripts/syncFavicons.js",
+    "docs:db": "node scripts/gerarDiagramasDb.mjs",
     "prebuild:admin": "npm run sync:favicons",
     "build:admin": "vite build --config apps/admin/vite.config.js --configLoader runner",
     "prebuild:comunicacao": "npm run sync:favicons",

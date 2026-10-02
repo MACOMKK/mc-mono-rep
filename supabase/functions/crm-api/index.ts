@@ -467,6 +467,10 @@ function mapDatabaseError(error: unknown) {
     return 'Este veiculo esta reservado para outro vendedor.';
   }
 
+  if (message.includes('Este veiculo esta imobilizado')) {
+    return 'Este veiculo esta imobilizado.';
+  }
+
   if (message.includes('chk_veiculos_estoque_reserva_consistente')) {
     return 'Para marcar como reservado, selecione vendedor e cliente da reserva.';
   }

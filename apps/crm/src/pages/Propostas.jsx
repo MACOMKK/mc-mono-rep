@@ -119,8 +119,11 @@ export default function Propostas() {
   });
 
   const veiculosDisponiveis = useMemo(
-    () => veiculos.filter((veiculo) => ['disponivel', 'reservado'].includes(veiculo.status)),
-    [veiculos],
+    () => veiculos.filter((veiculo) => (
+      veiculo.id === form.veiculo_estoque_id
+      || (['disponivel', 'reservado'].includes(veiculo.status) && veiculo.situacao !== 'imobilizado')
+    )),
+    [veiculos, form.veiculo_estoque_id],
   );
 
   const { data: modelos = [] } = useQuery({
@@ -427,6 +430,11 @@ export default function Propostas() {
               </Select>
               {veiculosDisponiveis.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Nenhum veiculo disponivel no estoque no momento.</p>
+              ) : null}
+              {veiculoSelecionado?.situacao === 'imobilizado' ? (
+                <p className="text-xs font-bold text-red-700">
+                  Veiculo imobilizado. Nao e possivel propor ou vender enquanto a situacao nao for alterada no Estoque.
+                </p>
               ) : null}
               {veiculoSelecionado?.status === 'reservado' ? (
                 <p className="text-xs font-bold text-amber-700">

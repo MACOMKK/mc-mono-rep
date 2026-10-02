@@ -37,3 +37,6 @@ dist-ssr
 
 # Generated files
 README.md
+
+# Build Android local (Capacitor)
+apps/servicos/android/
