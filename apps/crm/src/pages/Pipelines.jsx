@@ -180,12 +180,14 @@ export default function Pipelines() {
     onError: (error) => toast({ title: 'Nao foi possivel criar o pipeline', description: error.message, variant: 'destructive' }),
   });
 
+  const proximaOrdem = (lista) => lista.reduce((maior, etapa) => Math.max(maior, etapa.ordem), -1) + 1;
+
   const criarEtapaMutation = useMutation({
     mutationFn: ({ nome, cor }) => crmDataClient.entities.EtapaPipeline.create({
       pipeline_id: pipelineSelecionadoId,
       nome,
       cor,
-      ordem: etapas.length,
+      ordem: proximaOrdem(etapas),
     }),
     onMutate: async ({ nome, cor }) => {
       setNovaEtapaAberta(false);
@@ -197,7 +199,7 @@ export default function Pipelines() {
         pipeline_id: pipelineSelecionadoId,
         nome,
         cor,
-        ordem: etapas.length,
+        ordem: proximaOrdem(etapas),
         chave_sistema: null,
         _otimista: true,
       };
@@ -245,6 +247,13 @@ export default function Pipelines() {
     return <div className="p-8 text-sm text-muted-foreground">Apenas gestores e administradores podem configurar pipelines.</div>;
   }
 
+  const atualizarOrdemEtapa = (etapa, ordem) => crmDataClient.entities.EtapaPipeline.update(etapa.id, {
+    pipeline_id: etapa.pipeline_id,
+    nome: etapa.nome,
+    cor: etapa.cor,
+    ordem,
+  });
+
   const handleDragEnd = async (result) => {
     if (!result.destination || result.destination.index === result.source.index) return;
 
@@ -258,32 +267,47 @@ export default function Pipelines() {
     reordenadas.splice(destIndex, 0, movida);
     queryClient.setQueryData(queryKey, reordenadas);
 
-    // A coluna (pipeline_id, ordem) e unica, entao trocar a posicao de duas
-    // etapas nao pode ser feito em paralelo: passamos a etapa movida por um
-    // valor temporario (-1) antes de deslocar as demais, uma a uma, para
-    // nunca colidir com uma posicao ja ocupada.
-    const atualizarOrdem = (etapa, ordem) => crmDataClient.entities.EtapaPipeline.update(etapa.id, {
-      pipeline_id: etapa.pipeline_id,
-      nome: etapa.nome,
-      cor: etapa.cor,
-      ordem,
-    });
-
     try {
-      await atualizarOrdem(movida, -1);
-      if (sourceIndex > destIndex) {
-        for (let k = sourceIndex - 1; k >= destIndex; k -= 1) {
-          await atualizarOrdem(etapasAnteriores[k], k + 1);
-        }
-      } else {
-        for (let k = sourceIndex + 1; k <= destIndex; k += 1) {
-          await atualizarOrdem(etapasAnteriores[k], k - 1);
-        }
+      // Busca a lista real do servidor (nao confia que o estado local, que
+      // pode estar em transicao por causa de uma criacao/exclusao recente
+      // ainda nao confirmada, reflita o `ordem` atual de cada etapa).
+      const etapasServidor = await crmDataClient.entities.EtapaPipeline.listPage({
+        orderBy: 'ordem',
+        filters: { pipeline_id: pipelineSelecionadoId },
+        limit: 100,
+      }).then((result) => result.rows);
+
+      const porId = new Map(etapasServidor.map((etapa) => [etapa.id, etapa]));
+      const ordemFinal = reordenadas
+        .map((etapa) => porId.get(etapa.id))
+        .filter(Boolean);
+
+      if (ordemFinal.length !== etapasServidor.length) {
+        throw new Error('A lista de etapas mudou enquanto voce arrastava. Tente novamente.');
       }
-      await atualizarOrdem(movida, destIndex);
+
+      // Indexacao fracionaria: `ordem` nao e mais uma sequencia fechada, so
+      // uma posicao relativa. Mover uma etapa so precisa de um novo valor
+      // entre as duas vizinhas do destino -- nenhuma outra linha e tocada, e
+      // o resultado nunca colide com um valor existente.
+      const movidaFinal = ordemFinal[destIndex];
+      const vizinhoAnterior = ordemFinal[destIndex - 1];
+      const vizinhoSeguinte = ordemFinal[destIndex + 1];
+      let novoOrdem;
+      if (!vizinhoAnterior) {
+        novoOrdem = Number(vizinhoSeguinte.ordem) - 1;
+      } else if (!vizinhoSeguinte) {
+        novoOrdem = Number(vizinhoAnterior.ordem) + 1;
+      } else {
+        novoOrdem = (Number(vizinhoAnterior.ordem) + Number(vizinhoSeguinte.ordem)) / 2;
+      }
+
+      await atualizarOrdemEtapa(movidaFinal, novoOrdem);
+
       await queryClient.invalidateQueries({ queryKey });
     } catch (error) {
       queryClient.setQueryData(queryKey, etapasAnteriores);
+      await queryClient.invalidateQueries({ queryKey });
       toast({ title: 'Nao foi possivel reordenar as etapas', description: error.message, variant: 'destructive' });
     }
   };
