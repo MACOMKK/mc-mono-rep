@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/components/ui/use-toast';
-import { LEAD_STATUS_LABEL } from '@/lib/leadStatus';
+import { MOTIVO_APLICA_EM_LABEL } from '@/lib/leadStatus';
 
-const STATUSES_ANDAMENTO = ['qualificado', 'convertido'];
+// Tipos de motivo (motivos_status.aplica_em) de andamento: etapa qualificado e etapas de ganho.
+const STATUSES_ANDAMENTO = ['qualificado', 'ganho'];
 
 export default function MotivosAndamento() {
   const { user } = useAuth();
@@ -24,11 +25,11 @@ export default function MotivosAndamento() {
     queryKey: ['crm-motivos-status'],
     queryFn: () => crmDataClient.entities.MotivoStatus.list('nome'),
     enabled: user?.role === 'admin' || user?.role === 'manager',
-    select: (rows) => rows.filter((row) => STATUSES_ANDAMENTO.includes(row.status)),
+    select: (rows) => rows.filter((row) => STATUSES_ANDAMENTO.includes(row.aplica_em)),
   });
 
   const createMutation = useMutation({
-    mutationFn: ({ status, nome }) => crmDataClient.entities.MotivoStatus.create({ status, nome, ativo: true }),
+    mutationFn: ({ aplica_em, nome }) => crmDataClient.entities.MotivoStatus.create({ aplica_em, nome, ativo: true }),
     onMutate: () => {
       setNovoNome('');
     },
@@ -64,7 +65,7 @@ export default function MotivosAndamento() {
     event.preventDefault();
     const nome = novoNome.trim();
     if (!nome) return;
-    createMutation.mutate({ status: novoStatus, nome });
+    createMutation.mutate({ aplica_em: novoStatus, nome });
   };
 
   return (
@@ -78,12 +79,12 @@ export default function MotivosAndamento() {
 
       <form onSubmit={handleCreate} className="mb-5 flex items-end gap-3 border-b bg-white p-5">
         <div className="w-48 space-y-2">
-          <Label className="text-xs font-bold uppercase tracking-wider">Status</Label>
+          <Label className="text-xs font-bold uppercase tracking-wider">Tipo</Label>
           <Select value={novoStatus} onValueChange={setNovoStatus}>
             <SelectTrigger className="h-9 rounded-none"><SelectValue /></SelectTrigger>
             <SelectContent>
               {STATUSES_ANDAMENTO.map((status) => (
-                <SelectItem key={status} value={status}>{LEAD_STATUS_LABEL[status]}</SelectItem>
+                <SelectItem key={status} value={status}>{MOTIVO_APLICA_EM_LABEL[status]}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -106,11 +107,11 @@ export default function MotivosAndamento() {
       {error ? <p className="py-10 text-sm text-red-600">{error.message}</p> : null}
 
       {STATUSES_ANDAMENTO.map((status) => {
-        const motivosDoStatus = motivos.filter((motivo) => motivo.status === status);
+        const motivosDoStatus = motivos.filter((motivo) => motivo.aplica_em === status);
         if (isLoading || error) return null;
         return (
           <div key={status} className="mb-6">
-            <h2 className="mb-2 text-xs font-black uppercase tracking-widest text-muted-foreground">{LEAD_STATUS_LABEL[status]}</h2>
+            <h2 className="mb-2 text-xs font-black uppercase tracking-widest text-muted-foreground">{MOTIVO_APLICA_EM_LABEL[status]}</h2>
             {motivosDoStatus.length === 0 ? (
               <p className="border bg-white py-6 text-center text-sm text-muted-foreground">Nenhum motivo cadastrado.</p>
             ) : (
@@ -132,7 +133,7 @@ export default function MotivosAndamento() {
                             onBlur={(event) => {
                               const nome = event.target.value.trim();
                               if (nome && nome !== motivo.nome) {
-                                updateMutation.mutate({ id: motivo.id, status: motivo.status, nome, ativo: motivo.ativo });
+                                updateMutation.mutate({ id: motivo.id, aplica_em: motivo.aplica_em, nome, ativo: motivo.ativo });
                               }
                             }}
                           />
@@ -140,7 +141,7 @@ export default function MotivosAndamento() {
                         <TableCell>
                           <Switch
                             checked={motivo.ativo}
-                            onCheckedChange={(ativo) => updateMutation.mutate({ id: motivo.id, status: motivo.status, nome: motivo.nome, ativo })}
+                            onCheckedChange={(ativo) => updateMutation.mutate({ id: motivo.id, aplica_em: motivo.aplica_em, nome: motivo.nome, ativo })}
                           />
                         </TableCell>
                       </TableRow>

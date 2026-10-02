@@ -9,7 +9,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { companyFromUnit } from '@/lib/empresa';
 import { deriveUnidadesFromResponsaveis } from '@/hooks/useUnidadesEmpresa';
 import { crmDataClient } from '@/api/crmDataClient';
-import { LEAD_STATUS_LABEL, LEAD_STATUS_REQUIREMENTS } from '@/lib/leadStatus';
+import { etapaMotivoAplicaEm, findEtapaDoLead } from '@/lib/leadStatus';
+import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
 import MotivoStatusSelect from '@/components/leads/MotivoStatusSelect';
 import {
   BriefcaseBusiness,
@@ -118,6 +119,12 @@ export default function LeadForm({
   const [nomeError, setNomeError] = useState('');
   const [telefoneError, setTelefoneError] = useState('');
   const [statusRequirementError, setStatusRequirementError] = useState('');
+  const { etapas } = usePipelineEtapas({ pipelineId: lead?.pipeline_id || undefined });
+  const etapaAtual = findEtapaDoLead(etapas, data);
+  const motivoAplicaEm = etapaMotivoAplicaEm(etapaAtual);
+  // Etapas ativas do pipeline; a etapa tipo 'ganho' fica desabilitada (o lead so e convertido
+  // por proposta/venda, como no Kanban), salvo quando o lead ja esta nela.
+  const etapasSelecionaveis = etapas.filter((etapa) => etapa.ativo || etapa.id === etapaAtual?.id);
   const [showMaisDetalhesVeiculo, setShowMaisDetalhesVeiculo] = useState(false);
   const [clienteId, setClienteId] = useState(null);
   const [buscaCliente, setBuscaCliente] = useState('');
@@ -495,15 +502,10 @@ export default function LeadForm({
       setCurrentStep(steps.findIndex((step) => step.key === 'responsavel'));
       return;
     }
-    const requirement = LEAD_STATUS_REQUIREMENTS[data.status];
-    if (requirement) {
-      const missingMotivo = requirement.motivo && !data.motivo_status_id;
-      const missingField = requirement.fields.find((field) => !String(data[field] || '').trim());
-      if (missingMotivo || missingField) {
-        setStatusRequirementError(`Preencha os dados exigidos para mover o lead para ${LEAD_STATUS_LABEL[data.status] || data.status}.`);
-        setCurrentStep(steps.findIndex((step) => step.key === 'comercial'));
-        return;
-      }
+    if (motivoAplicaEm && !data.motivo_status_id) {
+      setStatusRequirementError(`Preencha os dados exigidos para mover o lead para ${etapaAtual?.nome || 'esta etapa'}.`);
+      setCurrentStep(steps.findIndex((step) => step.key === 'comercial'));
+      return;
     }
     setStatusRequirementError('');
     onSave({ ...data, clienteId });
@@ -668,27 +670,33 @@ export default function LeadForm({
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Status">
+                <Field label="Etapa">
                   <Select
-                    value={data.status}
-                    onValueChange={(value) => setData((current) => ({ ...current, status: value, motivo_status_id: '' }))}
+                    value={etapaAtual?.id || ''}
+                    onValueChange={(value) => {
+                      const etapa = etapas.find((item) => item.id === value);
+                      if (!etapa) return;
+                      setData((current) => ({ ...current, etapa_id: etapa.id, etapa, motivo_status_id: '' }));
+                    }}
                   >
-                    <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Carregando etapas..." /></SelectTrigger>
                     <SelectContent className="rounded-none">
-                      <SelectItem value="novo">Novo</SelectItem>
-                      <SelectItem value="tentativa_contato">Tentativa de contato</SelectItem>
-                      <SelectItem value="em_contato">Em contato</SelectItem>
-                      <SelectItem value="qualificado">Qualificado</SelectItem>
-                      <SelectItem value="negociacao">Negociação</SelectItem>
-                      <SelectItem value="convertido">Convertido</SelectItem>
-                      <SelectItem value="perdido">Perdido</SelectItem>
+                      {etapasSelecionaveis.map((etapa) => (
+                        <SelectItem
+                          key={etapa.id}
+                          value={etapa.id}
+                          disabled={etapa.tipo === 'ganho' && etapa.id !== etapaAtual?.id}
+                        >
+                          {etapa.nome}{etapa.tipo === 'ganho' && etapa.id !== etapaAtual?.id ? ' (via proposta/venda)' : ''}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </Field>
-                {LEAD_STATUS_REQUIREMENTS[data.status]?.motivo ? (
+                {motivoAplicaEm ? (
                   <Field label="Motivo *">
                     <MotivoStatusSelect
-                      status={data.status}
+                      aplicaEm={motivoAplicaEm}
                       value={data.motivo_status_id || ''}
                       onChange={(value) => set('motivo_status_id', value)}
                       motivosStatus={motivosStatus}
@@ -913,7 +921,7 @@ export default function LeadForm({
 
             {currentStepKey === 'observacoes' ? (
               <div className="space-y-4">
-                {data.status === 'perdido' ? (
+                {etapaAtual?.tipo === 'perdido' ? (
                   <Field label="Detalhe adicional da perda (opcional)">
                     <Textarea
                       value={data.motivo_perda || ''}

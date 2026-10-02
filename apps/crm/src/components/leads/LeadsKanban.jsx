@@ -1,17 +1,18 @@
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { cn } from '@/lib/utils';
 import { Phone, Car, Building2, CalendarClock, UserRound, AlertTriangle } from 'lucide-react';
-import { ACTIVE_LEAD_STATUSES, LEAD_STATUS_LABEL } from '@/lib/leadStatus';
+import { findEtapaDoLead, isLeadAtivo } from '@/lib/leadStatus';
 
-const COLUNAS = [
-  { key: 'novo', color: 'border-t-blue-500', headerBg: 'bg-blue-500', dot: 'bg-blue-500' },
-  { key: 'tentativa_contato', color: 'border-t-amber-400', headerBg: 'bg-amber-400', dot: 'bg-amber-400' },
-  { key: 'em_contato', color: 'border-t-cyan-500', headerBg: 'bg-cyan-500', dot: 'bg-cyan-500' },
-  { key: 'qualificado', color: 'border-t-violet-500', headerBg: 'bg-violet-500', dot: 'bg-violet-500' },
-  { key: 'negociacao', color: 'border-t-orange-500', headerBg: 'bg-orange-500', dot: 'bg-orange-500' },
-  { key: 'convertido', color: 'border-t-green-600', headerBg: 'bg-green-600', dot: 'bg-green-600' },
-  { key: 'perdido', color: 'border-t-red-600', headerBg: 'bg-red-600', dot: 'bg-red-600' },
-].map((col) => ({ ...col, label: LEAD_STATUS_LABEL[col.key] }));
+// Cores das etapas de sistema (mantidas como antes); etapa livre usa a cor do pipeline.
+const CORES_ETAPA_SISTEMA = {
+  novo: { color: 'border-t-blue-500', dot: 'bg-blue-500' },
+  tentativa_contato: { color: 'border-t-amber-400', dot: 'bg-amber-400' },
+  em_contato: { color: 'border-t-cyan-500', dot: 'bg-cyan-500' },
+  qualificado: { color: 'border-t-violet-500', dot: 'bg-violet-500' },
+  negociacao: { color: 'border-t-orange-500', dot: 'bg-orange-500' },
+  convertido: { color: 'border-t-green-600', dot: 'bg-green-600' },
+  perdido: { color: 'border-t-red-600', dot: 'bg-red-600' },
+};
 
 function LeadCard({ lead, index, onClick, semContatoAgendado }) {
   const isSaving = String(lead.id).startsWith('temp-');
@@ -82,7 +83,7 @@ function LeadCard({ lead, index, onClick, semContatoAgendado }) {
               <UserRound className="w-3 h-3" />{lead.responsavel_nome || 'Distribuicao automatica'}
             </p>
             <div className="flex flex-wrap gap-1.5 pt-1">
-              {ACTIVE_LEAD_STATUSES.includes(lead.status) ? (
+              {isLeadAtivo(lead) ? (
                 <span
                   title={slaTitle}
                   className={cn('inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider', slaStyle)}
@@ -101,19 +102,37 @@ function LeadCard({ lead, index, onClick, semContatoAgendado }) {
   );
 }
 
-export default function LeadsKanban({ leads, onDragEnd, onCardClick, leadsComAtividadePendente }) {
+// Colunas = etapas ativas do pipeline (por ordem); o card vai para a etapa do lead (etapa_id,
+// ou a etapa de sistema do status para lead ainda sem etapa_id carregada). droppableId e o
+// id da etapa. Etapa tipo 'ganho' nao aceita drop: o lead so e convertido por proposta/venda.
+export default function LeadsKanban({ leads, etapas = [], onDragEnd, onCardClick, leadsComAtividadePendente }) {
+  const leadsPorEtapa = new Map(etapas.map((etapa) => [etapa.id, []]));
+  leads.forEach((lead) => {
+    const etapa = findEtapaDoLead(etapas, lead);
+    if (etapa && leadsPorEtapa.has(etapa.id)) leadsPorEtapa.get(etapa.id).push(lead);
+  });
+
   return (
     <DragDropContext onDragEnd={onDragEnd}>
       <div className="flex gap-3 overflow-x-auto h-full items-stretch">
-        {COLUNAS.map((col) => {
-          const colLeads = leads.filter((l) => l.status === col.key);
+        {etapas.map((etapa) => {
+          const colLeads = leadsPorEtapa.get(etapa.id) || [];
+          const coresSistema = CORES_ETAPA_SISTEMA[etapa.chave_sistema];
+          const isGanho = etapa.tipo === 'ganho';
           return (
-            <div key={col.key} className={cn('flex flex-col h-full flex-1 min-w-[240px] max-w-[300px] bg-[#f4f4f4] border-t-4 shrink-0', col.color)}>
+            <div
+              key={etapa.id}
+              className={cn('flex flex-col h-full flex-1 min-w-[240px] max-w-[300px] bg-[#f4f4f4] border-t-4 shrink-0', coresSistema?.color)}
+              style={coresSistema ? undefined : { borderTopColor: etapa.cor }}
+            >
               {/* Column Header */}
               <div className="px-3 py-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className={cn('w-2 h-2 rounded-full', col.dot)} />
-                  <span className="text-[11px] font-black uppercase tracking-widest">{col.label}</span>
+                  <span
+                    className={cn('w-2 h-2 rounded-full', coresSistema?.dot)}
+                    style={coresSistema ? undefined : { backgroundColor: etapa.cor }}
+                  />
+                  <span className="text-[11px] font-black uppercase tracking-widest">{etapa.nome}</span>
                 </div>
                 <span className="text-[10px] font-black bg-[#1a1a1a] text-white px-2 py-0.5 rounded-sm min-w-[20px] text-center">
                   {colLeads.length}
@@ -121,7 +140,7 @@ export default function LeadsKanban({ leads, onDragEnd, onCardClick, leadsComAti
               </div>
 
               {/* Droppable area */}
-              <Droppable droppableId={col.key} isDropDisabled={col.key === 'convertido'}>
+              <Droppable droppableId={etapa.id} isDropDisabled={isGanho}>
                 {(provided, snapshot) => (
                   <div
                     ref={provided.innerRef}
@@ -138,7 +157,7 @@ export default function LeadsKanban({ leads, onDragEnd, onCardClick, leadsComAti
                         index={index}
                         onClick={onCardClick}
                         semContatoAgendado={
-                          ACTIVE_LEAD_STATUSES.includes(lead.status) &&
+                          isLeadAtivo(lead) &&
                           !leadsComAtividadePendente?.has(lead.id)
                         }
                       />
@@ -147,7 +166,7 @@ export default function LeadsKanban({ leads, onDragEnd, onCardClick, leadsComAti
                     {colLeads.length === 0 && !snapshot.isDraggingOver && (
                       <div className="border-2 border-dashed border-border rounded-sm py-6 text-center">
                         <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                          {col.key === 'convertido' ? 'Aceite uma proposta em Propostas' : 'Arraste aqui'}
+                          {isGanho ? 'Aceite uma proposta em Propostas' : 'Arraste aqui'}
                         </p>
                       </div>
                     )}

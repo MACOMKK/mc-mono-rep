@@ -6,7 +6,6 @@ import { useEmpresa } from '@/context/EmpresaContext';
 
 const CORES_STATUS = ['#94a3b8', '#3b82f6', '#16a34a', '#E30613'];
 const STATUS_ATIVIDADES = ['planejada', 'concluida', 'cancelada'];
-const FUNIL_STATUSES = ['novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao', 'convertido', 'perdido'];
 
 async function countEntity(repository, filters = {}) {
   const result = await repository.listPage({
@@ -45,8 +44,8 @@ export default function Dashboard() {
         origemResults,
       ] = await Promise.all([
         countEntity(crmDataClient.entities.Cliente, baseFilters),
-        countEntity(crmDataClient.entities.Lead, { ...baseFilters, status: FUNIL_STATUSES }),
-        countEntity(crmDataClient.entities.Lead, { ...baseFilters, status: 'convertido' }),
+        countEntity(crmDataClient.entities.Lead, baseFilters),
+        countEntity(crmDataClient.entities.Lead, { ...baseFilters, etapa_tipo: 'ganho' }),
         countEntity(crmDataClient.entities.Atividade, baseFilters),
         Promise.all(STATUS_ATIVIDADES.map((status) => (
           countEntity(crmDataClient.entities.Atividade, { ...baseFilters, status })

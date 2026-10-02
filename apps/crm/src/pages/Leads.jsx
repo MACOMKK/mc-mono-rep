@@ -27,9 +27,22 @@ import ListPagination from '@/components/ListPagination';
 import { useEmpresa } from '@/context/EmpresaContext';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/use-toast';
-import { LEAD_STATUS_BADGE as STATUS_STYLES, LEAD_STATUS_LABEL as STATUS_LABEL, LEAD_STATUS_REQUIREMENTS } from '@/lib/leadStatus';
+import {
+  etapaMotivoAplicaEm,
+  findEtapaDoLead,
+  getEtapaVisual,
+  getLeadEtapaLabel,
+} from '@/lib/leadStatus';
+import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
 
-const FUNIL_STATUSES = ['novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao', 'convertido', 'perdido'];
+// Status que o lead assume ao entrar na etapa (espelho de trg_crm_leads_a_sync_etapa), so
+// para o update otimista do Kanban -- o valor real volta do banco.
+const statusOtimistaDaEtapa = (etapa, statusAtual) => {
+  if (etapa.chave_sistema) return etapa.chave_sistema;
+  if (etapa.tipo === 'ganho') return 'convertido';
+  if (etapa.tipo === 'perdido') return 'perdido';
+  return ['novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao'].includes(statusAtual) ? statusAtual : 'em_contato';
+};
 
 const SLA_STYLES = {
   atrasado: 'bg-red-100 text-red-700',
@@ -68,10 +81,10 @@ export default function Leads() {
   const [viewingLead, setViewingLead] = useState(null);
   const [activityFormOpen, setActivityFormOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState(null);
-  const [statusTarget, setStatusTarget] = useState(null); // { lead, status }
+  const [statusTarget, setStatusTarget] = useState(null); // { lead, etapa }
   const [statusMotivoId, setStatusMotivoId] = useState('');
-  const [statusExtraValues, setStatusExtraValues] = useState({});
-  const [statusFiltro, setStatusFiltro] = useState('todos');
+  const [statusFiltro, setStatusFiltro] = useState('todos'); // 'todos' ou id da etapa
+  const { etapas, etapasAtivas } = usePipelineEtapas();
   const [viewMode, setViewMode] = useState('kanban');
   const [busca, setBusca] = useState('');
   const [buscaDebounced, setBuscaDebounced] = useState('');
@@ -87,7 +100,7 @@ export default function Leads() {
 
   const filters = useMemo(() => ({
     ...(empresa !== 'Todas' ? { empresa } : {}),
-    status: statusFiltro !== 'todos' ? statusFiltro : FUNIL_STATUSES,
+    ...(statusFiltro !== 'todos' ? { etapa_id: statusFiltro } : {}),
     ...(responsavelFiltro !== 'todos' && responsavelFiltro !== 'sem_responsavel' ? { responsavel_id: responsavelFiltro } : {}),
     ...(responsavelFiltro === 'sem_responsavel' ? { responsavel_id: '__NULL__' } : {}),
     ...(origemFiltro !== 'todas' ? { origem_id: origemFiltro } : {}),
@@ -358,19 +371,20 @@ export default function Leads() {
   };
 
   const updateStatusMutation = useMutation({
-    mutationFn: ({ id, status, ...extra }) => crmDataClient.entities.Lead.update(id, { status, ...extra }),
-    onMutate: async ({ id, status }) => {
+    mutationFn: ({ id, etapa, ...extra }) => crmDataClient.entities.Lead.update(id, { etapa_id: etapa.id, etapa, ...extra }),
+    onMutate: async ({ id, etapa }) => {
       await queryClient.cancelQueries({ queryKey: ['leads'] });
       const previousLeads = queryClient.getQueryData(leadsQueryKey);
 
       queryClient.setQueryData(leadsQueryKey, (currentPage = leadsPage) => ({
         ...currentPage,
-        rows: (currentPage.rows || []).map((lead) => lead.id === id ? { ...lead, status } : lead),
+        rows: (currentPage.rows || []).map((lead) => lead.id === id
+          ? { ...lead, etapa_id: etapa.id, etapa_tipo: etapa.tipo, status: statusOtimistaDaEtapa(etapa, lead.status) }
+          : lead),
       }));
 
       setStatusTarget(null);
       setStatusMotivoId('');
-      setStatusExtraValues({});
 
       return { previousLeads };
     },
@@ -559,19 +573,17 @@ export default function Leads() {
   const handleDragEnd = (result) => {
     if (!result.destination) return;
     const { draggableId, destination } = result;
-    const novoStatus = destination.droppableId;
+    const etapa = etapas.find((item) => item.id === destination.droppableId);
     const lead = leads.find((l) => l.id === draggableId);
-    if (!lead || lead.status === novoStatus) return;
+    if (!lead || !etapa || findEtapaDoLead(etapas, lead)?.id === etapa.id) return;
 
-    const requirement = LEAD_STATUS_REQUIREMENTS[novoStatus];
-    if (requirement && (requirement.motivo || requirement.fields.length > 0)) {
-      setStatusTarget({ lead, status: novoStatus });
+    if (etapaMotivoAplicaEm(etapa)) {
+      setStatusTarget({ lead, etapa });
       setStatusMotivoId('');
-      setStatusExtraValues({});
       return;
     }
 
-    updateStatusMutation.mutate({ id: draggableId, status: novoStatus });
+    updateStatusMutation.mutate({ id: draggableId, etapa });
   };
 
   const filtrados = leads;
@@ -586,7 +598,10 @@ export default function Leads() {
     setPeriodoFim('');
   };
 
-  const counts = leads.reduce((acc, l) => ({ ...acc, [l.status]: (acc[l.status] || 0) + 1 }), {});
+  const counts = leads.reduce((acc, l) => {
+    const etapaId = findEtapaDoLead(etapas, l)?.id;
+    return etapaId ? { ...acc, [etapaId]: (acc[etapaId] || 0) + 1 } : acc;
+  }, {});
   const editingNotes = editing
     ? historico.filter((item) => item.lead_id === editing.id && item.tipo === 'observacao' && item.metadados?.origem === 'lead_note')
     : [];
@@ -594,7 +609,7 @@ export default function Leads() {
     ? historico.filter((item) => item.lead_id === editing.id && item.metadados?.origem === 'lead_attachment')
     : [];
 
-  const STATUS_TABS = ['todos', 'novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao', 'convertido', 'perdido'];
+  const STATUS_TABS = [{ id: 'todos', nome: 'Todos' }, ...etapasAtivas];
 
   return (
     <div className={cn(
@@ -703,6 +718,7 @@ export default function Leads() {
         <div className="flex-1 min-h-0">
           <LeadsKanban
             leads={filtrados}
+            etapas={etapasAtivas}
             onDragEnd={handleDragEnd}
             onCardClick={(lead) => setViewingLead(lead)}
             leadsComAtividadePendente={leadsComAtividadePendente}
@@ -716,16 +732,16 @@ export default function Leads() {
           <div className="flex gap-0 border-b border-border bg-white shadow-sm mb-4 overflow-x-auto">
             {STATUS_TABS.map((s) => (
               <button
-                key={s}
-                onClick={() => setStatusFiltro(s)}
+                key={s.id}
+                onClick={() => setStatusFiltro(s.id)}
                 className={cn(
                   'px-4 py-2.5 text-xs font-bold uppercase tracking-widest whitespace-nowrap border-b-2 -mb-px transition-all',
-                  statusFiltro === s ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+                  statusFiltro === s.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
                 )}
               >
-                {s === 'todos' ? 'Todos' : STATUS_LABEL[s]}
-                <span className={cn('ml-1.5 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold', statusFiltro === s ? 'bg-primary text-white' : 'bg-muted text-muted-foreground')}>
-                  {s === 'todos' ? leads.length : (counts[s] || 0)}
+                {s.nome}
+                <span className={cn('ml-1.5 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold', statusFiltro === s.id ? 'bg-primary text-white' : 'bg-muted text-muted-foreground')}>
+                  {s.id === 'todos' ? leads.length : (counts[s.id] || 0)}
                 </span>
               </button>
             ))}
@@ -752,6 +768,7 @@ export default function Leads() {
                     </TableCell>
                   </TableRow>
                 ) : filtrados.map((lead, i) => {
+                  const etapaVisual = getEtapaVisual(findEtapaDoLead(etapas, lead), { status: lead.status });
                   return (
                     <TableRow
                       key={lead.id}
@@ -770,8 +787,8 @@ export default function Leads() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <span className={cn('text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-sm', STATUS_STYLES[lead.status])}>
-                          {STATUS_LABEL[lead.status]}
+                        <span className={cn('text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-sm', etapaVisual.className)} style={etapaVisual.style}>
+                          {getLeadEtapaLabel(etapas, lead)}
                         </span>
                       </TableCell>
                     </TableRow>
@@ -842,23 +859,19 @@ export default function Leads() {
       )}
 
       {(() => {
-        const requirement = statusTarget ? LEAD_STATUS_REQUIREMENTS[statusTarget.status] : null;
+        const motivoAplicaEm = statusTarget ? etapaMotivoAplicaEm(statusTarget.etapa) : null;
         const closeDialog = () => {
           setStatusTarget(null);
           setStatusMotivoId('');
-          setStatusExtraValues({});
         };
-        const canSubmit = statusTarget && requirement && (
-          (!requirement.motivo || statusMotivoId)
-          && requirement.fields.every((field) => String(statusExtraValues[field] || '').trim())
-        );
+        const canSubmit = Boolean(statusTarget) && (!motivoAplicaEm || Boolean(statusMotivoId));
 
         return (
           <Dialog open={Boolean(statusTarget)} onOpenChange={(next) => { if (!next) closeDialog(); }}>
             <DialogContent className="max-w-md rounded-none p-0">
-              <DialogHeader className={cn('px-6 py-4', statusTarget?.status === 'perdido' ? 'bg-red-700' : 'bg-[#1a1a1a]')}>
+              <DialogHeader className={cn('px-6 py-4', statusTarget?.etapa?.tipo === 'perdido' ? 'bg-red-700' : 'bg-[#1a1a1a]')}>
                 <DialogTitle className="text-sm font-black uppercase tracking-widest text-white">
-                  Mover lead para {statusTarget ? STATUS_LABEL[statusTarget.status] : ''}
+                  Mover lead para {statusTarget?.etapa?.nome || ''}
                 </DialogTitle>
               </DialogHeader>
               <form
@@ -867,22 +880,21 @@ export default function Leads() {
                   if (!statusTarget || !canSubmit) return;
                   updateStatusMutation.mutate({
                     id: statusTarget.lead.id,
-                    status: statusTarget.status,
-                    ...(requirement.motivo ? { motivo_status_id: statusMotivoId } : {}),
-                    ...Object.fromEntries(requirement.fields.map((field) => [field, statusExtraValues[field]])),
+                    etapa: statusTarget.etapa,
+                    ...(motivoAplicaEm ? { motivo_status_id: statusMotivoId } : {}),
                   });
                 }}
                 className="flex flex-col gap-4 p-6"
               >
                 <p className="text-xs text-muted-foreground">
-                  Informe os dados abaixo para mover <strong>{statusTarget?.lead?.nome}</strong> para {statusTarget ? STATUS_LABEL[statusTarget.status] : ''}.
+                  Informe os dados abaixo para mover <strong>{statusTarget?.lead?.nome}</strong> para {statusTarget?.etapa?.nome || ''}.
                 </p>
 
-                {requirement?.motivo && (
+                {motivoAplicaEm && (
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Motivo</label>
                     <MotivoStatusSelect
-                      status={statusTarget?.status}
+                      aplicaEm={motivoAplicaEm}
                       value={statusMotivoId}
                       onChange={setStatusMotivoId}
                       motivosStatus={motivosStatus}

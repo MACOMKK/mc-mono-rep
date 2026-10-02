@@ -4,7 +4,8 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Button } from '@/components/ui/button';
 import { crmDataClient } from '@/api/crmDataClient';
 import { cn } from '@/lib/utils';
-import { LEAD_STATUS_BADGE, LEAD_STATUS_LABEL } from '@/lib/leadStatus';
+import { findEtapaDoLead, getEtapaVisual, getLeadEtapaLabel } from '@/lib/leadStatus';
+import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
 import EventoCard from '@/components/eventos/EventoCard';
 import {
   Pencil,
@@ -100,6 +101,8 @@ const ATIVIDADES_VISIVEIS = 4;
 
 export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity, onCreateProposta }) {
   const veiculo = lead?.veiculo_interesse || null;
+  const { etapas } = usePipelineEtapas({ pipelineId: lead?.pipeline_id || undefined });
+  const etapaVisual = getEtapaVisual(findEtapaDoLead(etapas, lead), { status: lead?.status });
   const [showAllAtividades, setShowAllAtividades] = useState(false);
   const [section, setSection] = useState('visao_geral');
 
@@ -196,8 +199,8 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
             {lead.nome}
           </DialogTitle>
           <DialogDescription className="sr-only">Detalhes do lead {lead.nome}.</DialogDescription>
-          <span className={cn('shrink-0 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider', LEAD_STATUS_BADGE[lead.status])}>
-            {LEAD_STATUS_LABEL[lead.status] || lead.status}
+          <span className={cn('shrink-0 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider', etapaVisual.className)} style={etapaVisual.style}>
+            {getLeadEtapaLabel(etapas, lead)}
           </span>
         </div>
 
@@ -230,7 +233,7 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
             {section === 'visao_geral' ? (
               <>
                 <Block icon={LayoutDashboard} title="Situação">
-                  <Item label="Status">{LEAD_STATUS_LABEL[lead.status] || lead.status}</Item>
+                  <Item label="Etapa">{getLeadEtapaLabel(etapas, lead)}</Item>
                   <Item label="Origem">{lead.origem || '-'}</Item>
                   {lead.status === 'perdido' ? (
                     <Item label="Motivo da perda">{lead.motivo_perda || '-'}</Item>

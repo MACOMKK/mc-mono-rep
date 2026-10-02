@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/components/ui/use-toast';
 
-const STATUS = 'perdido';
+const APLICA_EM = 'perdido'; // motivos_status.aplica_em das etapas tipo perdido
 
 export default function MotivosInsucesso() {
   const { user } = useAuth();
@@ -21,11 +21,11 @@ export default function MotivosInsucesso() {
     queryKey: ['crm-motivos-status'],
     queryFn: () => crmDataClient.entities.MotivoStatus.list('nome'),
     enabled: user?.role === 'admin' || user?.role === 'manager',
-    select: (rows) => rows.filter((row) => row.status === STATUS),
+    select: (rows) => rows.filter((row) => row.aplica_em === APLICA_EM),
   });
 
   const createMutation = useMutation({
-    mutationFn: (nome) => crmDataClient.entities.MotivoStatus.create({ status: STATUS, nome, ativo: true }),
+    mutationFn: (nome) => crmDataClient.entities.MotivoStatus.create({ aplica_em: APLICA_EM, nome, ativo: true }),
     onMutate: () => {
       setNovoNome('');
     },
@@ -41,7 +41,7 @@ export default function MotivosInsucesso() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }) => crmDataClient.entities.MotivoStatus.update(id, { status: STATUS, ...data }),
+    mutationFn: ({ id, ...data }) => crmDataClient.entities.MotivoStatus.update(id, { aplica_em: APLICA_EM, ...data }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-motivos-status'] });
       toast({ title: 'Motivo atualizado', variant: 'success' });

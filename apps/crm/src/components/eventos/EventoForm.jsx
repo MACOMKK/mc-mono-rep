@@ -17,15 +17,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Building2, Car, Phone, Tag, UserRound } from 'lucide-react';
 
-import {
-  ACTIVE_LEAD_STATUSES as ACTIVE_LEAD_STATUSES_LIST,
-  LEAD_STATUS_REQUIREMENTS,
-  RESULTADO_LEAD_STATUS_TARGET,
-  isLeadEligibleForResultado,
-} from '@/lib/leadStatus';
+import { findEtapaDoLead, isLeadAtivo, resultadoMotivoAplicaEm } from '@/lib/leadStatus';
+import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
 import MotivoStatusSelect from '@/components/leads/MotivoStatusSelect';
 
-const ACTIVE_LEAD_STATUSES = new Set(ACTIVE_LEAD_STATUSES_LIST);
 const PLANNED_ACTIVITY_STATUSES = new Set(['planejada']);
 
 function Field({ label, children }) {
@@ -61,7 +56,7 @@ function createInitialData(evento, leads, initialLeadId) {
 
   const firstLead = initialLeadId
     ? leads.find((lead) => lead.id === initialLeadId)
-    : leads.find((lead) => ACTIVE_LEAD_STATUSES.has(lead.status));
+    : leads.find((lead) => isLeadAtivo(lead));
 
   return leadToEvento(firstLead, {
     lead_id: '',
@@ -98,11 +93,11 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
     if (evento?.lead_id) {
       return leads.filter((lead) => (
         lead.id === evento.lead_id ||
-        (ACTIVE_LEAD_STATUSES.has(lead.status) && !hasOpenAttendance(lead.id))
+        (isLeadAtivo(lead) && !hasOpenAttendance(lead.id))
       ));
     }
 
-    return leads.filter((lead) => ACTIVE_LEAD_STATUSES.has(lead.status) && !hasOpenAttendance(lead.id));
+    return leads.filter((lead) => isLeadAtivo(lead) && !hasOpenAttendance(lead.id));
   }, [atendimentos, evento?.id, evento?.lead_id, leads]);
 
   const [data, setData] = useState(() => createInitialData(evento, availableLeads.length ? availableLeads : leads, initialLeadId));
@@ -112,13 +107,15 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
   const needsResult = data.status === 'concluida';
   const needsLossReason = needsResult && data.resultado === 'lead_perdido';
   const closesLead = needsResult && ['venda_realizada', 'lead_perdido'].includes(data.resultado);
-  const needsNextActivity = needsResult && data.resultado && !closesLead && ACTIVE_LEAD_STATUSES.has(selectedLead?.status);
+  const needsNextActivity = needsResult && data.resultado && !closesLead && isLeadAtivo(selectedLead);
   const needsScheduledDate = data.status === 'planejada';
 
-  const targetLeadStatus = needsResult ? RESULTADO_LEAD_STATUS_TARGET[data.resultado] : null;
-  const willTransitionLead = Boolean(targetLeadStatus) && isLeadEligibleForResultado(data.resultado, selectedLead?.status);
-  const targetRequirement = willTransitionLead ? LEAD_STATUS_REQUIREMENTS[targetLeadStatus] : null;
-  const needsMotivoStatus = Boolean(targetRequirement?.motivo);
+  // Motivo exigido pelo resultado conforme a etapa atual do lead (espelha
+  // prepare_activity_business_state / apply_activity_outcome).
+  const { etapas } = usePipelineEtapas({ pipelineId: selectedLead?.pipeline_id || undefined });
+  const etapaAtualLead = findEtapaDoLead(etapas, selectedLead);
+  const motivoAplicaEm = needsResult ? resultadoMotivoAplicaEm(data.resultado, etapaAtualLead, etapas) : null;
+  const needsMotivoStatus = Boolean(motivoAplicaEm);
 
   const canSave = Boolean(
     data.lead_id
@@ -159,15 +156,12 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
   }
 
   function setResultado(resultado) {
-    setData((current) => {
-      const targetStatus = RESULTADO_LEAD_STATUS_TARGET[resultado];
-      const requirement = targetStatus ? LEAD_STATUS_REQUIREMENTS[targetStatus] : null;
-      return {
-        ...current,
-        resultado,
-        motivo_status_id: requirement?.motivo ? current.motivo_status_id : '',
-      };
-    });
+    // Troca de resultado sempre limpa o motivo: cada resultado usa um tipo de motivo diferente.
+    setData((current) => ({
+      ...current,
+      resultado,
+      motivo_status_id: resultado === current.resultado ? current.motivo_status_id : '',
+    }));
   }
 
   return (
@@ -277,7 +271,7 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
               <div className="col-span-2">
                 <Field label="Motivo *">
                   <MotivoStatusSelect
-                    status={targetLeadStatus}
+                    aplicaEm={motivoAplicaEm}
                     value={data.motivo_status_id || ''}
                     onChange={(value) => set('motivo_status_id', value)}
                     motivosStatus={motivosStatus}

@@ -19,6 +19,9 @@ const REALTIME_TABLES = [
   { schema: 'gestao_crm', table: 'vendedores_distribuicao' },
   { schema: 'gestao_crm', table: 'conversas_atendimento' },
   { schema: 'gestao_crm', table: 'mensagens_atendimento' },
+  { schema: 'gestao_crm', table: 'pipelines' },
+  { schema: 'gestao_crm', table: 'etapas_pipeline' },
+  { schema: 'gestao_crm', table: 'motivos_status' },
 ];
 
 const TABLE_CACHE_CONFIG = {
@@ -80,6 +83,16 @@ const TABLE_CACHE_CONFIG = {
     // 'mensagens-atendimento', incluindo ['mensagens-atendimento', conversaId].
     queryKeys: [['mensagens-atendimento'], ['conversas-atendimento']],
   },
+  pipelines: {
+    queryKeys: [['crm-pipelines']],
+  },
+  etapas_pipeline: {
+    // casa ['crm-etapas-pipeline', pipelineId] (usePipelineEtapas e tela de Pipelines)
+    queryKeys: [['crm-etapas-pipeline']],
+  },
+  motivos_status: {
+    queryKeys: [['crm-motivos-status']],
+  },
 };
 
 function normalizePhone(phone) {
@@ -133,6 +146,10 @@ function mapLeadRow(row = {}) {
     email_normalizado: row.email_normalizado || '',
     origem_id: row.origem_id || '',
     status: row.status || 'novo',
+    pipeline_id: row.pipeline_id || '',
+    etapa_id: row.etapa_id || '',
+    etapa_tipo: row.etapa_tipo || (row.status === 'convertido' ? 'ganho' : row.status === 'perdido' ? 'perdido' : 'em_andamento'),
+    motivo_status_id: row.motivo_status_id || '',
     modelo_interesse: row.modelo_interesse || '',
     empresa: row.empresa || 'Macom Ananindeua',
     convertido_em: row.convertido_em || null,

@@ -53,6 +53,8 @@ const ENTITY_CONFIG = {
       'email_normalizado',
       'origem_id',
       'status',
+      'pipeline_id',
+      'etapa_id',
       'modelo_interesse',
       'empresa',
       'convertido_em',
@@ -194,13 +196,13 @@ const ENTITY_CONFIG = {
     table: 'etapas_pipeline',
     orderBy: 'ordem',
     orderDirection: 'asc',
-    allowedFields: ['pipeline_id', 'nome', 'cor', 'ordem', 'ativo'],
+    allowedFields: ['pipeline_id', 'nome', 'cor', 'ordem', 'tipo', 'ativo'],
   },
   motivos_status: {
     table: 'motivos_status',
     orderBy: 'nome',
     orderDirection: 'asc',
-    allowedFields: ['status', 'nome', 'ativo'],
+    allowedFields: ['status', 'aplica_em', 'nome', 'ativo'],
   },
   propostas: {
     table: 'propostas',
@@ -403,6 +405,24 @@ function mapDatabaseError(error: unknown) {
     return message;
   }
 
+  if (message.includes('leads_etapa_id_fkey')) {
+    return 'Esta etapa possui leads. Mova-os para outra etapa antes de excluir.';
+  }
+
+  if (message.includes('leads_pipeline_id_fkey')) {
+    return 'Este pipeline possui leads. Mova-os para outro pipeline antes de excluir.';
+  }
+
+  if (message.includes('Etapas de sistema nao podem')
+    || message.includes('Esta etapa possui leads')
+    || message.includes('Esta etapa do pipeline esta inativa')
+    || message.includes('Etapa do pipeline nao encontrada')
+    || message.includes('O status e a etapa informados para o lead nao conferem')
+    || message.includes('A etapa nao pertence ao pipeline do lead')
+    || message.includes('O pipeline do lead nao possui etapa')) {
+    return message;
+  }
+
   if (message.includes('null value in column "categoria_veiculo_id"')) {
     return 'Selecione o segmento (categoria) do veiculo.';
   }
@@ -411,20 +431,23 @@ function mapDatabaseError(error: unknown) {
     return 'Selecione a origem do lead.';
   }
 
-  if (message.includes('Motivo da perda e obrigatorio')) {
-    return 'Informe o motivo da perda para encerrar este lead.';
-  }
-
   if (message.includes('Selecione um motivo para mover o lead')
     || message.includes('motivo selecionado nao e valido')
-    || message.includes('Informe a previsao de fechamento para mover o lead')
-    || message.includes('Selecione um motivo para concluir esta atividade')
-    || message.includes('Informe a previsao de fechamento para concluir esta atividade')) {
+    || message.includes('Selecione um motivo para concluir esta atividade')) {
     return message;
   }
 
   if (message.includes('motivos_status_status_nome_key')) {
     return 'Ja existe um motivo com este nome para este status.';
+  }
+
+  if (message.includes('Tipo do motivo invalido')
+    || message.includes('O status e o tipo informados para o motivo nao conferem')) {
+    return message;
+  }
+
+  if (message.includes('etapas_pipeline_tipo_check')) {
+    return 'Tipo da etapa invalido. Use em andamento, ganho ou perdido.';
   }
 
   if (message.includes('Informe o resultado para concluir')) {
@@ -1296,7 +1319,7 @@ Deno.serve(async (request) => {
           on vd.unidade_id = c.unidade_id and vd.colaborador_id = c.id
         left join ${CRM_SCHEMA}.leads l
           on l.responsavel_id = c.id
-         and l.status in ('novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao')
+         and l.etapa_tipo = 'em_andamento'
         where c.status <> 'inativo' and c.unidade_id is not null
           and ($2::uuid is null or c.unidade_id = $2::uuid)
         group by c.id, c.nome, c.email, c.unidade_id, vd.ativo,
@@ -1511,9 +1534,8 @@ Deno.serve(async (request) => {
       const leadPayloadRaw = sanitizePayload('leads', body.leadPayload || {});
       validateContactFields('leads', leadPayloadRaw);
 
-      let existingLead: Record<string, unknown> | null = null;
       if (leadId) {
-        existingLead = await ensureEntityAccess('leads', leadId, access, collaborator);
+        await ensureEntityAccess('leads', leadId, access, collaborator);
       }
 
       let clienteIdentidadeSelecionada: Record<string, unknown> | null = null;
@@ -1645,26 +1667,7 @@ Deno.serve(async (request) => {
           await transaction.unsafe(insertQuery.text, insertQuery.values);
         }
 
-        if (existingLead && existingLead.status !== leadRow.status) {
-          const statusChangePayload: Record<string, unknown> = {
-            cliente_id: leadRow.cliente_id,
-            lead_id: leadRow.id,
-            atendimento_id: null,
-            tipo: 'atualizacao_lead',
-            descricao: `Status alterado de ${existingLead.status} para ${leadRow.status}.`,
-            entidade: 'Lead',
-            entidade_id: leadRow.id,
-            status: leadRow.status,
-            metadados: {
-              status_anterior: existingLead.status,
-              status_novo: leadRow.status,
-              motivo_status_id: leadRow.motivo_status_id || null,
-            },
-          };
-          if (collaborator?.id) statusChangePayload.criado_por = collaborator.id;
-          const insertQuery = buildInsertQuery(CRM_SCHEMA, 'historico_atendimentos', statusChangePayload);
-          await transaction.unsafe(insertQuery.text, insertQuery.values);
-        }
+        // Historico de troca de status: gravado pelo trigger register_lead_change_history.
 
         return { lead: leadRow, vehicle: vehicleRow };
       });
@@ -1875,8 +1878,8 @@ Deno.serve(async (request) => {
       return json({ venda: vendaRows[0] });
     }
 
-    // Soft cancel: reverte o estoque sempre e o lead so se ele ainda estiver
-    // 'convertido' (pode ja ter mudado de status por outro motivo depois da venda).
+    // Soft cancel: reverte o estoque sempre e o lead so se ele ainda estiver em etapa
+    // tipo 'ganho' (pode ja ter mudado de etapa por outro motivo depois da venda).
     // A venda nunca e apagada -- fica com status='cancelada' para auditoria. A proposta
     // associada (quando houver) nao e revertida, continua 'aceita' como registro
     // historico do que foi ofertado/aceito.
@@ -1912,20 +1915,34 @@ Deno.serve(async (request) => {
           [canceledVenda.veiculo_estoque_id],
         );
 
+        // Lead em etapa de ganho volta para a etapa de sistema 'negociacao' do pipeline dele
+        // (sem ela, para a ultima etapa ativa em andamento). O status e derivado da etapa
+        // pelo trigger trg_crm_leads_a_sync_etapa.
         const leadRows = await transaction.unsafe(
           `select status from ${CRM_SCHEMA}.leads where id = $1 limit 1;`,
           [canceledVenda.lead_id],
         );
-        const leadStatus = leadRows[0]?.status;
+        let leadStatus = leadRows[0]?.status;
 
-        if (leadStatus === 'convertido') {
-          await transaction.unsafe(
-            `update ${CRM_SCHEMA}.leads
-             set status = 'negociacao'
-             where id = $1 and status = 'convertido';`,
-            [canceledVenda.lead_id],
-          );
-        }
+        const reopenedRows = await transaction.unsafe(
+          `update ${CRM_SCHEMA}.leads l
+           set etapa_id = coalesce(
+             (select e.id from ${CRM_SCHEMA}.etapas_pipeline e
+              where e.pipeline_id = l.pipeline_id and e.chave_sistema = 'negociacao'),
+             (select e.id from ${CRM_SCHEMA}.etapas_pipeline e
+              where e.pipeline_id = l.pipeline_id and e.tipo = 'em_andamento' and e.ativo
+              order by e.ordem desc limit 1)
+           )
+           where l.id = $1
+             and l.etapa_tipo = 'ganho'
+             and exists (
+               select 1 from ${CRM_SCHEMA}.etapas_pipeline e
+               where e.pipeline_id = l.pipeline_id and e.tipo = 'em_andamento' and e.ativo
+             )
+           returning l.status;`,
+          [canceledVenda.lead_id],
+        );
+        if (reopenedRows[0]) leadStatus = reopenedRows[0].status;
 
         await transaction.unsafe(
           `insert into ${CRM_SCHEMA}.historico_atendimentos (
@@ -1936,7 +1953,7 @@ Deno.serve(async (request) => {
             canceledVenda.lead_id,
             `Venda cancelada: ${motivoCancelamento}`,
             vendaId,
-            leadStatus === 'convertido' ? 'negociacao' : leadStatus,
+            leadStatus,
             JSON.stringify({ venda_id: vendaId, motivo_cancelamento: motivoCancelamento }),
             collaborator?.id ?? null,
           ],
@@ -2143,27 +2160,7 @@ Deno.serve(async (request) => {
       const query = buildUpdateQuery(config.schema ?? CRM_SCHEMA, config.table, id, payload);
       const rows = await sql.unsafe(query.text, query.values);
       const row = rows[0] || null;
-
-      if (entity === 'leads' && row && 'status' in payload && existingRow.status !== row.status) {
-        const statusChangePayload: Record<string, unknown> = {
-          cliente_id: row.cliente_id,
-          lead_id: row.id,
-          atendimento_id: null,
-          tipo: 'atualizacao_lead',
-          descricao: `Status alterado de ${existingRow.status} para ${row.status}.`,
-          entidade: 'Lead',
-          entidade_id: row.id,
-          status: row.status,
-          metadados: {
-            status_anterior: existingRow.status,
-            status_novo: row.status,
-            motivo_status_id: row.motivo_status_id || null,
-          },
-        };
-        if (collaborator?.id) statusChangePayload.criado_por = collaborator.id;
-        const insertQuery = buildInsertQuery(CRM_SCHEMA, 'historico_atendimentos', statusChangePayload);
-        await sql.unsafe(insertQuery.text, insertQuery.values);
-      }
+      // Historico de troca de status de lead: gravado pelo trigger register_lead_change_history.
 
       return json({ row });
     }

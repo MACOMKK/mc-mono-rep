@@ -15,7 +15,6 @@ import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 
 const createTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-import { ACTIVE_LEAD_STATUSES } from '@/lib/leadStatus';
 const STATUS_TABS = ['planejada', 'concluida', 'cancelada'];
 
 const formatDateOnly = (date) => date.toISOString().slice(0, 10);
@@ -122,7 +121,7 @@ export default function Eventos() {
     queryFn: async () => {
       const filters = {
         ...baseFilters,
-        ...(editing?.lead_id ? {} : { status: ACTIVE_LEAD_STATUSES }),
+        ...(editing?.lead_id ? {} : { etapa_tipo: 'em_andamento' }),
       };
       const result = await crmDataClient.entities.Lead.listPage({
         orderBy: '-updated_date',
@@ -222,12 +221,12 @@ export default function Eventos() {
 
       if (data.status === 'concluida' && data.resultado === 'venda_realizada') {
         queryClient.setQueryData(formLeadsQueryKey, (current = []) =>
-          current.map((lead) => lead.id === data.lead_id ? { ...lead, status: 'convertido' } : lead)
+          current.map((lead) => lead.id === data.lead_id ? { ...lead, status: 'convertido', etapa_tipo: 'ganho' } : lead)
         );
       } else if (data.status === 'concluida' && data.resultado === 'lead_perdido') {
         queryClient.setQueryData(formLeadsQueryKey, (current = []) =>
           current.map((lead) => lead.id === data.lead_id
-            ? { ...lead, status: 'perdido', motivo_perda: data.motivo_resultado || '' }
+            ? { ...lead, status: 'perdido', etapa_tipo: 'perdido', motivo_perda: data.motivo_resultado || '' }
             : lead)
         );
       }

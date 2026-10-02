@@ -18,7 +18,8 @@ import { cn } from '@/lib/utils';
 import ListPagination from '@/components/ListPagination';
 import { Ban, Building2, Car, Clock3, History, Mail, MapPin, Paperclip, Pencil, Phone, Plus, Save, Search, Tag, Trash2, UserRound, X } from 'lucide-react';
 
-import { ACTIVE_LEAD_STATUSES as ACTIVE_LEAD_STATUSES_LIST, LEAD_STATUS_LABEL, LEAD_STATUS_STYLE } from '@/lib/leadStatus';
+import { findEtapaDoLead, getEtapaVisual, getLeadEtapaLabel, isLeadAtivo } from '@/lib/leadStatus';
+import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
 
 const STATUS_LABEL = {
   lead: 'Lead',
@@ -32,7 +33,14 @@ const STATUS_STYLE = {
   pos_venda: 'border-amber-200 bg-amber-50 text-amber-700',
 };
 
-const ACTIVE_LEAD_STATUSES = new Set(ACTIVE_LEAD_STATUSES_LIST);
+function LeadEtapaBadge({ lead, etapas }) {
+  const visual = getEtapaVisual(findEtapaDoLead(etapas, lead), { variant: 'style', status: lead.status });
+  return (
+    <Badge className={cn('rounded-sm border text-[10px] uppercase tracking-wider', visual.className)} style={visual.style}>
+      {getLeadEtapaLabel(etapas, lead)}
+    </Badge>
+  );
+}
 
 const ATTENDANCE_RESULT_LABEL = {
   contato_realizado: 'Contato realizado',
@@ -100,6 +108,7 @@ function sortTimeline(items) {
 }
 
 export default function Clientes() {
+  const { etapas } = usePipelineEtapas();
   const [busca, setBusca] = useState('');
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -155,7 +164,7 @@ export default function Clientes() {
       const leadsPage = await crmDataClient.entities.Lead.listPage({
         orderBy: '-created_date',
         limit: Math.max(clienteIds.length * 3, 100),
-        filters: { cliente_id: clienteIds, status: [...ACTIVE_LEAD_STATUSES] },
+        filters: { cliente_id: clienteIds, etapa_tipo: 'em_andamento' },
       });
       const map = {};
       for (const lead of leadsPage.rows || []) {
@@ -263,7 +272,7 @@ export default function Clientes() {
   const selectedTimelineErrorMessage =
     selectedLeadsError?.message || selectedAtendimentosError?.message || selectedHistoricoError?.message
     || 'Nao foi possivel carregar os dados do cliente.';
-  const activeLead = selectedLeads.find((lead) => ACTIVE_LEAD_STATUSES.has(lead.status));
+  const activeLead = selectedLeads.find((lead) => isLeadAtivo(lead));
   const selectedTimeline = useMemo(() => {
     if (!selected) return [];
 
@@ -289,7 +298,7 @@ export default function Clientes() {
           label: 'Lead',
           title: `Lead criado${lead.modelo_interesse ? ` - ${lead.modelo_interesse}` : ''}`,
           description: `Origem: ${lead.origem || '-'}${lead.responsavel_nome ? ` | Responsavel: ${lead.responsavel_nome}` : ''}`,
-          status: LEAD_STATUS_LABEL[lead.status] || lead.status,
+          status: getLeadEtapaLabel(etapas, lead),
           icon: Tag,
         },
       ];
@@ -402,7 +411,7 @@ export default function Clientes() {
       ...atividadeItems,
       ...historicoItems,
     ]);
-  }, [selected, selectedAtendimentos, selectedHistorico, selectedLeads]);
+  }, [etapas, selected, selectedAtendimentos, selectedHistorico, selectedLeads]);
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => crmDataClient.entities.Cliente.update(id, data),
@@ -636,9 +645,7 @@ export default function Clientes() {
                   <TableCell className="text-xs">
                     {activeLeadsByCliente[cliente.id] ? (
                       <div className="space-y-1">
-                        <Badge className={cn('rounded-sm border text-[10px] uppercase tracking-wider', LEAD_STATUS_STYLE[activeLeadsByCliente[cliente.id].status] || LEAD_STATUS_STYLE.novo)}>
-                          {LEAD_STATUS_LABEL[activeLeadsByCliente[cliente.id].status] || activeLeadsByCliente[cliente.id].status}
-                        </Badge>
+                        <LeadEtapaBadge lead={activeLeadsByCliente[cliente.id]} etapas={etapas} />
                         <div className="text-[11px] text-muted-foreground">
                           {activeLeadsByCliente[cliente.id].modelo_interesse || 'Modelo nao informado'}
                         </div>
@@ -880,9 +887,7 @@ export default function Clientes() {
                     <div className="border-l-4 border-blue-600 bg-blue-50 p-4">
                       <div className="mb-2 flex items-center justify-between gap-3">
                         <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Lead ativo</p>
-                        <Badge className={cn('rounded-sm border text-[10px] uppercase tracking-wider', LEAD_STATUS_STYLE[activeLead.status] || LEAD_STATUS_STYLE.novo)}>
-                          {LEAD_STATUS_LABEL[activeLead.status] || activeLead.status}
-                        </Badge>
+                        <LeadEtapaBadge lead={activeLead} etapas={etapas} />
                       </div>
                       <p className="text-sm font-bold">{activeLead.modelo_interesse || 'Modelo nao informado'}</p>
                       <p className="mt-1 text-xs text-muted-foreground">Origem: {activeLead.origem || '-'}</p>
@@ -932,9 +937,7 @@ export default function Clientes() {
                               <Tag className="h-3 w-3" />
                               Lead
                             </span>
-                            <Badge className={cn('rounded-sm border text-[10px] uppercase tracking-wider', LEAD_STATUS_STYLE[lead.status] || LEAD_STATUS_STYLE.novo)}>
-                              {LEAD_STATUS_LABEL[lead.status] || lead.status}
-                            </Badge>
+                            <LeadEtapaBadge lead={lead} etapas={etapas} />
                           </div>
                           <p className="text-sm font-bold">{lead.modelo_interesse || 'Modelo nao informado'}</p>
                           <div className="mt-2 grid gap-1 text-xs text-muted-foreground">

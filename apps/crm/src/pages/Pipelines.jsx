@@ -20,6 +20,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/components/ui/use-toast';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ETAPA_TIPO_LABEL } from '@/lib/leadStatus';
 
 const CORES_PALETA = ['#3b82f6', '#16a34a', '#fbbf24', '#f87171', '#c084fc', '#06b6d4', '#f97316', '#94a3b8'];
 
@@ -68,11 +70,13 @@ function NovoPipelineDialog({ open, onOpenChange, onSave, saving }) {
 function NovaEtapaDialog({ open, onOpenChange, onSave, saving }) {
   const [nome, setNome] = useState('');
   const [cor, setCor] = useState(CORES_PALETA[0]);
+  const [tipo, setTipo] = useState('em_andamento');
 
   const handleOpenChange = (nextOpen) => {
     if (nextOpen) {
       setNome('');
       setCor(CORES_PALETA[0]);
+      setTipo('em_andamento');
     }
     onOpenChange(nextOpen);
   };
@@ -93,6 +97,21 @@ function NovaEtapaDialog({ open, onOpenChange, onSave, saving }) {
               className="h-9 rounded-none"
               autoFocus
             />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs font-bold uppercase tracking-wider">Tipo da etapa</Label>
+            <Select value={tipo} onValueChange={setTipo}>
+              <SelectTrigger className="h-9 rounded-none"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(ETAPA_TIPO_LABEL).map(([valor, label]) => (
+                  <SelectItem key={valor} value={valor}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              Em andamento: lead ativo (conta na distribuicao e no SLA). Ganho/Perdido: lead encerrado
+              e com motivo obrigatorio. O tipo nao pode ser trocado depois que a etapa tiver leads.
+            </p>
           </div>
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-wider">Cor da etapa</Label>
@@ -126,7 +145,7 @@ function NovaEtapaDialog({ open, onOpenChange, onSave, saving }) {
             type="button"
             disabled={!nome.trim() || saving}
             className="rounded-none text-xs font-bold uppercase tracking-wider"
-            onClick={() => onSave({ nome: nome.trim(), cor })}
+            onClick={() => onSave({ nome: nome.trim(), cor, tipo })}
           >
             {saving ? 'Criando...' : 'Criar etapa'}
           </Button>
@@ -183,13 +202,14 @@ export default function Pipelines() {
   const proximaOrdem = (lista) => lista.reduce((maior, etapa) => Math.max(maior, etapa.ordem), -1) + 1;
 
   const criarEtapaMutation = useMutation({
-    mutationFn: ({ nome, cor }) => crmDataClient.entities.EtapaPipeline.create({
+    mutationFn: ({ nome, cor, tipo }) => crmDataClient.entities.EtapaPipeline.create({
       pipeline_id: pipelineSelecionadoId,
       nome,
       cor,
+      tipo,
       ordem: proximaOrdem(etapas),
     }),
-    onMutate: async ({ nome, cor }) => {
+    onMutate: async ({ nome, cor, tipo }) => {
       setNovaEtapaAberta(false);
       const queryKey = ['crm-etapas-pipeline', pipelineSelecionadoId];
       await queryClient.cancelQueries({ queryKey });
@@ -200,6 +220,7 @@ export default function Pipelines() {
         nome,
         cor,
         ordem: proximaOrdem(etapas),
+        tipo,
         chave_sistema: null,
         _otimista: true,
       };
@@ -388,6 +409,9 @@ export default function Pipelines() {
                             }
                           }}
                         />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {ETAPA_TIPO_LABEL[etapa.tipo] || etapa.tipo}
+                        </span>
                         {etapa.chave_sistema ? (
                           <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                             <Lock className="h-3 w-3" /> Sistema
@@ -449,6 +473,7 @@ export default function Pipelines() {
             <AlertDialogTitle className="text-sm font-black uppercase tracking-widest">Excluir etapa</AlertDialogTitle>
             <AlertDialogDescription>
               Tem certeza que deseja excluir a etapa "{etapaParaExcluir?.nome}"? Essa acao nao pode ser desfeita.
+              Etapas com leads nao podem ser excluidas: mova os leads para outra etapa antes.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

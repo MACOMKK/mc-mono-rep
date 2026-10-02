@@ -2,9 +2,8 @@ import { crmApi } from '@macom/api-client/crmApi';
 import { assertSupabaseConfigured, supabase } from '@macom/api-client/supabaseClient';
 import {
   LEAD_STATUS_LABEL,
-  LEAD_STATUS_REQUIREMENTS,
-  RESULTADO_LEAD_STATUS_TARGET,
-  isLeadEligibleForResultado,
+  etapaExigeMotivo,
+  etapaTipoFromStatus,
 } from '@/lib/leadStatus';
 
 const CRM_ATTACHMENTS_BUCKET = 'crm-anexos';
@@ -183,6 +182,9 @@ function mapLeadRow(row = {}) {
     origem_id: row.origem_id || '',
     origem: row.origem_nome || '',
     status: row.status || 'novo',
+    pipeline_id: row.pipeline_id || '',
+    etapa_id: row.etapa_id || '',
+    etapa_tipo: row.etapa_tipo || etapaTipoFromStatus(row.status || 'novo'),
     motivo_status_id: row.motivo_status_id || '',
     modelo_interesse: vehicleLabel || row.modelo_interesse || '',
     veiculo_interesse: vehicle.id ? vehicle : null,
@@ -267,6 +269,7 @@ function mapMotivoStatusRow(row = {}) {
   return {
     id: row.id,
     status: row.status || '',
+    aplica_em: row.aplica_em || '',
     nome: row.nome || '',
     ativo: row.ativo !== false,
     ...mapBaseDates(row),
@@ -289,7 +292,8 @@ function mapEtapaPipelineRow(row = {}) {
     pipeline_id: row.pipeline_id || '',
     nome: row.nome || '',
     cor: row.cor || '#90CAF9',
-    ordem: row.ordem ?? 0,
+    ordem: Number(row.ordem ?? 0),
+    tipo: row.tipo || 'em_andamento',
     chave_sistema: row.chave_sistema || null,
     ativo: row.ativo !== false,
     ...mapBaseDates(row),
@@ -450,8 +454,14 @@ function mapLeadPayload(data = {}, clienteId) {
   const phone = requireNormalizedPhone(data.telefone, 'Lead');
   const email = requireValidEmail(data.email, 'Lead');
 
-  if (['qualificado', 'convertido', 'perdido'].includes(data.status) && !data.motivo_status_id) {
-    throw new Error(`Selecione um motivo para mover o lead para ${LEAD_STATUS_LABEL[data.status] || data.status}.`);
+  // data.etapa (objeto da etapa destino) vem de quem move o lead por etapa (Kanban/LeadForm);
+  // sem ele vale a regra antiga por status. A regra de verdade e do banco (prepare_lead_phase1).
+  const exigeMotivo = data.etapa
+    ? etapaExigeMotivo(data.etapa)
+    : ['qualificado', 'convertido', 'perdido'].includes(data.status);
+  if (exigeMotivo && !data.motivo_status_id) {
+    const destino = data.etapa?.nome || LEAD_STATUS_LABEL[data.status] || data.status;
+    throw new Error(`Selecione um motivo para mover o lead para ${destino}.`);
   }
 
   if (!data.origem_id) {
@@ -467,16 +477,15 @@ function mapLeadPayload(data = {}, clienteId) {
     email_normalizado: normalizeEmail(email) || null,
     origem_id: data.origem_id,
     status: data.status || 'novo',
+    ...(data.etapa_id ? { etapa_id: data.etapa_id } : {}),
     modelo_interesse: data.modelo_interesse || formatVehicleLabel(data.veiculo_interesse) || null,
     empresa: normalizeEmpresa(data.empresa),
-    convertido_em: data.status === 'convertido'
-      ? (data.convertido_em || new Date().toISOString())
-      : (data.convertido_em || null),
-    perdido_em: data.status === 'perdido'
-      ? (data.perdido_em || new Date().toISOString())
-      : (data.perdido_em || null),
-    motivo_perda: data.status === 'perdido' ? String(data.motivo_perda || '').trim() || null : null,
-    motivo_status_id: ['qualificado', 'convertido', 'perdido'].includes(data.status) ? data.motivo_status_id : null,
+    // Datas e motivos fora da etapa que os usa sao preenchidos/limpos pelo banco
+    // (prepare_lead_phase1, pelo tipo da etapa).
+    convertido_em: data.convertido_em || null,
+    perdido_em: data.perdido_em || null,
+    motivo_perda: String(data.motivo_perda || '').trim() || null,
+    motivo_status_id: data.motivo_status_id || null,
     responsavel_id: data.responsavel_id || null,
     unidade_id: data.unidade_id || null,
     observacoes: data.observacoes || null,
@@ -550,11 +559,12 @@ function mapEventoPayload(data = {}, lead) {
     throw new Error('Informe o motivo da perda para concluir a atividade.');
   }
 
-  const targetLeadStatus = data.status === 'concluida' ? RESULTADO_LEAD_STATUS_TARGET[data.resultado] : null;
-  const willTransitionLead = Boolean(targetLeadStatus) && isLeadEligibleForResultado(data.resultado, lead?.status);
-  const targetRequirement = willTransitionLead ? LEAD_STATUS_REQUIREMENTS[targetLeadStatus] : null;
-
-  if (targetRequirement?.motivo && !data.motivo_status_id) {
+  // Venda/perdido sempre exigem motivo. Visita/test_drive dependem da etapa atual do lead:
+  // quem decide e o EventoForm (resultadoMotivoAplicaEm) e o banco reforca
+  // (prepare_activity_business_state).
+  const resultadoUsaMotivo = data.status === 'concluida'
+    && ['venda_realizada', 'lead_perdido', 'visita_agendada', 'test_drive'].includes(data.resultado);
+  if (data.status === 'concluida' && ['venda_realizada', 'lead_perdido'].includes(data.resultado) && !data.motivo_status_id) {
     throw new Error('Selecione um motivo para concluir esta atividade.');
   }
 
@@ -571,7 +581,7 @@ function mapEventoPayload(data = {}, lead) {
     motivo_resultado: data.status === 'concluida' && data.resultado === 'lead_perdido'
       ? String(data.motivo_resultado || '').trim()
       : null,
-    motivo_status_id: targetRequirement?.motivo ? data.motivo_status_id : null,
+    motivo_status_id: resultadoUsaMotivo ? (data.motivo_status_id || null) : null,
   };
 }
 
@@ -842,13 +852,22 @@ const LeadRepository = {
 
   async update(id, data) {
     const current = await getLead(id);
-    const nextData = { ...current, ...data };
+    // Quem troca a etapa manda etapa_id; o status vai como esta e o banco o deriva da etapa
+    // (trg_crm_leads_a_sync_etapa). Quem ainda troca so o status mantem a etapa atual e o
+    // banco deriva a etapa do status.
+    const etapaMudou = Boolean(data.etapa_id) && data.etapa_id !== current.etapa_id;
+    const nextData = {
+      ...current,
+      ...data,
+      ...(etapaMudou ? { status: current.status } : {}),
+      ...(!etapaMudou && data.status && data.status !== current.status ? { etapa_id: '' } : {}),
+    };
     const clientePayload = mapClientePayload({
       nome: nextData.nome,
       telefone: nextData.telefone,
       email: nextData.email,
       empresa: nextData.empresa,
-      status_relacionamento: nextData.status === 'convertido' ? 'cliente' : 'lead',
+      status_relacionamento: nextData.etapa_tipo === 'ganho' || nextData.status === 'convertido' ? 'cliente' : 'lead',
     });
     const leadPayload = mapLeadPayload(nextData);
     const vehiclePayload = hasVehicleInterest(data) ? mapVeiculoInteressePayload(data, id) : null;
@@ -929,13 +948,23 @@ const OrigemLeadRepository = {
 const MotivoStatusRepository = {
   ...createListRepository('MotivoStatus', crmApi.motivos_status, mapMotivoStatusRow),
 
+  // aplica_em (qualificado | ganho | perdido) e o campo novo; status ainda e aceito e o banco
+  // sincroniza um com o outro (sync_motivo_status_aplica_em) ate o corte da 2.6.
   async create(data) {
-    const row = await crmApi.motivos_status.create({ status: data.status, nome: data.nome, ativo: data.ativo !== false });
+    const row = await crmApi.motivos_status.create({
+      ...(data.aplica_em ? { aplica_em: data.aplica_em } : { status: data.status }),
+      nome: data.nome,
+      ativo: data.ativo !== false,
+    });
     return mapMotivoStatusRow(row);
   },
 
   async update(id, data) {
-    const row = await crmApi.motivos_status.update(id, { status: data.status, nome: data.nome, ativo: data.ativo !== false });
+    const row = await crmApi.motivos_status.update(id, {
+      ...(data.aplica_em ? { aplica_em: data.aplica_em } : { status: data.status }),
+      nome: data.nome,
+      ativo: data.ativo !== false,
+    });
     return mapMotivoStatusRow(row);
   },
 };
@@ -963,6 +992,7 @@ const EtapaPipelineRepository = {
       nome: data.nome,
       cor: data.cor || '#90CAF9',
       ordem: data.ordem ?? 0,
+      tipo: data.tipo || 'em_andamento',
       ativo: data.ativo !== false,
     });
     return mapEtapaPipelineRow(row);
@@ -974,6 +1004,7 @@ const EtapaPipelineRepository = {
       nome: data.nome,
       cor: data.cor,
       ordem: data.ordem,
+      ...(data.tipo ? { tipo: data.tipo } : {}),
       ativo: data.ativo !== false,
     });
     return mapEtapaPipelineRow(row);
