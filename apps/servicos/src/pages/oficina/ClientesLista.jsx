@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Plus, User } from 'lucide-react';
+import { Plus, User } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle } from '@macom/ui';
@@ -15,7 +14,6 @@ import ClienteDetalheSheet from '@/components/oficina/ClienteDetalheSheet';
 
 export default function ClientesLista() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [busca, setBusca] = useState('');
   const [cadastrarAberto, setCadastrarAberto] = useState(false);
   const [clienteDetalheId, setClienteDetalheId] = useState(null);
@@ -46,14 +44,9 @@ export default function ClientesLista() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/oficina/checklists')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-xl font-bold">Clientes</h1>
-            <p className="text-sm text-muted-foreground">Cadastro compartilhado com o CRM.</p>
-          </div>
+        <div>
+          <h1 className="text-xl font-bold">Clientes</h1>
+          <p className="text-sm text-muted-foreground">Cadastro compartilhado com o CRM.</p>
         </div>
         {user?.isOficinaInspetor && (
           <Button onClick={() => setCadastrarAberto(true)}>

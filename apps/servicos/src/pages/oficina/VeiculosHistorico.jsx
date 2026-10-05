@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Car, Plus, Trash2 } from 'lucide-react';
+import { Car, Plus, Trash2 } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle } from '@macom/ui';
@@ -11,10 +10,10 @@ import SearchInput from '@/components/SearchInput';
 import { usePagination } from '@/hooks/usePagination';
 import ClienteVeiculoPicker, { VeiculoForm } from '@/components/oficina/ClienteVeiculoPicker';
 import VeiculoDetalheSheet from '@/components/oficina/VeiculoDetalheSheet';
+import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
 
 export default function VeiculosHistorico() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [busca, setBusca] = useState('');
   const [cadastrarAberto, setCadastrarAberto] = useState(false);
   const [veiculoDetalheId, setVeiculoDetalheId] = useState(null);
@@ -23,6 +22,8 @@ export default function VeiculosHistorico() {
   const [transferindo, setTransferindo] = useState(false);
   const [erroTransferencia, setErroTransferencia] = useState(null);
   const [excluindoId, setExcluindoId] = useState(null);
+  const [veiculoExcluir, setVeiculoExcluir] = useState(null);
+  const [erroExcluir, setErroExcluir] = useState(null);
 
   const {
     data: veiculos = [],
@@ -62,33 +63,35 @@ export default function VeiculosHistorico() {
     }
   };
 
-  const handleExcluir = async (item) => {
-    const descricao = [item.marca_nome, item.modelo_nome, item.placa || item.chassi].filter(Boolean).join(' ');
-    if (!window.confirm(`Excluir definitivamente o veículo "${descricao}"? Isso apaga o veículo, seus checklists e o registro no estoque do CRM. Não pode ser desfeito.`)) {
-      return;
-    }
-    setExcluindoId(item.id);
+  const handleExcluir = async (event) => {
+    // mantém o diálogo aberto durante a exclusão; em erro, a mensagem aparece nele
+    event?.preventDefault();
+    if (!veiculoExcluir) return;
+    setExcluindoId(veiculoExcluir.id);
+    setErroExcluir(null);
     try {
-      await oficinaApi.veiculos.excluir(item.id);
+      await oficinaApi.veiculos.excluir(veiculoExcluir.id);
+      setVeiculoExcluir(null);
       refetch();
     } catch (error) {
-      window.alert(error.message || 'Não foi possível excluir o veículo.');
+      setErroExcluir(error.message || 'Não foi possível excluir o veículo.');
     } finally {
       setExcluindoId(null);
     }
   };
 
+  const descricaoExcluir = veiculoExcluir
+    ? [veiculoExcluir.marca_nome, veiculoExcluir.modelo_nome, veiculoExcluir.placa || veiculoExcluir.chassi]
+        .filter(Boolean)
+        .join(' ')
+    : '';
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/oficina/checklists')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-xl font-bold">Veículos cadastrados</h1>
-            <p className="text-sm text-muted-foreground">Todos os veículos já cadastrados na base.</p>
-          </div>
+        <div>
+          <h1 className="text-xl font-bold">Veículos cadastrados</h1>
+          <p className="text-sm text-muted-foreground">Todos os veículos já cadastrados na base.</p>
         </div>
         {user?.isOficinaInspetor && (
           <Button onClick={() => setCadastrarAberto(true)}>
@@ -161,7 +164,8 @@ export default function VeiculosHistorico() {
                     disabled={excluindoId === item.id}
                     onClick={(event) => {
                       event.stopPropagation();
-                      handleExcluir(item);
+                      setErroExcluir(null);
+                      setVeiculoExcluir(item);
                     }}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -222,6 +226,17 @@ export default function VeiculosHistorico() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteDialog
+        open={Boolean(veiculoExcluir)}
+        onOpenChange={(open) => !open && setVeiculoExcluir(null)}
+        onConfirm={handleExcluir}
+        isLoading={Boolean(excluindoId)}
+        title="Excluir veículo"
+        description={`Excluir definitivamente o veículo "${descricaoExcluir}"? Isso apaga o veículo, seus checklists e o registro no estoque do CRM. Não pode ser desfeito.`}
+      >
+        {erroExcluir && <p className="text-sm text-destructive">{erroExcluir}</p>}
+      </ConfirmDeleteDialog>
 
       <VeiculoDetalheSheet
         veiculoId={veiculoDetalheId}

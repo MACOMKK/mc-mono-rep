@@ -284,7 +284,9 @@ verificador validado; telefone exige 10–11 dígitos; e-mail exige formato vál
   padronização do cadastro). Os formulários `ClienteForm`/`VeiculoForm` servem aos dois modos:
   com `inicial` (que traz `id`) editam, sem ele cadastram.
 - Editar cliente altera `public.clientes`, **compartilhada com o CRM** — vale para os dois sistemas.
-  Não há exclusão de cliente pela Oficina.
+  Exclusão (`cliente_excluir`, só admin): **bloqueada se houver qualquer vínculo** (veículo atual,
+  histórico de proprietários, checklist ou cadastro em `gestao_crm.clientes_crm`) — sem cascata,
+  diferente de `veiculo_excluir`.
 - Troca de dono do veículo continua só via "Transferir" (preserva `veiculos_proprietarios`);
   `veiculo_atualizar` não mexe em `cliente_atual_id`.
 

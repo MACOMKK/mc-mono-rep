@@ -25,6 +25,7 @@ import AvariaMap from '@/components/oficina/AvariaMap';
 import ChecklistItensList from '@/components/oficina/ChecklistItensList';
 import FotoUploadGrid from '@/components/oficina/FotoUploadGrid';
 import AssinaturaModal from '@/components/oficina/AssinaturaModal';
+import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
 import ChecklistDocumento from '@/pages/oficina/ChecklistDocumento';
 
 const STATUS_LABEL = { em_andamento: 'Em andamento', avaliado: 'Avaliado', finalizado: 'Finalizado' };
@@ -104,6 +105,8 @@ export default function ChecklistDetail() {
   const [salvandoOs, setSalvandoOs] = useState(false);
   const [erroOs, setErroOs] = useState(null);
   const [excluindo, setExcluindo] = useState(false);
+  const [excluirAberto, setExcluirAberto] = useState(false);
+  const [erroExcluir, setErroExcluir] = useState(null);
 
   useEffect(() => {
     oficinaApi.checklists
@@ -191,16 +194,16 @@ export default function ChecklistDetail() {
     }
   };
 
-  const handleExcluir = async () => {
-    if (!window.confirm(`Excluir definitivamente o checklist Nº ${row.numero}? Não pode ser desfeito.`)) {
-      return;
-    }
+  const handleExcluir = async (event) => {
+    // mantém o diálogo aberto durante a exclusão; em erro, a mensagem aparece nele
+    event?.preventDefault();
     setExcluindo(true);
+    setErroExcluir(null);
     try {
       await oficinaApi.checklists.excluir(id);
       navigate('/oficina/checklists');
     } catch (error) {
-      window.alert(error.message || 'Não foi possível excluir o checklist.');
+      setErroExcluir(error.message || 'Não foi possível excluir o checklist.');
     } finally {
       setExcluindo(false);
     }
@@ -264,7 +267,10 @@ export default function ChecklistDetail() {
               variant="outline"
               size="sm"
               className="text-destructive hover:bg-destructive/10"
-              onClick={handleExcluir}
+              onClick={() => {
+                setErroExcluir(null);
+                setExcluirAberto(true);
+              }}
               disabled={excluindo}
             >
               <Trash2 className="mr-2 h-4 w-4" />
@@ -549,6 +555,17 @@ export default function ChecklistDetail() {
           />
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteDialog
+        open={excluirAberto}
+        onOpenChange={setExcluirAberto}
+        onConfirm={handleExcluir}
+        isLoading={excluindo}
+        title="Excluir checklist"
+        description={`Excluir definitivamente o checklist Nº ${row.numero}? Não pode ser desfeito.`}
+      >
+        {erroExcluir && <p className="text-sm text-destructive">{erroExcluir}</p>}
+      </ConfirmDeleteDialog>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { financeiroApi } from '@macom/api-client/financeiroApi';
 import { useAuth } from '@/lib/AuthContext';
 import { useCatalogosSolicitacao } from '@/hooks/useCatalogos';
 import { isAllowedAnexoMimeType, MAX_ANEXO_SIZE, uploadAnexo } from '@/lib/anexoUpload';
+import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
 import { getFriendlyErrorMessage } from '@/lib/errorMessage';
 import { proximaDataUtil } from '@/lib/diasUteis';
 import { gerarParcelasAutomaticas } from '@/lib/parcelamento';
@@ -88,6 +89,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
   const skipNextParcelasAutoGenRef = useRef(false);
   const initialFormRef = useRef(EMPTY_FORM);
   const [novoFornecedorOpen, setNovoFornecedorOpen] = useState(false);
+  const [descartarOpen, setDescartarOpen] = useState(false);
   const [novoFornecedorForm, setNovoFornecedorForm] = useState(FORNECEDOR_FORM_VAZIO);
   const [buscaFornecedor, setBuscaFornecedor] = useState('');
 
@@ -434,11 +436,17 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
 
   const handleOpenChange = (nextOpen) => {
     if (!nextOpen && hasUnsavedChanges()) {
-      const confirmed = window.confirm('Existem dados preenchidos que serão perdidos. Deseja mesmo fechar?');
-      if (!confirmed) return;
+      setDescartarOpen(true);
+      return;
     }
     setVisible(nextOpen);
     onOpenChange(nextOpen);
+  };
+
+  const handleConfirmarDescartar = () => {
+    setDescartarOpen(false);
+    setVisible(false);
+    onOpenChange(false);
   };
 
   const handleFileChange = (event) => {
@@ -1189,6 +1197,16 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteDialog
+        open={descartarOpen}
+        onOpenChange={setDescartarOpen}
+        onConfirm={handleConfirmarDescartar}
+        title="Descartar dados preenchidos?"
+        description="Existem dados preenchidos que serão perdidos. Deseja mesmo fechar?"
+        confirmLabel="Descartar e fechar"
+        cancelLabel="Continuar editando"
+      />
     </Sheet>
   );
 }

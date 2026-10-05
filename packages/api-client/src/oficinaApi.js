@@ -296,6 +296,9 @@ export const oficinaApi = {
       const result = await invokeOficina({ action: 'cliente_atualizar', id, nome, telefone, email, cpf_cnpj: cpfCnpj });
       return result.row || null;
     },
+    async excluir(clienteId) {
+      return invokeOficina({ action: 'cliente_excluir', id: clienteId });
+    },
   },
   veiculos: {
     async buscar(busca, { signal } = {}) {

@@ -80,6 +80,9 @@ function mapDatabaseError(message: string) {
   if (message.includes('violates foreign key constraint') && message.includes('veiculos_estoque')) {
     return 'Nao e possivel excluir: este veiculo possui proposta ou venda vinculada no CRM.';
   }
+  if (message.includes('violates foreign key constraint') && message.includes('on table "clientes"')) {
+    return 'Nao e possivel excluir: este cliente possui vinculos.';
+  }
   return message;
 }
 
@@ -125,6 +128,12 @@ function ensurePodeGerenciarEstoque(moduleRole: string | null) {
 function ensurePodeExcluirVeiculo(moduleRole: string | null) {
   if (moduleRole !== 'admin') {
     throw Object.assign(new Error('Apenas administradores podem excluir um veiculo por completo.'), { status: 403 });
+  }
+}
+
+function ensurePodeExcluirCliente(moduleRole: string | null) {
+  if (moduleRole !== 'admin') {
+    throw Object.assign(new Error('Apenas administradores podem excluir um cliente.'), { status: 403 });
   }
 }
 
@@ -1068,6 +1077,40 @@ Deno.serve(async (request) => {
       if (!rows[0]) return json({ error: 'Cliente nao encontrado.' }, 404);
 
       return json({ row: rows[0] });
+    }
+
+    // Exclusao de cliente: public.clientes e compartilhada com o CRM, entao nao ha cascata --
+    // qualquer vinculo (veiculo, historico de proprietarios, checklist, cadastro no CRM) bloqueia.
+    // As FKs "restrict" ficam como rede de seguranca (mapDatabaseError traduz o 23503).
+    if (action === 'cliente_excluir') {
+      ensurePodeExcluirCliente(moduleRole);
+      const id = String(body.id || '');
+      if (!id) return json({ error: 'id e obrigatorio.' }, 400);
+
+      const vinculos = await sql.unsafe(
+        `
+          select
+            (select count(*)::int from public.veiculos where cliente_atual_id = $1) as veiculos,
+            (select count(*)::int from public.veiculos_proprietarios where cliente_id = $1) as proprietarios,
+            (select count(*)::int from ${SERVICOS_SCHEMA}.checklist_avaliacoes where cliente_id = $1) as checklists,
+            (select count(*)::int from gestao_crm.clientes_crm where id = $1) as crm;
+        `,
+        [id],
+      );
+      const v = vinculos[0];
+      const motivos: string[] = [];
+      if (v.veiculos > 0) motivos.push(`${v.veiculos} veiculo(s)`);
+      if (v.proprietarios > 0 && v.veiculos === 0) motivos.push('historico de proprietario de veiculo');
+      if (v.checklists > 0) motivos.push(`${v.checklists} checklist(s)`);
+      if (v.crm > 0) motivos.push('cadastro no CRM');
+      if (motivos.length > 0) {
+        return json({ error: `Cliente nao pode ser excluido: possui vinculos (${motivos.join(', ')}).` }, 400);
+      }
+
+      const rows = await sql.unsafe(`delete from public.clientes where id = $1 returning id;`, [id]);
+      if (!rows[0]) return json({ error: 'Cliente nao encontrado.' }, 404);
+
+      return json({ success: true });
     }
 
     if (action === 'veiculo_buscar') {
