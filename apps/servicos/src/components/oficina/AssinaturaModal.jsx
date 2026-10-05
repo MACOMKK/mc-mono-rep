@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@macom/ui';
 import { VINCULO_ASSINANTE } from '@/lib/checklistItens';
+import { toUpperText } from '@/lib/oficinaFormat';
 
 const SIGNATURE_CANVAS_WIDTH = 600;
 const SIGNATURE_CANVAS_HEIGHT = 220;
@@ -120,7 +121,12 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium">Nome de quem está assinando</label>
-            <Input value={nome} onChange={(event) => setNome(event.target.value)} placeholder="Nome completo" />
+            <Input
+              className="uppercase"
+              value={nome}
+              onChange={(event) => setNome(toUpperText(event.target.value))}
+              placeholder="Nome completo"
+            />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium">Vínculo com o cliente</label>
@@ -141,8 +147,9 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
             <div className="flex flex-col gap-1 sm:col-span-2">
               <label className="text-xs font-medium">Qual é o vínculo? (ex.: mãe, pai, motorista)</label>
               <Input
+                className="uppercase"
                 value={detalheVinculo}
-                onChange={(event) => setDetalheVinculo(event.target.value)}
+                onChange={(event) => setDetalheVinculo(toUpperText(event.target.value))}
                 placeholder="Especifique"
               />
             </div>

@@ -1,4 +1,4 @@
-import { Banknote, BarChart3, Building2, CalendarDays, CheckCircle2, ClipboardCheck, Package, Phone, Receipt, ShoppingCart, Tag, UsersRound, Wrench } from 'lucide-react';
+import { Banknote, BarChart3, Building2, CalendarDays, Car, CheckCircle2, ClipboardCheck, Package, Phone, Receipt, ShoppingCart, Tag, Users, UsersRound, Wrench } from 'lucide-react';
 
 // Módulos do sistema SERVIÇOS. Só "financeiro" está implementado hoje (era o app pagamentos);
 // os demais aparecem no menu como "em breve" até ganharem backend/telas próprias.
@@ -14,6 +14,8 @@ export const servicosModules = [
     comingSoon: false,
     children: [
       { key: 'checklists', label: 'Checklists', icon: ClipboardCheck, path: '/oficina/checklists', requires: 'hasOficinaAccess' },
+      { key: 'veiculos', label: 'Veículos', icon: Car, path: '/oficina/veiculos', requires: 'hasOficinaAccess' },
+      { key: 'clientes', label: 'Clientes', icon: Users, path: '/oficina/clientes', requires: 'hasOficinaAccess' },
     ],
   },
   {

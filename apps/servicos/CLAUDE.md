@@ -218,6 +218,9 @@ reais (só adicionar coluna `mod_<novo>` na tabela, seguindo o mesmo padrão).
   modelo atual) está registrado em `20260805150000_add_servicos_financeiro_parcelamento_anexos.sql`
   e no histórico do plano que originou essa migration — importação de dados históricos do
   AppSheet continua fora de escopo.
+- **Solicitações recorrentes (planejado, não implementado):** ao pagar uma solicitação marcada
+  como recorrente, gera a do mês seguinte (status `rascunho`, valor vazio, vencimento = vencimento
+  da conta + 1 mês). Desenho completo em [PLANO_RECORRENCIA_FINANCEIRO.md](PLANO_RECORRENCIA_FINANCEIRO.md).
 
 ## Oficina — Checklist de inspeção de veículos
 
@@ -254,6 +257,36 @@ mesmas tabelas usadas pelo CRM, extraídas propositalmente pra esse reuso — ve
   `20260917040000_add_servicos_oficina_checklist_fotos_storage.sql`), upload direto do client
   (RLS gated por `servicos_oficina_pode_editar()`), metadados guardados em `checklist_avaliacoes.fotos`
   (jsonb) via `checklist_foto_registrar`.
+
+### Padronização de dados no checklist (2026-10-05)
+
+Tudo que o usuário digita no fluxo do checklist é gravado em **MAIÚSCULO** (nome do cliente,
+placa, chassi, cor nova, O.S., observações, nome/vínculo das assinaturas, observações da entrega,
+legendas de fotos/avarias). Exceções: **e-mail** sempre minúsculo; **telefone** e **CPF/CNPJ** só
+dígitos (a máscara é só visual: `formatTelefone`/`formatDocumento`). CPF/CNPJ têm dígito
+verificador validado; telefone exige 10–11 dígitos; e-mail exige formato válido.
+
+- Regra aplicada **nos dois lados**: front em `src/lib/oficinaFormat.js` (inputs filtram/convertem
+  ao digitar) e backend em `supabase/functions/_shared/formatacao.ts` (`upperOrNull`,
+  `onlyDigits`, `isValidCpfCnpj`…), usado em `servicos-oficina-api` — o servidor é a fonte da
+  verdade, o front é conveniência. Mantenha os dois arquivos em sincronia.
+- O documento impresso (`checklistDocumento.css`) tem `text-transform: uppercase`, o que cobre
+  também checklists antigos em caixa mista. Não houve migration de dados legados
+  (`public.clientes` é compartilhada com o CRM e não foi alterada em massa).
+- `cliente_buscar` busca telefone/CPF por dígitos via colunas `*_normalizado`.
+
+### Telas de Clientes e Veículos (2026-10-05)
+
+- `/oficina/clientes` (`ClientesLista.jsx` + `ClienteDetalheSheet.jsx`) e `/oficina/veiculos`
+  (`VeiculosHistorico.jsx` + `VeiculoDetalheSheet.jsx`): listar, buscar, cadastrar e **editar**.
+  Ver: `hasOficinaAccess`; cadastrar/editar: `isOficinaInspetor` (backend: `ensurePodeEditar`).
+- Actions: `cliente_listar`, `cliente_obter`, `cliente_atualizar`, `veiculo_atualizar` (mesma
+  padronização do cadastro). Os formulários `ClienteForm`/`VeiculoForm` servem aos dois modos:
+  com `inicial` (que traz `id`) editam, sem ele cadastram.
+- Editar cliente altera `public.clientes`, **compartilhada com o CRM** — vale para os dois sistemas.
+  Não há exclusão de cliente pela Oficina.
+- Troca de dono do veículo continua só via "Transferir" (preserva `veiculos_proprietarios`);
+  `veiculo_atualizar` não mexe em `cliente_atual_id`.
 
 ### Decisão de arquitetura: Oficina tem edge function própria (`servicos-oficina-api`)
 

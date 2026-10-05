@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Car } from 'lucide-react';
+import { Car, Pencil } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Sheet, SheetContent, SheetHeader, SheetTitle } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
+import { toUpperText } from '@/lib/oficinaFormat';
 import ChecklistRow from '@/components/oficina/ChecklistRow';
+import { VeiculoForm } from '@/components/oficina/ClienteVeiculoPicker';
 
 function formatarPeriodo(desde, ate) {
   const inicio = new Date(desde).toLocaleDateString('pt-BR');
@@ -26,6 +28,7 @@ export default function VeiculoDetalheSheet({ veiculoId, onOpenChange }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [promoverAberto, setPromoverAberto] = useState(false);
+  const [editarAberto, setEditarAberto] = useState(false);
   const [condicao, setCondicao] = useState('seminovo');
   const [preco, setPreco] = useState('');
   const [observacoes, setObservacoes] = useState('');
@@ -100,6 +103,12 @@ export default function VeiculoDetalheSheet({ veiculoId, onOpenChange }) {
                       : 'Última km registrada: — (sem checklists ainda)'}
                   </p>
                 </div>
+                {user?.isOficinaInspetor && (
+                  <Button variant="outline" size="sm" onClick={() => setEditarAberto(true)}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Editar
+                  </Button>
+                )}
               </div>
 
               <div>
@@ -156,6 +165,25 @@ export default function VeiculoDetalheSheet({ veiculoId, onOpenChange }) {
         </div>
       </SheetContent>
 
+      <Dialog open={editarAberto} onOpenChange={setEditarAberto}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar veículo</DialogTitle>
+          </DialogHeader>
+          {veiculo && (
+            <VeiculoForm
+              inicial={veiculo}
+              onCriado={() => {
+                setEditarAberto(false);
+                queryClient.invalidateQueries({ queryKey: ['oficina', 'veiculo', veiculoId] });
+                queryClient.invalidateQueries({ queryKey: ['oficina', 'veiculos'] });
+              }}
+              onCancelar={() => setEditarAberto(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={promoverAberto}
         onOpenChange={(open) => {
@@ -196,7 +224,7 @@ export default function VeiculoDetalheSheet({ veiculoId, onOpenChange }) {
             </div>
             <div>
               <label className="text-xs text-muted-foreground">Observações (opcional)</label>
-              <Input value={observacoes} onChange={(event) => setObservacoes(event.target.value)} />
+              <Input className="uppercase" value={observacoes} onChange={(event) => setObservacoes(toUpperText(event.target.value))} />
             </div>
           </div>
           {erroPromover && <p className="text-xs text-destructive">{erroPromover}</p>}

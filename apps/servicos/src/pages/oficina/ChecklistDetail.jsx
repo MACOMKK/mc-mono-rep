@@ -20,6 +20,7 @@ import { WhatsAppIcon } from '@macom/ui';
 import { Badge, Button, CarLoader, Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Textarea } from '@macom/ui';
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { useAuth } from '@/lib/AuthContext';
+import { toUpperText } from '@/lib/oficinaFormat';
 import AvariaMap from '@/components/oficina/AvariaMap';
 import ChecklistItensList from '@/components/oficina/ChecklistItensList';
 import FotoUploadGrid from '@/components/oficina/FotoUploadGrid';
@@ -314,7 +315,8 @@ export default function ChecklistDetail() {
                 placeholder="O.S."
                 autoFocus
                 value={os}
-                onChange={(e) => setOs(e.target.value)}
+                className="uppercase"
+                onChange={(e) => setOs(toUpperText(e.target.value))}
                 onBlur={() => (os !== (row.os || '') ? handleSalvarOs() : setEditandoOs(false))}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') e.currentTarget.blur();
@@ -494,8 +496,9 @@ export default function ChecklistDetail() {
               <Textarea
                 id="entregaObservacoes"
                 rows={3}
+                className="uppercase"
                 value={entregaObservacoes}
-                onChange={(e) => setEntregaObservacoes(e.target.value)}
+                onChange={(e) => setEntregaObservacoes(toUpperText(e.target.value))}
               />
             </div>
 

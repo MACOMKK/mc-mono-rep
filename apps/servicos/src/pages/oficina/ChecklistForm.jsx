@@ -31,6 +31,7 @@ import ChecklistItensList from '@/components/oficina/ChecklistItensList';
 import FotoUploadGrid from '@/components/oficina/FotoUploadGrid';
 import AssinaturaModal from '@/components/oficina/AssinaturaModal';
 import { CATEGORIA_ITENS, MAX_FOTOS } from '@/lib/checklistItens';
+import { toUpperText } from '@/lib/oficinaFormat';
 
 const CATEGORIA_FOTO_COMBUSTIVEL = 'Medidor de combustível';
 
@@ -541,7 +542,7 @@ export default function ChecklistForm() {
             </Select>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Input placeholder="O.S." value={os} onChange={(e) => setOs(e.target.value)} />
+            <Input placeholder="O.S." className="uppercase" value={os} onChange={(e) => setOs(toUpperText(e.target.value))} />
             <Input placeholder="Km" type="number" value={km} onChange={(e) => setKm(e.target.value)} />
           </div>
           {!avaliacaoId && user?.isOficinaAdmin && (
@@ -676,7 +677,13 @@ export default function ChecklistForm() {
             <label className="mb-1 block text-sm font-medium" htmlFor="observacoes">
               Observações / Reclamações do cliente
             </label>
-            <Textarea id="observacoes" rows={6} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} />
+            <Textarea
+              id="observacoes"
+              rows={6}
+              className="uppercase"
+              value={observacoes}
+              onChange={(e) => setObservacoes(toUpperText(e.target.value))}
+            />
           </div>
 
           <div className="rounded-xl border bg-card p-4">

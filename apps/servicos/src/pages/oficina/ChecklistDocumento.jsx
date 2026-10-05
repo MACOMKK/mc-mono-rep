@@ -163,7 +163,7 @@ export default function ChecklistDocumento({ row, avarias = [], itensPorCategori
               J. C. MARANHÃO COM. E REP. LTDA.
             </div>
             <div className="mt-1 text-[7.5pt]">
-              E-mail: <b>agendamentomit@jcmempresas.com.br</b>
+              E-mail: <b className="normal-case">agendamentomit@jcmempresas.com.br</b>
             </div>
           </div>
           <div className="flex-1 text-[7pt] leading-[1.35]">

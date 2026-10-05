@@ -285,6 +285,17 @@ export const oficinaApi = {
       const result = await invokeOficina({ action: 'cliente_criar', nome, telefone, email, cpf_cnpj: cpfCnpj });
       return result.row || null;
     },
+    async listar(busca) {
+      const result = await invokeOficina({ action: 'cliente_listar', busca });
+      return result.rows || [];
+    },
+    async obter(clienteId) {
+      return invokeOficina({ action: 'cliente_obter', id: clienteId });
+    },
+    async atualizar({ id, nome, telefone, email, cpfCnpj }) {
+      const result = await invokeOficina({ action: 'cliente_atualizar', id, nome, telefone, email, cpf_cnpj: cpfCnpj });
+      return result.row || null;
+    },
   },
   veiculos: {
     async buscar(busca, { signal } = {}) {
@@ -298,6 +309,19 @@ export const oficinaApi = {
     async criar({ modeloId, versaoId, chassi, placa, corId, km }) {
       const result = await invokeOficina({
         action: 'veiculo_criar',
+        modelo_id: modeloId,
+        versao_id: versaoId,
+        chassi,
+        placa,
+        cor_id: corId,
+        km,
+      });
+      return result.row || null;
+    },
+    async atualizar({ id, modeloId, versaoId, chassi, placa, corId, km }) {
+      const result = await invokeOficina({
+        action: 'veiculo_atualizar',
+        id,
         modelo_id: modeloId,
         versao_id: versaoId,
         chassi,

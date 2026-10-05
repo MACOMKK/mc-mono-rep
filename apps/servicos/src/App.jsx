@@ -24,6 +24,7 @@ import ChecklistForm from '@/pages/oficina/ChecklistForm';
 import ChecklistDetail from '@/pages/oficina/ChecklistDetail';
 import ChecklistPublico from '@/pages/oficina/ChecklistPublico';
 import VeiculosHistorico from '@/pages/oficina/VeiculosHistorico';
+import ClientesLista from '@/pages/oficina/ClientesLista';
 
 const getFromPath = (search) => {
   const params = new URLSearchParams(search);
@@ -114,6 +115,10 @@ const ServicosRoutes = () => {
         <Route
           path="/oficina/veiculos"
           element={user?.hasOficinaAccess ? <VeiculosHistorico /> : <AcessoRestrito modulo="Oficina" />}
+        />
+        <Route
+          path="/oficina/clientes"
+          element={user?.hasOficinaAccess ? <ClientesLista /> : <AcessoRestrito modulo="Oficina" />}
         />
         <Route
           path="/oficina/checklists/novo"

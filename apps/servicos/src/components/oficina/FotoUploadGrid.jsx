@@ -5,6 +5,7 @@ import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, Select
 import { comprimirChecklistFoto, isAllowedChecklistFotoMimeType, uploadChecklistFoto } from '@/lib/checklistFotoUpload';
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { FOTO_CATEGORIAS, MAX_FOTOS } from '@/lib/checklistItens';
+import { toUpperText } from '@/lib/oficinaFormat';
 
 export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdicionada, onFotoAtualizada, onFotoRemovida, readOnly = false }) {
   const inputRef = useRef(null);
@@ -152,10 +153,11 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium">Legenda da foto</label>
               <Input
+                className="uppercase"
                 defaultValue={foto.legenda || ''}
                 placeholder="Descreva o que mostra a foto"
                 disabled={readOnly}
-                onBlur={(event) => handleAtualizarCampo(foto, 'legenda', event.target.value)}
+                onBlur={(event) => handleAtualizarCampo(foto, 'legenda', toUpperText(event.target.value))}
               />
             </div>
 

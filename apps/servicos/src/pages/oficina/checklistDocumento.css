@@ -10,6 +10,8 @@
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
   color-scheme: light;
+  /* Tudo em MAIUSCULO no documento, inclusive checklists antigos salvos em caixa mista. */
+  text-transform: uppercase;
 }
 .doc-sheet * {
   -webkit-print-color-adjust: exact;

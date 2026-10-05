@@ -7,6 +7,14 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { getServicosAuthContext } from '../_shared/servicos-auth.ts';
+import {
+  isValidCpfCnpj,
+  isValidEmail,
+  isValidTelefone,
+  normalizeEmail,
+  onlyDigits,
+  upperOrNull,
+} from '../_shared/formatacao.ts';
 
 const SERVICOS_SCHEMA = 'gestao_servicos';
 const MODULO = 'oficina';
@@ -483,7 +491,7 @@ Deno.serve(async (request) => {
 
       const clienteId = body.cliente_id ? String(body.cliente_id) : null;
       const colaboradorId = body.colaborador_id ? String(body.colaborador_id) : String(collaborator!.id);
-      const os = body.os ? String(body.os).trim() : null;
+      const os = upperOrNull(body.os);
       const km = body.km != null ? Number(body.km) : null;
       // Unidade parte da unidade do colaborador que esta criando o checklist,
       // mas pode ser trocada na tela (ex.: inspetor cobrindo outra unidade) --
@@ -570,11 +578,11 @@ Deno.serve(async (request) => {
         campos.pintura_suja = Boolean(body.pintura_suja);
       }
       if (body.observacoes !== undefined) {
-        const novo = body.observacoes ? String(body.observacoes) : null;
+        const novo = upperOrNull(body.observacoes);
         if (novo !== (currentRow.observacoes ?? null)) campos.observacoes = novo;
       }
       if (body.os !== undefined) {
-        const novo = body.os ? String(body.os) : null;
+        const novo = upperOrNull(body.os);
         if (novo !== (currentRow.os ?? null)) campos.os = novo;
       }
       if (body.comunicacoes !== undefined) {
@@ -593,15 +601,15 @@ Deno.serve(async (request) => {
         if (novo !== (currentRow.assinatura_entrada ?? null)) campos.assinatura_entrada = novo;
       }
       if (body.assinatura_entrada_nome !== undefined) {
-        const novo = body.assinatura_entrada_nome ? String(body.assinatura_entrada_nome) : null;
+        const novo = upperOrNull(body.assinatura_entrada_nome);
         if (novo !== (currentRow.assinatura_entrada_nome ?? null)) campos.assinatura_entrada_nome = novo;
       }
       if (body.assinatura_entrada_vinculo !== undefined) {
-        const novo = body.assinatura_entrada_vinculo ? String(body.assinatura_entrada_vinculo) : null;
+        const novo = upperOrNull(body.assinatura_entrada_vinculo);
         if (novo !== (currentRow.assinatura_entrada_vinculo ?? null)) campos.assinatura_entrada_vinculo = novo;
       }
       if (body.assinatura_entrada_detalhe_vinculo !== undefined) {
-        const novo = body.assinatura_entrada_detalhe_vinculo ? String(body.assinatura_entrada_detalhe_vinculo) : null;
+        const novo = upperOrNull(body.assinatura_entrada_detalhe_vinculo);
         if (novo !== (currentRow.assinatura_entrada_detalhe_vinculo ?? null)) {
           campos.assinatura_entrada_detalhe_vinculo = novo;
         }
@@ -668,13 +676,11 @@ Deno.serve(async (request) => {
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
       await getAvaliacao(id, moduleRole, collaborator);
 
-      const entregaObservacoes = body.entrega_observacoes ? String(body.entrega_observacoes) : null;
+      const entregaObservacoes = upperOrNull(body.entrega_observacoes);
       const assinaturaSaida = body.assinatura_saida ? String(body.assinatura_saida) : null;
-      const assinaturaSaidaNome = body.assinatura_saida_nome ? String(body.assinatura_saida_nome) : null;
-      const assinaturaSaidaVinculo = body.assinatura_saida_vinculo ? String(body.assinatura_saida_vinculo) : null;
-      const assinaturaSaidaDetalheVinculo = body.assinatura_saida_detalhe_vinculo
-        ? String(body.assinatura_saida_detalhe_vinculo)
-        : null;
+      const assinaturaSaidaNome = upperOrNull(body.assinatura_saida_nome);
+      const assinaturaSaidaVinculo = upperOrNull(body.assinatura_saida_vinculo);
+      const assinaturaSaidaDetalheVinculo = upperOrNull(body.assinatura_saida_detalhe_vinculo);
       const entregaConferida = Boolean(body.entrega_conferida);
 
       const rows = await sql.unsafe(
@@ -797,7 +803,7 @@ Deno.serve(async (request) => {
           values ($1, $2, $3, $4, $5, $6)
           returning *;
         `,
-        [avaliacaoId, tipo, posX, posY, body.area ? String(body.area) : null, body.observacao ? String(body.observacao) : null],
+        [avaliacaoId, tipo, posX, posY, upperOrNull(body.area), upperOrNull(body.observacao)],
       );
 
       await insertHistoricoChecklist(
@@ -858,7 +864,7 @@ Deno.serve(async (request) => {
           values ($1, $2, $3, $4, $5)
           returning *;
         `,
-        [avaliacaoId, storagePath, body.categoria ? String(body.categoria) : null, body.legenda ? String(body.legenda) : null, avariaId],
+        [avaliacaoId, storagePath, body.categoria ? String(body.categoria) : null, upperOrNull(body.legenda), avariaId],
       );
 
       await insertHistoricoChecklist(avaliacaoId, 'foto_adicionada', collaborator?.id ? String(collaborator.id) : null);
@@ -882,7 +888,7 @@ Deno.serve(async (request) => {
           where avaliacao_id = $1 and storage_path = $2
           returning *;
         `,
-        [avaliacaoId, storagePath, body.categoria ? String(body.categoria) : null, body.legenda ? String(body.legenda) : null],
+        [avaliacaoId, storagePath, body.categoria ? String(body.categoria) : null, upperOrNull(body.legenda)],
       );
       if (!rows[0]) return json({ error: 'Foto nao encontrada.' }, 404);
 
@@ -925,11 +931,14 @@ Deno.serve(async (request) => {
         `
           select id, nome, telefone, email, cpf_cnpj
           from public.clientes
-          where nome ilike $1 or telefone ilike $1 or cpf_cnpj ilike $1
+          where nome ilike $1
+            or ($2 <> '' and (telefone_normalizado like $2 or cpf_cnpj_normalizado like $2))
           order by nome
           limit 20;
         `,
-        [`%${busca}%`],
+        // Telefone/CPF/CNPJ sao guardados so com digitos (mesmo em clientes antigos, via
+        // *_normalizado), entao a busca por eles ignora mascara; vazio desliga o ramo.
+        [`%${busca}%`, onlyDigits(busca) ? `%${onlyDigits(busca)}%` : ''],
       );
 
       return json({ rows });
@@ -937,15 +946,17 @@ Deno.serve(async (request) => {
 
     if (action === 'cliente_criar') {
       ensurePodeEditar(moduleRole);
-      const nome = String(body.nome || '').trim();
-      const telefone = String(body.telefone || '').trim();
+      // Padronizacao: nome em MAIUSCULO, telefone e CPF/CNPJ so digitos, e-mail minusculo.
+      // As colunas *_normalizado (usadas nos indices unicos) ficam iguais as colunas exibidas.
+      const nome = upperOrNull(body.nome);
+      const telefone = onlyDigits(body.telefone);
       if (!nome || !telefone) return json({ error: 'nome e telefone sao obrigatorios.' }, 400);
+      if (!isValidTelefone(telefone)) return json({ error: 'Telefone invalido. Informe DDD + numero (10 ou 11 digitos).' }, 400);
 
-      const telefoneNormalizado = telefone.replace(/\D/g, '');
-      const email = body.email ? String(body.email).trim() : null;
-      const emailNormalizado = email ? email.toLowerCase() : null;
-      const cpfCnpj = body.cpf_cnpj ? String(body.cpf_cnpj).trim() : null;
-      const cpfCnpjNormalizado = cpfCnpj ? cpfCnpj.replace(/\D/g, '') : null;
+      const email = normalizeEmail(body.email);
+      if (email && !isValidEmail(email)) return json({ error: 'E-mail invalido.' }, 400);
+      const cpfCnpj = onlyDigits(body.cpf_cnpj) || null;
+      if (cpfCnpj && !isValidCpfCnpj(cpfCnpj)) return json({ error: 'CPF/CNPJ invalido.' }, 400);
 
       const rows = await sql.unsafe(
         `
@@ -954,10 +965,109 @@ Deno.serve(async (request) => {
           values ($1, $2, $3, $4, $5, $6, $7)
           returning id, nome, telefone, email, cpf_cnpj;
         `,
-        [nome, telefone, telefoneNormalizado, email, emailNormalizado, cpfCnpj, cpfCnpjNormalizado],
+        [nome, telefone, telefone, email, email, cpfCnpj, cpfCnpj],
       );
 
       return json({ row: rows[0] }, 201);
+    }
+
+    if (action === 'cliente_listar') {
+      const busca = String(body.busca || '').trim();
+      const digitos = onlyDigits(busca);
+
+      const rows = await sql.unsafe(
+        `
+          select c.id, c.nome, c.telefone, c.email, c.cpf_cnpj,
+            (select count(*) from public.veiculos v where v.cliente_atual_id = c.id) as total_veiculos,
+            (select count(*) from ${SERVICOS_SCHEMA}.checklist_avaliacoes ca where ca.cliente_id = c.id) as total_checklists
+          from public.clientes c
+          where $1 = ''
+            or c.nome ilike '%' || $1 || '%'
+            or c.email ilike '%' || $1 || '%'
+            or ($2 <> '' and (c.telefone_normalizado like '%' || $2 || '%' or c.cpf_cnpj_normalizado like '%' || $2 || '%'))
+          order by c.nome
+          limit 500;
+        `,
+        [busca, digitos],
+      );
+
+      return json({ rows });
+    }
+
+    if (action === 'cliente_obter') {
+      const id = String(body.id || '');
+      if (!id) return json({ error: 'ID obrigatorio.' }, 400);
+
+      const clienteRows = await sql.unsafe(
+        `select id, nome, telefone, email, cpf_cnpj from public.clientes where id = $1;`,
+        [id],
+      );
+      const cliente = clienteRows[0];
+      if (!cliente) return json({ error: 'Cliente nao encontrado.' }, 404);
+
+      const veiculos = await sql.unsafe(
+        `
+          select v.id, v.placa, v.chassi, cv.nome as cor, mv.nome as modelo_nome, ma.nome as marca_nome
+          from public.veiculos v
+          left join public.modelos_veiculo mv on mv.id = v.modelo_id
+          left join public.marcas_veiculo ma on ma.id = mv.marca_id
+          left join public.cores_veiculo cv on cv.id = v.cor_id
+          where v.cliente_atual_id = $1
+          order by v.atualizado_em desc;
+        `,
+        [id],
+      );
+
+      const checklists = await sql.unsafe(
+        `
+          select ca.*, cl.nome as cliente_nome, v.placa as veiculo_placa, v.chassi as veiculo_chassi,
+            mv.nome as veiculo_modelo, c.nome as colaborador_nome
+          from ${SERVICOS_SCHEMA}.checklist_avaliacoes ca
+          left join public.clientes cl on cl.id = ca.cliente_id
+          left join public.veiculos v on v.id = ca.veiculo_id
+          left join public.modelos_veiculo mv on mv.id = v.modelo_id
+          left join public.colaboradores c on c.id = ca.colaborador_id
+          where ca.cliente_id = $1
+          order by ca.data_entrada desc
+          limit 50;
+        `,
+        [id],
+      );
+
+      return json({ cliente, veiculos, checklists });
+    }
+
+    // Edita o registro global de public.clientes (compartilhado com o CRM). Mesma padronizacao
+    // do cliente_criar; as colunas *_normalizado acompanham as colunas exibidas.
+    if (action === 'cliente_atualizar') {
+      ensurePodeEditar(moduleRole);
+      const id = String(body.id || '');
+      if (!id) return json({ error: 'id e obrigatorio.' }, 400);
+
+      const nome = upperOrNull(body.nome);
+      const telefone = onlyDigits(body.telefone);
+      if (!nome || !telefone) return json({ error: 'nome e telefone sao obrigatorios.' }, 400);
+      if (!isValidTelefone(telefone)) return json({ error: 'Telefone invalido. Informe DDD + numero (10 ou 11 digitos).' }, 400);
+
+      const email = normalizeEmail(body.email);
+      if (email && !isValidEmail(email)) return json({ error: 'E-mail invalido.' }, 400);
+      const cpfCnpj = onlyDigits(body.cpf_cnpj) || null;
+      if (cpfCnpj && !isValidCpfCnpj(cpfCnpj)) return json({ error: 'CPF/CNPJ invalido.' }, 400);
+
+      const rows = await sql.unsafe(
+        `
+          update public.clientes
+          set nome = $2, telefone = $3, telefone_normalizado = $3,
+              email = $4, email_normalizado = $4,
+              cpf_cnpj = $5, cpf_cnpj_normalizado = $5
+          where id = $1
+          returning id, nome, telefone, email, cpf_cnpj;
+        `,
+        [id, nome, telefone, email, cpfCnpj],
+      );
+      if (!rows[0]) return json({ error: 'Cliente nao encontrado.' }, 404);
+
+      return json({ row: rows[0] });
     }
 
     if (action === 'veiculo_buscar') {
@@ -1016,6 +1126,7 @@ Deno.serve(async (request) => {
         `
           select
             v.id, v.placa, v.chassi, cv.nome as cor, v.km,
+            v.modelo_id, v.versao_id, v.cor_id, mv.marca_id,
             mv.nome as modelo_nome, ma.nome as marca_nome,
             v.cliente_atual_id, c.nome as cliente_atual_nome,
             ve.id as estoque_id, ve.status as estoque_status
@@ -1114,7 +1225,7 @@ Deno.serve(async (request) => {
         ? String(body.condicao)
         : 'seminovo';
       const preco = body.preco != null && body.preco !== '' ? Number(body.preco) : null;
-      const observacoes = body.observacoes ? String(body.observacoes) : null;
+      const observacoes = upperOrNull(body.observacoes);
 
       const rows = await sql.unsafe(
         `
@@ -1153,6 +1264,42 @@ Deno.serve(async (request) => {
       );
 
       return json({ row: rows[0] }, 201);
+    }
+
+    // Corrige os dados do veiculo. Nao mexe em cliente_atual_id (troca de dono e so via
+    // veiculo_transferir, que preserva o historico de proprietarios).
+    if (action === 'veiculo_atualizar') {
+      ensurePodeEditar(moduleRole);
+      const id = String(body.id || '');
+      const modeloId = String(body.modelo_id || '');
+      const chassi = String(body.chassi || '').trim().toUpperCase().replace(/\s+/g, '');
+      if (!id) return json({ error: 'id e obrigatorio.' }, 400);
+      if (!modeloId || !chassi) return json({ error: 'modelo_id e chassi sao obrigatorios.' }, 400);
+
+      const placa = body.placa ? String(body.placa).trim().toUpperCase().replace(/\s+/g, '') : null;
+      const km = body.km != null && body.km !== '' ? Number(body.km) : null;
+      if (km != null && (!Number.isFinite(km) || km < 0)) return json({ error: 'Km invalido.' }, 400);
+
+      const rows = await sql.unsafe(
+        `
+          update public.veiculos
+          set modelo_id = $2, versao_id = $3, chassi = $4, placa = $5, cor_id = $6, km = $7
+          where id = $1
+          returning id, placa, chassi, cor_id, km;
+        `,
+        [
+          id,
+          modeloId,
+          body.versao_id ? String(body.versao_id) : null,
+          chassi,
+          placa,
+          body.cor_id ? String(body.cor_id) : null,
+          km,
+        ],
+      );
+      if (!rows[0]) return json({ error: 'Veiculo nao encontrado.' }, 404);
+
+      return json({ row: rows[0] });
     }
 
     // Exclusao completa (fisica) do veiculo -- usada pra limpar dados de
@@ -1237,8 +1384,16 @@ Deno.serve(async (request) => {
 
     if (action === 'cores_criar') {
       ensurePodeEditar(moduleRole);
-      const nome = String(body.nome || '').trim();
+      const nome = upperOrNull(body.nome);
       if (!nome) return json({ error: 'nome obrigatorio.' }, 400);
+
+      // Cores antigas foram cadastradas em caixa mista ("Branco"); reaproveita em vez de
+      // duplicar como "BRANCO".
+      const existente = await sql.unsafe(
+        `select id, nome from public.cores_veiculo where upper(nome) = $1 limit 1;`,
+        [nome],
+      );
+      if (existente[0]) return json({ row: existente[0] }, 200);
 
       const rows = await sql.unsafe(
         `
