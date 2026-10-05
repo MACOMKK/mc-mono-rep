@@ -112,6 +112,7 @@ export default mergeConfig(baseConfig, {
       },
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,woff2,woff,png,ico}'],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       devOptions: { enabled: false },
     }),
