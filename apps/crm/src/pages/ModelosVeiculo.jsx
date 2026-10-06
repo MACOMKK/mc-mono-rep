@@ -86,15 +86,28 @@ export default function ModelosVeiculo() {
 
   const deleteMutation = useMutation({
     mutationFn: (id) => crmDataClient.entities.ModeloVeiculo.delete(id),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'] });
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['crm-modelos-veiculo'] });
+      const previousModelos = queryClient.getQueryData(['crm-modelos-veiculo']);
+      queryClient.setQueryData(['crm-modelos-veiculo'], (old = []) => old.filter((modelo) => modelo.id !== id));
+      return { previousModelos };
+    },
+    onSuccess: () => {
       toast({ title: 'Modelo excluido', variant: 'success' });
     },
-    onError: (mutationError) => toast({
-      title: 'Nao foi possivel excluir o modelo',
-      description: mutationError.message,
-      variant: 'destructive',
-    }),
+    onError: (mutationError, _id, context) => {
+      if (context?.previousModelos) {
+        queryClient.setQueryData(['crm-modelos-veiculo'], context.previousModelos);
+      }
+      toast({
+        title: 'Nao foi possivel excluir o modelo',
+        description: mutationError.message,
+        variant: 'destructive',
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'] });
+    },
   });
 
   if (!canConfigure) {

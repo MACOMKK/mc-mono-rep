@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Car, Pencil, Trash2 } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
-import { Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle, Sheet, SheetContent, SheetHeader, SheetTitle } from '@macom/ui';
+import { Badge, Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle, Sheet, SheetContent, SheetHeader, SheetTitle, useToast } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
 import { formatDocumento, formatTelefone } from '@/lib/oficinaFormat';
 import ChecklistRow from '@/components/oficina/ChecklistRow';
@@ -24,10 +24,9 @@ export default function ClienteDetalheSheet({ clienteId, onOpenChange }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [editarAberto, setEditarAberto] = useState(false);
   const [excluirAberto, setExcluirAberto] = useState(false);
-  const [excluindo, setExcluindo] = useState(false);
-  const [erroExcluir, setErroExcluir] = useState(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['oficina', 'cliente', clienteId],
@@ -40,21 +39,30 @@ export default function ClienteDetalheSheet({ clienteId, onOpenChange }) {
   const checklists = data?.checklists || [];
   const temVinculos = veiculos.length > 0 || checklists.length > 0;
 
-  const handleExcluir = async (event) => {
-    // mantém o diálogo aberto durante a exclusão; em erro, a mensagem aparece nele
+  const handleExcluir = (event) => {
+    // otimista: fecha o diálogo, o sheet e remove da lista na hora, sem esperar o servidor.
+    // O botão só fica habilitado quando não há vínculos (veja `temVinculos` acima), e o
+    // backend também valida antes de excluir — então o erro aqui é caso raro (corrida com
+    // outro vínculo criado entre o carregamento e o clique); se acontecer, só avisa via toast.
     event?.preventDefault();
-    setExcluindo(true);
-    setErroExcluir(null);
-    try {
-      await oficinaApi.clientes.excluir(clienteId);
-      setExcluirAberto(false);
-      queryClient.invalidateQueries({ queryKey: ['oficina', 'clientes'] });
-      onOpenChange(false);
-    } catch (error) {
-      setErroExcluir(error.message || 'Não foi possível excluir o cliente.');
-    } finally {
-      setExcluindo(false);
-    }
+    setExcluirAberto(false);
+    onOpenChange(false);
+    const listaKey = ['oficina', 'clientes'];
+    const anterior = queryClient.getQueryData(listaKey);
+    queryClient.setQueryData(listaKey, (old = []) => old.filter((item) => item.id !== clienteId));
+    oficinaApi.clientes
+      .excluir(clienteId)
+      .catch((error) => {
+        queryClient.setQueryData(listaKey, anterior);
+        toast({
+          title: 'Não foi possível excluir o cliente',
+          description: error.message || 'Tente novamente.',
+          variant: 'destructive',
+        });
+      })
+      .finally(() => {
+        queryClient.invalidateQueries({ queryKey: listaKey });
+      });
   };
 
   return (
@@ -77,7 +85,10 @@ export default function ClienteDetalheSheet({ clienteId, onOpenChange }) {
             <>
               <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <p className="font-semibold uppercase">{cliente.nome}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold uppercase">{cliente.nome}</p>
+                    {cliente.eh_teste && <Badge variant="outline">Teste</Badge>}
+                  </div>
                   <div className="flex gap-2">
                     {user?.isOficinaInspetor && (
                       <Button variant="outline" size="sm" onClick={() => setEditarAberto(true)}>
@@ -92,10 +103,7 @@ export default function ClienteDetalheSheet({ clienteId, onOpenChange }) {
                         className="text-destructive hover:bg-destructive/10"
                         disabled={temVinculos}
                         title={temVinculos ? 'Cliente com vínculos não pode ser excluído' : 'Excluir cliente'}
-                        onClick={() => {
-                          setErroExcluir(null);
-                          setExcluirAberto(true);
-                        }}
+                        onClick={() => setExcluirAberto(true)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -175,12 +183,9 @@ export default function ClienteDetalheSheet({ clienteId, onOpenChange }) {
         open={excluirAberto}
         onOpenChange={setExcluirAberto}
         onConfirm={handleExcluir}
-        isLoading={excluindo}
         title="Excluir cliente"
         description={`Excluir definitivamente o cliente "${cliente?.nome || ''}"? Só é possível se não houver veículos, checklists ou cadastro no CRM vinculados. Não pode ser desfeito.`}
-      >
-        {erroExcluir && <p className="text-sm text-destructive">{erroExcluir}</p>}
-      </ConfirmDeleteDialog>
+      />
     </Sheet>
   );
 }

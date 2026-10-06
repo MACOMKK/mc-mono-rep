@@ -233,6 +233,9 @@ export const crmApi = {
     async acceptProposta(payload) {
       return invokeCrm({ action: 'accept_proposta', ...payload });
     },
+    async excluirTeste(id) {
+      return invokeCrm({ action: 'proposta_excluir_teste', id });
+    },
   },
   vendas: {
     ...buildEntity('vendas'),

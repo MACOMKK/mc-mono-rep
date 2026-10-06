@@ -221,6 +221,7 @@ const ENTITY_CONFIG = {
       'vendedor_id',
       'validade_ate',
       'observacoes',
+      'eh_teste',
     ],
   },
   vendas: {
@@ -1965,6 +1966,26 @@ Deno.serve(async (request) => {
       return json({ venda: result });
     }
 
+    // Exclusao definitiva de uma proposta isolada -- mesmo esquema do checklist_excluir
+    // (servicos-oficina-api): exige papel admin/gestor E que a proposta tenha sido marcada
+    // como eh_teste na criacao. Diferente do `delete` generico abaixo (sem gate algum), essa
+    // e a unica forma segura de remover uma proposta sem deixar rastro de teste no CRM. Fica
+    // antes da validacao de `entity` porque essa action nao recebe entity no payload.
+    if (action === 'proposta_excluir_teste') {
+      ensureCanConfigure(access);
+      const propostaId = typeof body.id === 'string' && body.id ? body.id : '';
+      if (!propostaId) return json({ error: 'id e obrigatorio.' }, 400);
+
+      const rows = await sql.unsafe(
+        `delete from ${CRM_SCHEMA}.propostas where id = $1 and eh_teste = true returning id;`,
+        [propostaId],
+      );
+      if (!rows[0]) {
+        return json({ error: 'Proposta nao encontrada ou nao esta marcada como teste.' }, 400);
+      }
+      return json({ success: true });
+    }
+
     const entity = String(body.entity || '') as EntityName;
     const config = ENTITY_CONFIG[entity];
 
@@ -2080,6 +2101,11 @@ Deno.serve(async (request) => {
       const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator);
       if (!Object.keys(payload).length) return json({ error: 'Payload vazio.' }, 400);
       validateContactFields(entity, payload);
+      // So admin/gestor pode marcar uma proposta como teste -- mesma regra de
+      // checklist_iniciar (servicos-oficina-api), so admin pode marcar na criacao.
+      if (entity === 'propostas' && payload.eh_teste === true && !['admin', 'gestor'].includes(String(access?.nivel_acesso || ''))) {
+        return json({ error: 'Apenas administradores e gestores podem marcar uma proposta como teste.' }, 403);
+      }
       const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'cores_veiculo', 'pipelines', 'etapas_pipeline', 'motivos_status', 'conversas_atendimento', 'mensagens_atendimento'];
       if (collaborator?.id && !entitiesWithoutCriadoPor.includes(entity)) payload.criado_por = collaborator.id;
       if (entity === 'atendimentos' && payload.lead_id) {

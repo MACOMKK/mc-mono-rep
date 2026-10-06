@@ -270,15 +270,30 @@ export default function Estoque() {
 
   const deleteMutation = useMutation({
     mutationFn: (id) => crmDataClient.entities.VeiculoEstoque.delete(id),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque'] });
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['crm-veiculos-estoque'] });
+      const previousVeiculos = queryClient.getQueryData(['crm-veiculos-estoque']);
+      queryClient.setQueryData(['crm-veiculos-estoque'], (old = []) => old.filter((veiculo) => veiculo.id !== id));
+      return { previousVeiculos };
+    },
+    onSuccess: () => {
       toast({ title: 'Veiculo excluido do estoque', variant: 'success' });
     },
-    onError: (mutationError) => toast({
-      title: 'Nao foi possivel excluir o veiculo',
-      description: mutationError.message,
-      variant: 'destructive',
-    }),
+    onError: (mutationError, _id, context) => {
+      // tem FK real (propostas/vendas vinculadas ao estoque) que pode rejeitar o delete —
+      // por isso desfaz a remocao otimista e devolve a linha a lista em caso de erro
+      if (context?.previousVeiculos) {
+        queryClient.setQueryData(['crm-veiculos-estoque'], context.previousVeiculos);
+      }
+      toast({
+        title: 'Nao foi possivel excluir o veiculo',
+        description: mutationError.message,
+        variant: 'destructive',
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque'] });
+    },
   });
 
   const createModeloMutation = useMutation({

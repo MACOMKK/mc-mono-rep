@@ -4,7 +4,8 @@ import { Plus, Search } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { supabase } from '@macom/api-client/supabaseClient';
-import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Spinner } from '@macom/ui';
+import { Button, Checkbox, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Spinner } from '@macom/ui';
+import { useAuth } from '@/lib/AuthContext';
 import {
   formatDocumento,
   formatTelefone,
@@ -27,11 +28,13 @@ function useDebouncedValue(value, delay = 300) {
 
 // `inicial` (com id) liga o modo edicao; sem ele o formulario cadastra. `onCriado` e chamado nos dois casos.
 export function ClienteForm({ inicial, onCriado, onCancelar }) {
+  const { user } = useAuth();
   const editando = Boolean(inicial?.id);
   const [nome, setNome] = useState(toUpperText(inicial?.nome || ''));
   const [telefone, setTelefone] = useState(onlyDigits(inicial?.telefone || '').slice(0, 11));
   const [email, setEmail] = useState(normalizeEmail(inicial?.email || '') || '');
   const [cpfCnpj, setCpfCnpj] = useState(onlyDigits(inicial?.cpf_cnpj || '').slice(0, 14));
+  const [ehTeste, setEhTeste] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
 
@@ -58,7 +61,7 @@ export function ClienteForm({ inicial, onCriado, onCancelar }) {
       const dados = { nome: nome.trim(), telefone, email: normalizeEmail(email), cpfCnpj };
       const cliente = editando
         ? await oficinaApi.clientes.atualizar({ id: inicial.id, ...dados })
-        : await oficinaApi.clientes.criar(dados);
+        : await oficinaApi.clientes.criar({ ...dados, ehTeste: user?.isOficinaAdmin && ehTeste });
       onCriado(cliente);
     } catch (error) {
       setErro(error.message || (editando ? 'Não foi possível salvar o cliente.' : 'Não foi possível cadastrar o cliente.'));
@@ -89,6 +92,12 @@ export function ClienteForm({ inicial, onCriado, onCancelar }) {
         value={formatDocumento(cpfCnpj)}
         onChange={(e) => setCpfCnpj(onlyDigits(e.target.value).slice(0, 14))}
       />
+      {!editando && user?.isOficinaAdmin && (
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox checked={ehTeste} onCheckedChange={(checked) => setEhTeste(checked === true)} />
+          Marcar como cliente de teste (pode ser excluído depois)
+        </label>
+      )}
       {erro && <p className="text-xs text-destructive">{erro}</p>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={onCancelar} disabled={salvando}>
@@ -104,6 +113,7 @@ export function ClienteForm({ inicial, onCriado, onCancelar }) {
 
 // `inicial` (com id, modelo_id, marca_id, versao_id, cor_id, placa, chassi, km) liga o modo edicao.
 export function VeiculoForm({ inicial, onCriado, onCancelar }) {
+  const { user } = useAuth();
   const editando = Boolean(inicial?.id);
   const [marcas, setMarcas] = useState([]);
   const [modelos, setModelos] = useState([]);
@@ -116,6 +126,7 @@ export function VeiculoForm({ inicial, onCriado, onCancelar }) {
   const [novaCorAberta, setNovaCorAberta] = useState(false);
   const [novaCorNome, setNovaCorNome] = useState('');
   const [km, setKm] = useState(inicial?.km != null ? String(inicial.km) : '');
+  const [ehTeste, setEhTeste] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
 
@@ -172,7 +183,7 @@ export function VeiculoForm({ inicial, onCriado, onCancelar }) {
       };
       const veiculo = editando
         ? await oficinaApi.veiculos.atualizar({ id: inicial.id, versaoId: inicial.versao_id, ...dados })
-        : await oficinaApi.veiculos.criar(dados);
+        : await oficinaApi.veiculos.criar({ ...dados, ehTeste: user?.isOficinaAdmin && ehTeste });
       onCriado(veiculo);
     } catch (error) {
       setErro(error.message || (editando ? 'Não foi possível salvar o veículo.' : 'Não foi possível cadastrar o veículo.'));
@@ -264,6 +275,12 @@ export function VeiculoForm({ inicial, onCriado, onCancelar }) {
             Cancelar
           </Button>
         </div>
+      )}
+      {!editando && user?.isOficinaAdmin && (
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox checked={ehTeste} onCheckedChange={(checked) => setEhTeste(checked === true)} />
+          Marcar como veículo de teste (pode ser excluído depois)
+        </label>
       )}
       {erro && <p className="text-xs text-destructive">{erro}</p>}
       <div className="flex justify-end gap-2">

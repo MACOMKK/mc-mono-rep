@@ -281,8 +281,15 @@ export const oficinaApi = {
       const result = await invokeOficina({ action: 'cliente_buscar', busca }, undefined, { signal });
       return result.rows || [];
     },
-    async criar({ nome, telefone, email, cpfCnpj }) {
-      const result = await invokeOficina({ action: 'cliente_criar', nome, telefone, email, cpf_cnpj: cpfCnpj });
+    async criar({ nome, telefone, email, cpfCnpj, ehTeste }) {
+      const result = await invokeOficina({
+        action: 'cliente_criar',
+        nome,
+        telefone,
+        email,
+        cpf_cnpj: cpfCnpj,
+        eh_teste: ehTeste === true,
+      });
       return result.row || null;
     },
     async listar(busca) {
@@ -309,7 +316,7 @@ export const oficinaApi = {
       const result = await invokeOficina({ action: 'veiculo_listar', busca });
       return result.rows || [];
     },
-    async criar({ modeloId, versaoId, chassi, placa, corId, km }) {
+    async criar({ modeloId, versaoId, chassi, placa, corId, km, ehTeste }) {
       const result = await invokeOficina({
         action: 'veiculo_criar',
         modelo_id: modeloId,
@@ -318,6 +325,7 @@ export const oficinaApi = {
         placa,
         cor_id: corId,
         km,
+        eh_teste: ehTeste === true,
       });
       return result.row || null;
     },

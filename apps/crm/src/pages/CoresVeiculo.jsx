@@ -80,15 +80,28 @@ export default function CoresVeiculo() {
 
   const deleteMutation = useMutation({
     mutationFn: (id) => crmDataClient.entities.CorVeiculo.delete(id),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['crm-cores-veiculo'] });
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['crm-cores-veiculo'] });
+      const previousCores = queryClient.getQueryData(['crm-cores-veiculo']);
+      queryClient.setQueryData(['crm-cores-veiculo'], (old = []) => old.filter((cor) => cor.id !== id));
+      return { previousCores };
+    },
+    onSuccess: () => {
       toast({ title: 'Cor excluida', variant: 'success' });
     },
-    onError: (mutationError) => toast({
-      title: 'Nao foi possivel excluir a cor',
-      description: mutationError.message,
-      variant: 'destructive',
-    }),
+    onError: (mutationError, _id, context) => {
+      if (context?.previousCores) {
+        queryClient.setQueryData(['crm-cores-veiculo'], context.previousCores);
+      }
+      toast({
+        title: 'Nao foi possivel excluir a cor',
+        description: mutationError.message,
+        variant: 'destructive',
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['crm-cores-veiculo'] });
+    },
   });
 
   if (!canConfigure) {

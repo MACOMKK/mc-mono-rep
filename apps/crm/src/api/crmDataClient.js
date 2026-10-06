@@ -1159,6 +1159,7 @@ function mapPropostaRow(row = {}) {
     observacoes: row.observacoes || '',
     aceita_em: row.aceita_em || null,
     recusada_em: row.recusada_em || null,
+    eh_teste: row.eh_teste === true,
     ...mapBaseDates(row),
   };
 }
@@ -1208,6 +1209,7 @@ function mapPropostaPayload(data = {}) {
     vendedor_id: data.vendedor_id || null,
     validade_ate: data.validade_ate || null,
     observacoes: data.observacoes || null,
+    eh_teste: data.eh_teste === true,
   };
 }
 
@@ -1226,8 +1228,14 @@ const PropostaRepository = {
   async update(id, data) {
     const payload = mapPropostaPayload(data);
     delete payload.lead_id;
+    delete payload.eh_teste;
     const row = await crmApi.propostas.update(id, payload);
     return mapPropostaRow(row);
+  },
+
+  async excluirTeste(id) {
+    await crmApi.propostas.excluirTeste(id);
+    return { id };
   },
 
   async recusar(id) {

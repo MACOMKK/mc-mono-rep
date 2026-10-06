@@ -967,14 +967,17 @@ Deno.serve(async (request) => {
       const cpfCnpj = onlyDigits(body.cpf_cnpj) || null;
       if (cpfCnpj && !isValidCpfCnpj(cpfCnpj)) return json({ error: 'CPF/CNPJ invalido.' }, 400);
 
+      // Mesma regra do checklist_iniciar: so admin pode marcar como teste, e so na criacao.
+      const ehTeste = body.eh_teste === true && moduleRole === 'admin';
+
       const rows = await sql.unsafe(
         `
           insert into public.clientes
-            (nome, telefone, telefone_normalizado, email, email_normalizado, cpf_cnpj, cpf_cnpj_normalizado)
-          values ($1, $2, $3, $4, $5, $6, $7)
-          returning id, nome, telefone, email, cpf_cnpj;
+            (nome, telefone, telefone_normalizado, email, email_normalizado, cpf_cnpj, cpf_cnpj_normalizado, eh_teste)
+          values ($1, $2, $3, $4, $5, $6, $7, $8)
+          returning id, nome, telefone, email, cpf_cnpj, eh_teste;
         `,
-        [nome, telefone, telefone, email, email, cpfCnpj, cpfCnpj],
+        [nome, telefone, telefone, email, email, cpfCnpj, cpfCnpj, ehTeste],
       );
 
       return json({ row: rows[0] }, 201);
@@ -986,7 +989,7 @@ Deno.serve(async (request) => {
 
       const rows = await sql.unsafe(
         `
-          select c.id, c.nome, c.telefone, c.email, c.cpf_cnpj,
+          select c.id, c.nome, c.telefone, c.email, c.cpf_cnpj, c.eh_teste,
             (select count(*) from public.veiculos v where v.cliente_atual_id = c.id) as total_veiculos,
             (select count(*) from ${SERVICOS_SCHEMA}.checklist_avaliacoes ca where ca.cliente_id = c.id) as total_checklists
           from public.clientes c
@@ -1008,7 +1011,7 @@ Deno.serve(async (request) => {
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
 
       const clienteRows = await sql.unsafe(
-        `select id, nome, telefone, email, cpf_cnpj from public.clientes where id = $1;`,
+        `select id, nome, telefone, email, cpf_cnpj, eh_teste from public.clientes where id = $1;`,
         [id],
       );
       const cliente = clienteRows[0];
@@ -1082,6 +1085,9 @@ Deno.serve(async (request) => {
     // Exclusao de cliente: public.clientes e compartilhada com o CRM, entao nao ha cascata --
     // qualquer vinculo (veiculo, historico de proprietarios, checklist, cadastro no CRM) bloqueia.
     // As FKs "restrict" ficam como rede de seguranca (mapDatabaseError traduz o 23503).
+    // Nota: exclusao NAO e condicionada a eh_teste=true (diferente de checklist_excluir) --
+    // ja e admin-only e ja exige ausencia de vinculos, o que e seguranca suficiente; gatear
+    // por eh_teste quebraria o uso legitimo de excluir um cadastro real sem vinculo.
     if (action === 'cliente_excluir') {
       ensurePodeExcluirCliente(moduleRole);
       const id = String(body.id || '');
@@ -1142,10 +1148,18 @@ Deno.serve(async (request) => {
       const rows = await sql.unsafe(
         `
           select
-            v.id, v.placa, v.chassi, cv.nome as cor, v.km,
+            v.id, v.placa, v.chassi, cv.nome as cor, v.km, v.eh_teste,
             mv.nome as modelo_nome, ma.nome as marca_nome,
             v.cliente_atual_id, c.nome as cliente_atual_nome,
-            (select count(*) from gestao_servicos.checklist_avaliacoes ca where ca.veiculo_id = v.id) as total_checklists
+            (select count(*) from gestao_servicos.checklist_avaliacoes ca where ca.veiculo_id = v.id) as total_checklists,
+            exists (
+              select 1 from gestao_crm.veiculos_estoque ve
+              where ve.veiculo_id = v.id
+                and (
+                  exists (select 1 from gestao_crm.propostas p where p.veiculo_estoque_id = ve.id)
+                  or exists (select 1 from gestao_crm.vendas vd where vd.veiculo_estoque_id = ve.id)
+                )
+            ) as tem_proposta_venda
           from public.veiculos v
           left join public.modelos_veiculo mv on mv.id = v.modelo_id
           left join public.marcas_veiculo ma on ma.id = mv.marca_id
@@ -1168,11 +1182,16 @@ Deno.serve(async (request) => {
       const veiculoRows = await sql.unsafe(
         `
           select
-            v.id, v.placa, v.chassi, cv.nome as cor, v.km,
+            v.id, v.placa, v.chassi, cv.nome as cor, v.km, v.eh_teste,
             v.modelo_id, v.versao_id, v.cor_id, mv.marca_id,
             mv.nome as modelo_nome, ma.nome as marca_nome,
             v.cliente_atual_id, c.nome as cliente_atual_nome,
-            ve.id as estoque_id, ve.status as estoque_status
+            ve.id as estoque_id, ve.status as estoque_status,
+            exists (
+              select 1 from gestao_crm.propostas p where p.veiculo_estoque_id = ve.id
+              union all
+              select 1 from gestao_crm.vendas vd where vd.veiculo_estoque_id = ve.id
+            ) as tem_proposta_venda
           from public.veiculos v
           left join public.modelos_veiculo mv on mv.id = v.modelo_id
           left join public.marcas_veiculo ma on ma.id = mv.marca_id
@@ -1290,11 +1309,14 @@ Deno.serve(async (request) => {
 
       const placa = body.placa ? String(body.placa).trim().toUpperCase().replace(/\s+/g, '') : null;
 
+      // Mesma regra do checklist_iniciar: so admin pode marcar como teste, e so na criacao.
+      const ehTeste = body.eh_teste === true && moduleRole === 'admin';
+
       const rows = await sql.unsafe(
         `
-          insert into public.veiculos (modelo_id, versao_id, chassi, placa, cor_id, km)
-          values ($1, $2, $3, $4, $5, $6)
-          returning id, placa, chassi, cor_id, km;
+          insert into public.veiculos (modelo_id, versao_id, chassi, placa, cor_id, km, eh_teste)
+          values ($1, $2, $3, $4, $5, $6, $7)
+          returning id, placa, chassi, cor_id, km, eh_teste;
         `,
         [
           modeloId,
@@ -1303,6 +1325,7 @@ Deno.serve(async (request) => {
           placa,
           body.cor_id ? String(body.cor_id) : null,
           body.km != null ? Number(body.km) : null,
+          ehTeste,
         ],
       );
 
@@ -1354,7 +1377,10 @@ Deno.serve(async (request) => {
     // veiculo tiver proposta/venda vinculada no CRM, o delete de
     // veiculos_estoque falha por FK e mapDatabaseError devolve mensagem
     // amigavel -- nesse caso nao ha exclusao parcial (tudo roda numa
-    // transacao so).
+    // transacao so). Nota: NAO e condicionada a eh_teste=true (diferente de
+    // checklist_excluir) -- ja e admin-only e ja exige ausencia de vinculo via
+    // FK, seguranca suficiente; gatear por eh_teste quebraria o uso legitimo
+    // de excluir um cadastro real sem vinculo.
     if (action === 'veiculo_excluir') {
       ensurePodeExcluirVeiculo(moduleRole);
       const veiculoId = String(body.veiculo_id || '');

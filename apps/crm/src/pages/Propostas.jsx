@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Plus, X } from 'lucide-react';
+import { CheckCircle2, Plus, Trash2, X } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
+import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -49,6 +51,7 @@ const emptyForm = {
   vendedor_id: '',
   validade_ate: '',
   observacoes: '',
+  eh_teste: false,
 };
 
 const emptyVendaForm = {
@@ -63,6 +66,8 @@ const emptyVendaForm = {
 };
 
 export default function Propostas() {
+  const { user } = useAuth();
+  const canConfigure = user?.role === 'admin' || user?.role === 'manager';
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const leadIdFromUrl = searchParams.get('leadId');
@@ -236,6 +241,19 @@ export default function Propostas() {
     }),
   });
 
+  const excluirTesteMutation = useMutation({
+    mutationFn: (id) => crmDataClient.entities.Proposta.excluirTeste(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-propostas'] });
+      toast({ title: 'Proposta de teste excluida', variant: 'success' });
+    },
+    onError: (mutationError) => toast({
+      title: 'Nao foi possivel excluir a proposta',
+      description: mutationError.message,
+      variant: 'destructive',
+    }),
+  });
+
   const handleSelectLead = (lead) => {
     setSelectedLead(lead);
     setForm((prev) => ({ ...prev, lead_id: lead.id, vendedor_id: prev.vendedor_id || lead.responsavel_id || '' }));
@@ -311,7 +329,14 @@ export default function Propostas() {
               {propostas.map((proposta) => (
                 <TableRow key={proposta.id}>
                   <TableCell className="text-sm text-slate-700">
-                    {proposta.veiculo_estoque_id ? veiculoLabel(proposta.veiculo_estoque_id) : (proposta.veiculo_descricao || '-')}
+                    <div className="flex items-center gap-2">
+                      {proposta.veiculo_estoque_id ? veiculoLabel(proposta.veiculo_estoque_id) : (proposta.veiculo_descricao || '-')}
+                      {proposta.eh_teste ? (
+                        <span className="rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Teste
+                        </span>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell className="text-sm text-slate-700">{formatCurrency(proposta.valor_final)}</TableCell>
                   <TableCell className="text-sm text-slate-700">
@@ -352,6 +377,17 @@ export default function Propostas() {
                             <X className="mr-1 h-3.5 w-3.5" /> Recusar
                           </Button>
                         </>
+                      ) : null}
+                      {proposta.eh_teste && canConfigure ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 rounded-none text-xs text-red-600"
+                          onClick={() => excluirTesteMutation.mutate(proposta.id)}
+                          disabled={excluirTesteMutation.isPending}
+                        >
+                          <Trash2 className="mr-1 h-3.5 w-3.5" /> Excluir teste
+                        </Button>
                       ) : null}
                     </div>
                   </TableCell>
@@ -534,6 +570,16 @@ export default function Propostas() {
                 className="rounded-none"
               />
             </div>
+
+            {canConfigure ? (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={form.eh_teste}
+                  onCheckedChange={(checked) => setForm((prev) => ({ ...prev, eh_teste: checked === true }))}
+                />
+                Marcar como proposta de teste (pode ser excluida depois)
+              </label>
+            ) : null}
 
             <DialogFooter>
               <Button
