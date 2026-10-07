@@ -973,8 +973,8 @@ Deno.serve(async (request) => {
       const rows = await sql.unsafe(
         `
           insert into public.clientes
-            (nome, telefone, telefone_normalizado, email, email_normalizado, cpf_cnpj, cpf_cnpj_normalizado, eh_teste)
-          values ($1, $2, $3, $4, $5, $6, $7, $8)
+            (nome, telefone, telefone_normalizado, email, email_normalizado, cpf_cnpj, cpf_cnpj_normalizado, eh_teste, origem_cadastro)
+          values ($1, $2, $3, $4, $5, $6, $7, $8, 'servicos_manual')
           returning id, nome, telefone, email, cpf_cnpj, eh_teste;
         `,
         [nome, telefone, telefone, email, email, cpfCnpj, cpfCnpj, ehTeste],
@@ -989,7 +989,7 @@ Deno.serve(async (request) => {
 
       const rows = await sql.unsafe(
         `
-          select c.id, c.nome, c.telefone, c.email, c.cpf_cnpj, c.eh_teste,
+          select c.id, c.nome, c.telefone, c.email, c.cpf_cnpj, c.eh_teste, c.origem_cadastro,
             (select count(*) from public.veiculos v where v.cliente_atual_id = c.id) as total_veiculos,
             (select count(*) from ${SERVICOS_SCHEMA}.checklist_avaliacoes ca where ca.cliente_id = c.id) as total_checklists
           from public.clientes c
@@ -1011,7 +1011,7 @@ Deno.serve(async (request) => {
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
 
       const clienteRows = await sql.unsafe(
-        `select id, nome, telefone, email, cpf_cnpj, eh_teste from public.clientes where id = $1;`,
+        `select id, nome, telefone, email, cpf_cnpj, eh_teste, origem_cadastro from public.clientes where id = $1;`,
         [id],
       );
       const cliente = clienteRows[0];
@@ -1148,7 +1148,7 @@ Deno.serve(async (request) => {
       const rows = await sql.unsafe(
         `
           select
-            v.id, v.placa, v.chassi, cv.nome as cor, v.km, v.eh_teste,
+            v.id, v.placa, v.chassi, cv.nome as cor, v.km, v.eh_teste, v.origem_cadastro,
             mv.nome as modelo_nome, ma.nome as marca_nome,
             v.cliente_atual_id, c.nome as cliente_atual_nome,
             (select count(*) from gestao_servicos.checklist_avaliacoes ca where ca.veiculo_id = v.id) as total_checklists,
@@ -1182,7 +1182,7 @@ Deno.serve(async (request) => {
       const veiculoRows = await sql.unsafe(
         `
           select
-            v.id, v.placa, v.chassi, cv.nome as cor, v.km, v.eh_teste,
+            v.id, v.placa, v.chassi, cv.nome as cor, v.km, v.eh_teste, v.origem_cadastro,
             v.modelo_id, v.versao_id, v.cor_id, mv.marca_id,
             mv.nome as modelo_nome, ma.nome as marca_nome,
             v.cliente_atual_id, c.nome as cliente_atual_nome,
@@ -1314,8 +1314,8 @@ Deno.serve(async (request) => {
 
       const rows = await sql.unsafe(
         `
-          insert into public.veiculos (modelo_id, versao_id, chassi, placa, cor_id, km, eh_teste)
-          values ($1, $2, $3, $4, $5, $6, $7)
+          insert into public.veiculos (modelo_id, versao_id, chassi, placa, cor_id, km, eh_teste, origem_cadastro)
+          values ($1, $2, $3, $4, $5, $6, $7, 'servicos_manual')
           returning id, placa, chassi, cor_id, km, eh_teste;
         `,
         [

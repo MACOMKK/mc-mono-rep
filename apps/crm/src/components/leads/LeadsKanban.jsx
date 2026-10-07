@@ -53,7 +53,14 @@ function LeadCard({ lead, index, onClick, semContatoAgendado }) {
           )}
         >
           <div className="flex items-start justify-between gap-1.5">
-            <p className="font-bold text-sm leading-tight">{lead.nome}</p>
+            <p className="font-bold text-sm leading-tight flex items-center gap-1.5">
+              {lead.nome}
+              {lead.eh_teste ? (
+                <span className="rounded-full border border-slate-300 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                  Teste
+                </span>
+              ) : null}
+            </p>
             {semContatoAgendado && (
               <span title="Sem contato agendado" className="shrink-0 mt-0.5">
                 <AlertTriangle className="h-3.5 w-3.5 text-red-500" />

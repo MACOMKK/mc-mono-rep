@@ -24,6 +24,7 @@ import {
   Handshake,
   History,
   Download,
+  Trash2,
 } from 'lucide-react';
 
 function formatDate(value) {
@@ -99,7 +100,7 @@ function EmptyState({ children }) {
 
 const ATIVIDADES_VISIVEIS = 4;
 
-export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity, onCreateProposta }) {
+export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity, onCreateProposta, onExcluirTeste, canExcluirTeste }) {
   const veiculo = lead?.veiculo_interesse || null;
   const { etapas } = usePipelineEtapas({ pipelineId: lead?.pipeline_id || undefined });
   const etapaVisual = getEtapaVisual(findEtapaDoLead(etapas, lead), { status: lead?.status });
@@ -195,9 +196,16 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[85vh] max-h-[820px] w-[95vw] max-w-5xl flex-col gap-0 rounded-none p-0">
         <div className="flex shrink-0 items-center justify-between gap-3 bg-[#1a1a1a] px-6 py-4">
-          <DialogTitle className="text-sm font-black uppercase tracking-widest text-white">
-            {lead.nome}
-          </DialogTitle>
+          <div className="flex items-center gap-2">
+            <DialogTitle className="text-sm font-black uppercase tracking-widest text-white">
+              {lead.nome}
+            </DialogTitle>
+            {lead.eh_teste ? (
+              <span className="rounded-full border border-white/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white/80">
+                Teste
+              </span>
+            ) : null}
+          </div>
           <DialogDescription className="sr-only">Detalhes do lead {lead.nome}.</DialogDescription>
           <span className={cn('shrink-0 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider', etapaVisual.className)} style={etapaVisual.style}>
             {getLeadEtapaLabel(etapas, lead)}
@@ -498,9 +506,21 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
           <Button type="button" variant="outline" className="rounded-none text-xs font-bold uppercase tracking-wider" onClick={() => onOpenChange(false)}>
             Fechar
           </Button>
-          <Button type="button" className="rounded-none bg-primary text-xs font-bold uppercase tracking-wider hover:bg-primary/90" onClick={onEdit}>
-            <Pencil className="mr-1.5 h-3.5 w-3.5" /> Editar
-          </Button>
+          <div className="flex items-center gap-2">
+            {lead.eh_teste && canExcluirTeste ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-none text-xs font-bold uppercase tracking-wider text-red-600"
+                onClick={onExcluirTeste}
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Excluir teste
+              </Button>
+            ) : null}
+            <Button type="button" className="rounded-none bg-primary text-xs font-bold uppercase tracking-wider hover:bg-primary/90" onClick={onEdit}>
+              <Pencil className="mr-1.5 h-3.5 w-3.5" /> Editar
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

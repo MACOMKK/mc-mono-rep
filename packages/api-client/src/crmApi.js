@@ -98,6 +98,9 @@ function buildEntity(entity) {
         limit: options.limit,
         offset: options.offset,
         page: options.page,
+        // omitido (undefined) => backend usa o default (true); so vira 'false' quando o
+        // chamador pedir explicitamente (Kanban, que busca o funil inteiro sem paginacao).
+        count: options.count === false ? false : undefined,
       });
 
       return {
@@ -204,11 +207,21 @@ export const crmApi = {
     async saveFull(payload) {
       return invokeCrm({ action: 'save_lead_full', ...payload });
     },
+    async excluirTeste(id) {
+      return invokeCrm({ action: 'lead_excluir_teste', id });
+    },
   },
   atendimentos: {
     ...buildEntity('atendimentos'),
     async saveFull(payload) {
       return invokeCrm({ action: 'save_evento_full', ...payload });
+    },
+    async listContadores({ filters, search } = {}) {
+      const result = await invokeCrm({ action: 'list_atividades_contadores', filters, search });
+      return {
+        statusCounts: result.statusCounts || {},
+        agendaCounts: result.agendaCounts || { atrasados: 0, hoje: 0, futuros: 0 },
+      };
     },
   },
   historico_atendimentos: buildEntity('historico_atendimentos'),

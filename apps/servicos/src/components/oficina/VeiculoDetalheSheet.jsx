@@ -4,9 +4,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Car, Pencil } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
-import { Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Sheet, SheetContent, SheetHeader, SheetTitle } from '@macom/ui';
+import { Badge, Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Sheet, SheetContent, SheetHeader, SheetTitle } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
 import { toUpperText } from '@/lib/oficinaFormat';
+import { ORIGEM_CADASTRO_LABEL } from '@/lib/origemCadastro';
 import ChecklistRow from '@/components/oficina/ChecklistRow';
 import { VeiculoForm } from '@/components/oficina/ClienteVeiculoPicker';
 
@@ -91,9 +92,15 @@ export default function VeiculoDetalheSheet({ veiculoId, onOpenChange }) {
                   <Car className="h-5 w-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold">
-                    {[veiculo.marca_nome, veiculo.modelo_nome].filter(Boolean).join(' ') || '—'}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold">
+                      {[veiculo.marca_nome, veiculo.modelo_nome].filter(Boolean).join(' ') || '—'}
+                    </p>
+                    {veiculo.eh_teste && <Badge variant="outline">Teste</Badge>}
+                    {ORIGEM_CADASTRO_LABEL[veiculo.origem_cadastro] && (
+                      <Badge variant="outline">{ORIGEM_CADASTRO_LABEL[veiculo.origem_cadastro]}</Badge>
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground">
                     {[veiculo.placa, veiculo.chassi, veiculo.cor].filter(Boolean).join(' · ') || '—'}
                   </p>

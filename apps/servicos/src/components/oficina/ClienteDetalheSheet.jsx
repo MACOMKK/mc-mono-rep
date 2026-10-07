@@ -7,6 +7,7 @@ import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { Badge, Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle, Sheet, SheetContent, SheetHeader, SheetTitle, useToast } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
 import { formatDocumento, formatTelefone } from '@/lib/oficinaFormat';
+import { ORIGEM_CADASTRO_LABEL } from '@/lib/origemCadastro';
 import ChecklistRow from '@/components/oficina/ChecklistRow';
 import { ClienteForm } from '@/components/oficina/ClienteVeiculoPicker';
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
@@ -88,6 +89,9 @@ export default function ClienteDetalheSheet({ clienteId, onOpenChange }) {
                   <div className="flex items-center gap-2">
                     <p className="font-semibold uppercase">{cliente.nome}</p>
                     {cliente.eh_teste && <Badge variant="outline">Teste</Badge>}
+                    {ORIGEM_CADASTRO_LABEL[cliente.origem_cadastro] && (
+                      <Badge variant="outline">{ORIGEM_CADASTRO_LABEL[cliente.origem_cadastro]}</Badge>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     {user?.isOficinaInspetor && (

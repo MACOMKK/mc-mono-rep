@@ -25,6 +25,7 @@ import LeadsKanban from '@/components/leads/LeadsKanban';
 import EventoForm from '@/components/eventos/EventoForm';
 import ListPagination from '@/components/ListPagination';
 import { useEmpresa } from '@/context/EmpresaContext';
+import { useAuth } from '@/lib/AuthContext';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/use-toast';
 import {
@@ -34,6 +35,7 @@ import {
   getLeadEtapaLabel,
 } from '@/lib/leadStatus';
 import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 
 // Status que o lead assume ao entrar na etapa (espelho de trg_crm_leads_a_sync_etapa), so
 // para o update otimista do Kanban -- o valor real volta do banco.
@@ -76,9 +78,12 @@ const formatVehicleLabel = (vehicle = {}, fallback = '') => {
 
 export default function Leads() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canConfigure = user?.role === 'admin' || user?.role === 'manager';
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [viewingLead, setViewingLead] = useState(null);
+  const [leadParaExcluirTeste, setLeadParaExcluirTeste] = useState(null);
   const [activityFormOpen, setActivityFormOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState(null);
   const [statusTarget, setStatusTarget] = useState(null); // { lead, etapa }
@@ -87,7 +92,7 @@ export default function Leads() {
   const { etapas, etapasAtivas } = usePipelineEtapas();
   const [viewMode, setViewMode] = useState('kanban');
   const [busca, setBusca] = useState('');
-  const [buscaDebounced, setBuscaDebounced] = useState('');
+  const buscaDebounced = useDebouncedValue(busca);
   const [responsavelFiltro, setResponsavelFiltro] = useState('todos');
   const [origemFiltro, setOrigemFiltro] = useState('todas');
   const [slaFiltro, setSlaFiltro] = useState('todos');
@@ -112,14 +117,6 @@ export default function Leads() {
   const leadsQueryKey = ['leads', { filters, busca: buscaDebounced, page, pageSize }];
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      setBuscaDebounced(busca.trim());
-    }, 300);
-
-    return () => window.clearTimeout(timeout);
-  }, [busca]);
-
-  useEffect(() => {
     setPage(1);
   }, [buscaDebounced, empresa, origemFiltro, periodoFim, periodoInicio, responsavelFiltro, slaFiltro, statusFiltro]);
 
@@ -137,6 +134,25 @@ export default function Leads() {
   const totalPages = Math.max(1, Math.ceil((leadsPage.count || 0) / pageSize));
 
   const kanbanAtivo = viewMode === 'kanban';
+  const KANBAN_LEADS_CAP = 500;
+  // Kanban precisa do funil inteiro (nao so a pagina de 50 da tabela), senao leads antigos em
+  // etapas avancadas somem sem aviso. count: false evita pagar a contagem num fetch em massa
+  // (item 2 do plano de performance). Pede cap+1 pra saber se truncou sem precisar de um
+  // segundo roundtrip so pra contar.
+  const leadsKanbanQueryKey = ['leads-kanban', { filters, busca: buscaDebounced }];
+  const { data: leadsKanbanRows = [] } = useQuery({
+    queryKey: leadsKanbanQueryKey,
+    enabled: kanbanAtivo,
+    queryFn: () => crmDataClient.entities.Lead.listPage({
+      orderBy: '-created_date',
+      limit: KANBAN_LEADS_CAP + 1,
+      filters,
+      search: buscaDebounced,
+      count: false,
+    }).then((result) => result.rows || []),
+  });
+  const leadsKanban = leadsKanbanRows.slice(0, KANBAN_LEADS_CAP);
+  const leadsKanbanTruncado = leadsKanbanRows.length > KANBAN_LEADS_CAP;
   const { data: atividadesPlanejadas = [] } = useQuery({
     queryKey: ['atividade-planejadas-kanban', { empresa }],
     enabled: kanbanAtivo,
@@ -149,6 +165,17 @@ export default function Leads() {
     () => new Set(atividadesPlanejadas.map((atividade) => atividade.lead_id).filter(Boolean)),
     [atividadesPlanejadas]
   );
+
+  // viewingLead e um snapshot tirado no clique (useState) -- sem isso, o modal aberto nao reflete
+  // edicoes/trocas de etapa feitas por outro usuario via Realtime (o cache de ['leads']/
+  // ['leads-kanban'] e atualizado, mas o snapshot em estado local nao). Reconcilia com a versao
+  // mais recente presente em qualquer uma das duas listas cacheadas antes de repassar pro viewer.
+  const viewingLeadAtual = useMemo(() => {
+    if (!viewingLead) return null;
+    const daTabela = leadsPage.rows?.find((item) => item.id === viewingLead.id);
+    const doKanban = leadsKanbanRows?.find((item) => item.id === viewingLead.id);
+    return daTabela || doKanban || viewingLead;
+  }, [viewingLead, leadsPage.rows, leadsKanbanRows]);
 
   const saveMutation = useMutation({
     mutationFn: ({ id, data }) => id
@@ -217,6 +244,7 @@ export default function Leads() {
         return { ...currentPage, rows };
       });
       queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['leads-kanban'] });
       queryClient.invalidateQueries({ queryKey: ['clientes'] });
       if (saved?.id) {
         queryClient.invalidateQueries({ queryKey: ['lead-historico', saved.id] });
@@ -239,6 +267,21 @@ export default function Leads() {
         variant: 'destructive',
       });
     },
+  });
+
+  const excluirTesteMutation = useMutation({
+    mutationFn: (id) => crmDataClient.entities.Lead.excluirTeste(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['leads'] });
+      await queryClient.invalidateQueries({ queryKey: ['leads-kanban'] });
+      setViewingLead(null);
+      toast({ title: 'Lead de teste excluido', variant: 'success' });
+    },
+    onError: (error) => toast({
+      title: 'Nao foi possivel excluir o lead',
+      description: error.message || 'Tente novamente.',
+      variant: 'destructive',
+    }),
   });
 
   const autoSaveMutation = useMutation({
@@ -287,6 +330,7 @@ export default function Leads() {
     queryClient.invalidateQueries({ queryKey: ['lead-atividades', viewingLead?.id] });
     queryClient.invalidateQueries({ queryKey: ['lead-atividades-planejadas', viewingLead?.id] });
     queryClient.invalidateQueries({ queryKey: ['leads'] });
+    queryClient.invalidateQueries({ queryKey: ['leads-kanban'] });
     queryClient.invalidateQueries({ queryKey: ['eventos'] });
     queryClient.invalidateQueries({ queryKey: ['eventos-contadores'] });
     queryClient.invalidateQueries({ queryKey: ['crm-atividades-atrasadas'] });
@@ -375,27 +419,37 @@ export default function Leads() {
     onMutate: async ({ id, etapa }) => {
       await queryClient.cancelQueries({ queryKey: ['leads'] });
       const previousLeads = queryClient.getQueryData(leadsQueryKey);
+      const previousLeadsKanban = queryClient.getQueryData(leadsKanbanQueryKey);
+      const applyEtapa = (lead) => (lead.id === id
+        ? { ...lead, etapa_id: etapa.id, etapa_tipo: etapa.tipo, status: statusOtimistaDaEtapa(etapa, lead.status) }
+        : lead);
 
       queryClient.setQueryData(leadsQueryKey, (currentPage = leadsPage) => ({
         ...currentPage,
-        rows: (currentPage.rows || []).map((lead) => lead.id === id
-          ? { ...lead, etapa_id: etapa.id, etapa_tipo: etapa.tipo, status: statusOtimistaDaEtapa(etapa, lead.status) }
-          : lead),
+        rows: (currentPage.rows || []).map(applyEtapa),
       }));
+      // O drag-and-drop acontece na view Kanban, que desde o item 3 do plano de performance
+      // busca o funil inteiro numa query propria (leads-kanban) -- precisa do mesmo update
+      // otimista, senao o card volta pra coluna antiga ate o invalidate/refetch.
+      queryClient.setQueryData(leadsKanbanQueryKey, (currentRows = []) => currentRows.map(applyEtapa));
 
       setStatusTarget(null);
       setStatusMotivoId('');
 
-      return { previousLeads };
+      return { previousLeads, previousLeadsKanban };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['leads-kanban'] });
       queryClient.invalidateQueries({ queryKey: ['clientes'] });
       queryClient.invalidateQueries({ queryKey: ['lead-historico', editingId] });
     },
     onError: (error, _variables, context) => {
       if (context?.previousLeads) {
         queryClient.setQueryData(leadsQueryKey, context.previousLeads);
+      }
+      if (context?.previousLeadsKanban) {
+        queryClient.setQueryData(leadsKanbanQueryKey, context.previousLeadsKanban);
       }
 
       toast({
@@ -715,14 +769,21 @@ export default function Leads() {
 
       {/* Kanban View */}
       {viewMode === 'kanban' && (
-        <div className="flex-1 min-h-0">
-          <LeadsKanban
-            leads={filtrados}
-            etapas={etapasAtivas}
-            onDragEnd={handleDragEnd}
-            onCardClick={(lead) => setViewingLead(lead)}
-            leadsComAtividadePendente={leadsComAtividadePendente}
-          />
+        <div className="flex-1 min-h-0 flex flex-col gap-2">
+          {leadsKanbanTruncado && (
+            <div className="shrink-0 rounded-none bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs text-amber-800">
+              Mostrando {KANBAN_LEADS_CAP} de {KANBAN_LEADS_CAP}+ leads ativos — refine os filtros para ver todos.
+            </div>
+          )}
+          <div className="flex-1 min-h-0">
+            <LeadsKanban
+              leads={leadsKanban}
+              etapas={etapasAtivas}
+              onDragEnd={handleDragEnd}
+              onCardClick={(lead) => setViewingLead(lead)}
+              leadsComAtividadePendente={leadsComAtividadePendente}
+            />
+          </div>
         </div>
       )}
 
@@ -775,7 +836,16 @@ export default function Leads() {
                       className={cn('cursor-pointer hover:bg-red-50 transition-colors', i % 2 === 0 ? 'bg-white' : 'bg-[#f9f9f9]')}
                       onClick={() => setViewingLead(lead)}
                     >
-                      <TableCell className="font-bold text-sm">{lead.nome}</TableCell>
+                      <TableCell className="font-bold text-sm">
+                        <div className="flex items-center gap-1.5">
+                          {lead.nome}
+                          {lead.eh_teste ? (
+                            <span className="rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                              Teste
+                            </span>
+                          ) : null}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-sm">{lead.telefone}</TableCell>
                       <TableCell className="text-xs font-semibold uppercase">{lead.origem}</TableCell>
                       <TableCell className="text-sm">{lead.modelo_interesse}</TableCell>
@@ -812,15 +882,17 @@ export default function Leads() {
       <LeadViewer
         open={Boolean(viewingLead)}
         onOpenChange={(next) => { if (!next) setViewingLead(null); }}
-        lead={viewingLead}
+        lead={viewingLeadAtual}
         onEdit={() => {
-          setEditing(viewingLead);
+          setEditing(viewingLeadAtual);
           setViewingLead(null);
           setFormOpen(true);
         }}
         onCreateActivity={() => { setEditingActivity(null); setActivityFormOpen(true); }}
         onSelectActivity={(atividade) => { setEditingActivity(atividade); setActivityFormOpen(true); }}
-        onCreateProposta={() => viewingLead && navigate(`/propostas?leadId=${viewingLead.id}`)}
+        onCreateProposta={() => viewingLeadAtual && navigate(`/propostas?leadId=${viewingLeadAtual.id}`)}
+        canExcluirTeste={canConfigure}
+        onExcluirTeste={() => setLeadParaExcluirTeste(viewingLeadAtual)}
       />
 
       {activityFormOpen && viewingLead && (
@@ -931,6 +1003,31 @@ export default function Leads() {
               onClick={() => {
                 deleteAttachmentMutation.mutate(attachmentParaExcluir);
                 setAttachmentParaExcluir(null);
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(leadParaExcluirTeste)} onOpenChange={(open) => !open && setLeadParaExcluirTeste(null)}>
+        <AlertDialogContent className="rounded-none">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-black uppercase tracking-widest">Excluir lead de teste</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o lead de teste "{leadParaExcluirTeste?.nome}"? Atendimentos, veiculos de
+              interesse, propostas e vendas vinculados tambem serao excluidos. O cliente vinculado nao e afetado. Essa
+              acao nao pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-none text-xs font-bold uppercase tracking-wider">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-none bg-red-600 text-xs font-bold uppercase tracking-wider hover:bg-red-700"
+              onClick={() => {
+                excluirTesteMutation.mutate(leadParaExcluirTeste.id);
+                setLeadParaExcluirTeste(null);
               }}
             >
               Excluir

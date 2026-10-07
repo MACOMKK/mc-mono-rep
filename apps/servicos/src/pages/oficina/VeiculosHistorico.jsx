@@ -5,6 +5,7 @@ import { Car, Handshake, Plus, Trash2 } from 'lucide-react';
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { Badge, Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle, useToast } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
+import { ORIGEM_CADASTRO_LABEL } from '@/lib/origemCadastro';
 import Pagination from '@/components/Pagination';
 import SearchInput from '@/components/SearchInput';
 import { usePagination } from '@/hooks/usePagination';
@@ -155,6 +156,9 @@ export default function VeiculosHistorico() {
                     : 'Sem checklists'}
                 </span>
                 {item.eh_teste && <Badge variant="outline">Teste</Badge>}
+                {ORIGEM_CADASTRO_LABEL[item.origem_cadastro] && (
+                  <Badge variant="outline">{ORIGEM_CADASTRO_LABEL[item.origem_cadastro]}</Badge>
+                )}
                 {item.tem_proposta_venda && (
                   <span className="shrink-0" title="Veículo com proposta/venda no CRM">
                     <Handshake className="h-4 w-4 text-amber-500" aria-label="Veículo com proposta/venda no CRM" />

@@ -4,15 +4,15 @@ import { isSupabaseConfigured, supabase } from '@macom/api-client/supabaseClient
 
 const REALTIME_TABLES = [
   { schema: 'gestao_crm', table: 'leads' },
-  { schema: 'gestao_crm', table: 'clientes' },
+  { schema: 'gestao_crm', table: 'clientes_crm' },
   { schema: 'gestao_crm', table: 'atendimentos' },
   { schema: 'gestao_crm', table: 'historico_atendimentos' },
   { schema: 'gestao_crm', table: 'veiculos_interesse' },
-  { schema: 'gestao_crm', table: 'categorias_veiculo' },
+  { schema: 'public', table: 'categorias_veiculo' },
   { schema: 'gestao_crm', table: 'origens_lead' },
-  { schema: 'gestao_crm', table: 'marcas_veiculo' },
-  { schema: 'gestao_crm', table: 'modelos_veiculo' },
-  { schema: 'gestao_crm', table: 'versoes_veiculo' },
+  { schema: 'public', table: 'marcas_veiculo' },
+  { schema: 'public', table: 'modelos_veiculo' },
+  { schema: 'public', table: 'versoes_veiculo' },
   { schema: 'gestao_crm', table: 'veiculos_estoque' },
   { schema: 'public', table: 'veiculos' },
   { schema: 'gestao_crm', table: 'configuracoes_distribuicao' },
@@ -26,10 +26,13 @@ const REALTIME_TABLES = [
 
 const TABLE_CACHE_CONFIG = {
   leads: {
-    queryKeys: [['leads'], ['cliente-leads'], ['atividade-leads'], ['dashboard-metrics']],
+    // 'leads-kanban' precisa estar aqui tambem (nao so no INSERT/invalidateCompatibleLeadQueries):
+    // e a query que a visao Kanban le, e UPDATE/DELETE (troca de etapa, edicao de campo) e tratado
+    // por patchCachedQueries, que so mexe nas queryKeys listadas abaixo.
+    queryKeys: [['leads'], ['leads-kanban'], ['cliente-leads'], ['atividade-leads'], ['dashboard-metrics']],
     mapRow: mapLeadRow,
   },
-  clientes: {
+  clientes_crm: {
     queryKeys: [['clientes'], ['dashboard-metrics']],
     mapRow: mapClienteRow,
   },
@@ -279,6 +282,35 @@ function invalidateQueries(queryClient, queryKeys) {
   });
 }
 
+// INSERT de lead: so invalida paginas de ['leads']/['leads-kanban'] cujo filtro e compativel
+// com o novo lead, em vez de invalidar toda pagina aberta por qualquer vendedor/unidade.
+// Campo ausente no filtro (nao restringe) ou 'busca' ativa (nao da pra saber se o novo lead
+// bateria na busca sem reexecutar) sempre contam como compativel -- fail-open por design,
+// nunca fail-closed: na duvida, invalida.
+function leadFiltersMatchItem(filters = {}, nextItem = {}) {
+  if (filters.busca) return true;
+  const campos = ['empresa', 'unidade_id', 'responsavel_id', 'origem_id'];
+  return campos.every((campo) => {
+    const valorFiltro = filters[campo];
+    if (valorFiltro === undefined || valorFiltro === null || valorFiltro === '') return true;
+    if (valorFiltro === '__NULL__') return !nextItem[campo];
+    return String(valorFiltro) === String(nextItem[campo] ?? '');
+  });
+}
+
+function invalidateCompatibleLeadQueries(queryClient, queryKeyRoots, nextItem) {
+  queryKeyRoots.forEach((root) => {
+    const queries = queryClient.getQueryCache().findAll({ queryKey: [root] });
+    queries.forEach((query) => {
+      const params = query.queryKey[1];
+      const filters = params && typeof params === 'object' ? { ...params.filters, busca: params.busca } : {};
+      if (leadFiltersMatchItem(filters, nextItem)) {
+        queryClient.invalidateQueries({ queryKey: query.queryKey, exact: true });
+      }
+    });
+  });
+}
+
 function handleRealtimeChange(queryClient, payload) {
   const config = TABLE_CACHE_CONFIG[payload.table];
   if (!config) return;
@@ -292,6 +324,20 @@ function handleRealtimeChange(queryClient, payload) {
     invalidateQueries(queryClient, config.countKeys);
   }
 
+  // mensagens_atendimento: invalidacao exata por conversa_id (so a conversa afetada revalida,
+  // nao qualquer conversa aberta no momento) -- ['conversas-atendimento'] (lista de conversas,
+  // dataset pequeno) continua invalidando em geral.
+  if (payload.table === 'mensagens_atendimento') {
+    const conversaId = payload.new?.conversa_id ?? payload.old?.conversa_id;
+    if (conversaId) {
+      queryClient.invalidateQueries({ queryKey: ['mensagens-atendimento', conversaId], exact: true });
+    } else {
+      queryClient.invalidateQueries({ queryKey: ['mensagens-atendimento'] });
+    }
+    queryClient.invalidateQueries({ queryKey: ['conversas-atendimento'] });
+    return;
+  }
+
   if (!config.mapRow) {
     invalidateQueries(queryClient, queryKeys);
     return;
@@ -302,14 +348,21 @@ function handleRealtimeChange(queryClient, payload) {
     return;
   }
 
+  if (payload.table === 'leads') {
+    invalidateCompatibleLeadQueries(queryClient, ['leads', 'leads-kanban'], nextItem);
+    invalidateQueries(queryClient, [['cliente-leads'], ['atividade-leads'], ['dashboard-metrics']]);
+    return;
+  }
+
   invalidateQueries(queryClient, queryKeys);
 }
 
-export function useCrmRealtime(enabled = true) {
+export function useCrmRealtime(enabled = true, accessContext = {}) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState(enabled ? 'connecting' : 'disabled');
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const syncTimeoutRef = useRef(null);
+  const { collaboratorId, unitId, nivelAcesso } = accessContext;
 
   useEffect(() => {
     if (syncTimeoutRef.current) {
@@ -331,26 +384,55 @@ export function useCrmRealtime(enabled = true) {
 
     const channel = supabase.channel('crm-realtime');
 
+    const onChange = (payload) => {
+      setStatus('syncing');
+      handleRealtimeChange(queryClient, payload);
+      setLastSyncedAt(Date.now());
+
+      if (syncTimeoutRef.current) {
+        window.clearTimeout(syncTimeoutRef.current);
+      }
+
+      syncTimeoutRef.current = window.setTimeout(() => {
+        setStatus('active');
+        syncTimeoutRef.current = null;
+      }, 800);
+    };
+
     REALTIME_TABLES.forEach(({ schema, table }) => {
+      // 'leads' tem tratamento proprio logo abaixo (filtro por nivel de acesso) -- as demais
+      // tabelas continuam sem filtro, como sempre foram (atendimentos/clientes/conversas usam
+      // EXISTS/join pra decidir acesso, que uma subscription nao consegue replicar sem risco
+      // de perder evento legitimo; ver access-scope.ts).
+      if (table === 'leads') return;
+      channel.on('postgres_changes', { event: '*', schema, table }, onChange);
+    });
+
+    // access-scope.ts (buildAccessScope): usuario = (responsavel_id = x or criado_por = x),
+    // gestor = unidade_id = x -- as duas colunas sao diretas em gestao_crm.leads, entao da pra
+    // replicar exatamente com filter de subscription (usuario precisa de 2 subscriptions pro
+    // OR, Realtime so aceita uma condicao por `filter`). admin, ou nivel/dado ainda nao
+    // carregado, fica sem filtro -- fail-open, nunca perde evento por falta de contexto.
+    if (nivelAcesso === 'gestor' && unitId) {
       channel.on(
         'postgres_changes',
-        { event: '*', schema, table },
-        (payload) => {
-          setStatus('syncing');
-          handleRealtimeChange(queryClient, payload);
-          setLastSyncedAt(Date.now());
-
-          if (syncTimeoutRef.current) {
-            window.clearTimeout(syncTimeoutRef.current);
-          }
-
-          syncTimeoutRef.current = window.setTimeout(() => {
-            setStatus('active');
-            syncTimeoutRef.current = null;
-          }, 800);
-        },
+        { event: '*', schema: 'gestao_crm', table: 'leads', filter: `unidade_id=eq.${unitId}` },
+        onChange,
       );
-    });
+    } else if (nivelAcesso === 'usuario' && collaboratorId) {
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'gestao_crm', table: 'leads', filter: `responsavel_id=eq.${collaboratorId}` },
+        onChange,
+      );
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'gestao_crm', table: 'leads', filter: `criado_por=eq.${collaboratorId}` },
+        onChange,
+      );
+    } else {
+      channel.on('postgres_changes', { event: '*', schema: 'gestao_crm', table: 'leads' }, onChange);
+    }
 
     channel.subscribe((nextStatus) => {
       if (nextStatus === 'SUBSCRIBED') {
@@ -375,7 +457,7 @@ export function useCrmRealtime(enabled = true) {
       }
       supabase.removeChannel(channel);
     };
-  }, [enabled, queryClient]);
+  }, [enabled, queryClient, collaboratorId, unitId, nivelAcesso]);
 
   return { status, lastSyncedAt };
 }

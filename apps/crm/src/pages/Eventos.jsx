@@ -10,12 +10,12 @@ import EventoCard from '@/components/eventos/EventoCard';
 import EventoForm from '@/components/eventos/EventoForm';
 import ListPagination from '@/components/ListPagination';
 import { useEmpresa } from '@/context/EmpresaContext';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { startOfToday } from 'date-fns';
 import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 
 const createTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const STATUS_TABS = ['planejada', 'concluida', 'cancelada'];
 
 const formatDateOnly = (date) => date.toISOString().slice(0, 10);
 
@@ -32,18 +32,10 @@ const getAgendaScopeDates = (scope) => {
   return {};
 };
 
-async function countAtividades(filters, search) {
-  const result = await crmDataClient.entities.Atividade.listPage({
-    limit: 1,
-    filters,
-    search,
-  });
-  return result.count || 0;
-}
-
 export default function Eventos() {
   const [statusTab, setStatusTab] = useState('planejada');
   const [busca, setBusca] = useState('');
+  const buscaDebounced = useDebouncedValue(busca);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [periodoInicio, setPeriodoInicio] = useState('');
@@ -72,13 +64,13 @@ export default function Eventos() {
     ...agendaScopeFilters,
     status: statusTab,
   }), [agendaScopeFilters, resumoFilters, statusTab]);
-  const eventosQueryKey = ['eventos', { filters: eventosFilters, busca, page, pageSize }];
+  const eventosQueryKey = ['eventos', { filters: eventosFilters, busca: buscaDebounced, page, pageSize }];
   const formLeadsQueryKey = ['atividade-leads', { empresa, editingId: editing?.id || null, leadId: editing?.lead_id || null }];
   const formAtendimentosQueryKey = ['atividade-planejadas', { empresa }];
 
   useEffect(() => {
     setPage(1);
-  }, [agendaFiltro, busca, empresa, periodoFim, periodoInicio, responsavelFiltro, statusTab]);
+  }, [agendaFiltro, buscaDebounced, empresa, periodoFim, periodoInicio, responsavelFiltro, statusTab]);
 
   const { data: eventosPage = { rows: [], count: 0, page: 1, pageSize }, isFetching, isError, error: eventosError } = useQuery({
     queryKey: eventosQueryKey,
@@ -87,32 +79,24 @@ export default function Eventos() {
       page,
       limit: pageSize,
       filters: eventosFilters,
-      search: busca,
+      search: buscaDebounced,
     }),
   });
   const eventos = eventosPage.rows;
   const totalPages = Math.max(1, Math.ceil((eventosPage.count || 0) / pageSize));
 
+  // Antes eram 6 roundtrips (Promise.all de countAtividades por status + por janela de
+  // agenda) a cada busca/filtro -- list_atividades_contadores aplica o mesmo access-scope uma
+  // unica vez no backend e devolve tudo num so roundtrip.
   const { data: eventosContadores = {
     agendaCounts: { atrasados: 0, hoje: 0, futuros: 0 },
     statusCounts: {},
   } } = useQuery({
-    queryKey: ['eventos-contadores', { filters: resumoFilters, busca }],
-    queryFn: async () => {
-      const [statusResults, atrasados, hojeCount, futuros] = await Promise.all([
-        Promise.all(STATUS_TABS.map((status) => (
-          countAtividades({ ...resumoFilters, status }, busca).then((count) => [status, count])
-        ))),
-        countAtividades({ ...resumoFilters, status: 'planejada', ...getAgendaScopeDates('atrasados') }, busca),
-        countAtividades({ ...resumoFilters, status: 'planejada', ...getAgendaScopeDates('hoje') }, busca),
-        countAtividades({ ...resumoFilters, status: 'planejada', ...getAgendaScopeDates('futuros') }, busca),
-      ]);
-
-      return {
-        agendaCounts: { atrasados, hoje: hojeCount, futuros },
-        statusCounts: Object.fromEntries(statusResults),
-      };
-    },
+    queryKey: ['eventos-contadores', { filters: resumoFilters, busca: buscaDebounced }],
+    queryFn: () => crmDataClient.entities.Atividade.listContadores({
+      filters: resumoFilters,
+      search: buscaDebounced,
+    }),
   });
 
   const { data: leads = [] } = useQuery({

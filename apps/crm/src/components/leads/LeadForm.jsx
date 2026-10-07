@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useAuth } from '@/lib/AuthContext';
 import { companyFromUnit } from '@/lib/empresa';
 import { deriveUnidadesFromResponsaveis } from '@/hooks/useUnidadesEmpresa';
 import { crmDataClient } from '@/api/crmDataClient';
@@ -78,6 +80,8 @@ export default function LeadForm({
   uploadingAttachment = false,
   deletingAttachment = false,
 }) {
+  const { user } = useAuth();
+  const canConfigure = user?.role === 'admin' || user?.role === 'manager';
   const [data, setData] = useState(lead || {
     nome: '',
     telefone: '',
@@ -1039,6 +1043,16 @@ export default function LeadForm({
                   </div>
                 </div>
               </div>
+            ) : null}
+
+            {isLastStep && !lead && canConfigure ? (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={Boolean(data.eh_teste)}
+                  onCheckedChange={(checked) => setData((prev) => ({ ...prev, eh_teste: checked === true }))}
+                />
+                Marcar como lead de teste (pode ser excluido depois)
+              </label>
             ) : null}
           </div>
 

@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Car, Pencil, Plus, RotateCcw, Save, Search, Star, Trash2, X } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import ListPagination from '@/components/ListPagination';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,15 +71,6 @@ const emptyForm = {
   cliente_reserva_id: '',
   cliente_reserva_nome: '',
 };
-
-function useDebouncedValue(value, delay = 300) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timeout = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(timeout);
-  }, [value, delay]);
-  return debounced;
-}
 
 function ClienteReservaField({ value, nome, onSelect, onClear }) {
   const [busca, setBusca] = useState('');
@@ -147,6 +140,9 @@ export default function Estoque() {
   });
   const [abaCondicao, setAbaCondicao] = useState('todos');
   const [busca, setBusca] = useState('');
+  const buscaDebounced = useDebouncedValue(busca);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const [modeloDialogOpen, setModeloDialogOpen] = useState(false);
   const [novoModelo, setNovoModelo] = useState(emptyNovoModelo);
   const [versaoDialogOpen, setVersaoDialogOpen] = useState(false);
@@ -158,10 +154,86 @@ export default function Estoque() {
   const [reservaDialogVeiculo, setReservaDialogVeiculo] = useState(null);
   const [reservaForm, setReservaForm] = useState({ vendedor_reserva_id: '', cliente_reserva_id: '', cliente_reserva_nome: '' });
 
-  const { data: veiculos = [], isLoading, error } = useQuery({
-    queryKey: ['crm-veiculos-estoque'],
-    queryFn: () => crmDataClient.entities.VeiculoEstoque.list('-created_date'),
+  // Aba (Todos/Novos/Seminovos) e o dropdown de condicao sao filtros independentes que ja
+  // eram combinados em AND no filtro client-side antigo -- a intersecao dos dois conjuntos
+  // decide se manda condicao como igualdade, IN ou nenhum filtro (quando cobre as 3 opcoes).
+  const condicoesPermitidas = useMemo(() => {
+    const todas = CONDICAO_OPTIONS.map((option) => option.value);
+    const daAba = abaCondicao === 'novo' ? ['novo'] : abaCondicao === 'seminovo' ? ['seminovo', 'usado'] : todas;
+    const doDropdown = filtros.condicao ? [filtros.condicao] : todas;
+    return daAba.filter((value) => doDropdown.includes(value));
+  }, [abaCondicao, filtros.condicao]);
+  const condicaoFilter = useMemo(() => {
+    const todas = CONDICAO_OPTIONS.map((option) => option.value);
+    if (condicoesPermitidas.length === 0 || condicoesPermitidas.length === todas.length) return undefined;
+    return condicoesPermitidas.length === 1 ? condicoesPermitidas[0] : condicoesPermitidas;
+  }, [condicoesPermitidas]);
+
+  const serverFilters = useMemo(() => ({
+    ...(condicaoFilter !== undefined ? { condicao: condicaoFilter } : {}),
+    ...(filtros.status ? { status: filtros.status } : {}),
+    ...(filtros.marca ? { marca: filtros.marca } : {}),
+    ...(filtros.modelo ? { modelo: filtros.modelo } : {}),
+    ...(filtros.chassi ? { chassi: filtros.chassi } : {}),
+    ...(filtros.placa ? { placa: filtros.placa } : {}),
+    ...(filtros.cor ? { cor: filtros.cor } : {}),
+    ...(filtros.km ? { km_max: filtros.km } : {}),
+    ...(filtros.preco ? { preco_max: filtros.preco } : {}),
+  }), [condicaoFilter, filtros.status, filtros.marca, filtros.modelo, filtros.chassi, filtros.placa, filtros.cor, filtros.km, filtros.preco]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [serverFilters, buscaDebounced]);
+
+  const veiculosQueryKey = ['crm-veiculos-estoque', { filters: serverFilters, busca: buscaDebounced, page, pageSize }];
+  const { data: veiculosPage = { rows: [], count: 0 }, isLoading, error } = useQuery({
+    queryKey: veiculosQueryKey,
+    queryFn: () => crmDataClient.entities.VeiculoEstoque.listPage({
+      orderBy: '-created_date',
+      page,
+      limit: pageSize,
+      filters: serverFilters,
+      search: buscaDebounced,
+    }),
   });
+  const veiculos = veiculosPage.rows;
+  const totalPages = Math.max(1, Math.ceil((veiculosPage.count || 0) / pageSize));
+
+  // Resumo (cards de total/novos/seminovos) precisa do total real, nao so da pagina atual --
+  // reaproveita o mesmo filtro+busca da lista, so troca o limit por 1 e pede so a contagem.
+  // "novos" refaz a contagem forcando condicao=novo (ignorando a aba/dropdown de condicao,
+  // que ja fica implicito no proprio numero); "seminovos" e a diferenca.
+  const { data: totalGeral = 0 } = useQuery({
+    queryKey: ['crm-veiculos-estoque-count', { filters: serverFilters, busca: buscaDebounced }],
+    queryFn: () => crmDataClient.entities.VeiculoEstoque.listPage({
+      limit: 1,
+      filters: serverFilters,
+      search: buscaDebounced,
+    }).then((result) => result.count || 0),
+  });
+  const novosPossivel = condicoesPermitidas.includes('novo');
+  const { data: totalNovos = 0 } = useQuery({
+    queryKey: ['crm-veiculos-estoque-count-novos', { filters: serverFilters, busca: buscaDebounced }],
+    enabled: novosPossivel,
+    queryFn: () => crmDataClient.entities.VeiculoEstoque.listPage({
+      limit: 1,
+      filters: { ...serverFilters, condicao: 'novo' },
+      search: buscaDebounced,
+    }).then((result) => result.count || 0),
+  });
+  const resumoEstoque = {
+    total: totalGeral,
+    novos: novosPossivel ? totalNovos : 0,
+    seminovos: novosPossivel ? Math.max(0, totalGeral - totalNovos) : totalGeral,
+  };
+
+  // 'crm-veiculos-estoque-count*' nao compartilha prefixo com 'crm-veiculos-estoque' (strings
+  // diferentes) -- invalidateQueries por prefixo nao pega os dois sozinho, precisa dos tres.
+  const invalidateVeiculosEstoque = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque'] }),
+    queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque-count'] }),
+    queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque-count-novos'] }),
+  ]);
 
   const { data: modelos = [] } = useQuery({
     queryKey: ['crm-modelos-veiculo'],
@@ -204,47 +276,13 @@ export default function Estoque() {
     [versoes, form.modelo_id],
   );
 
-  const veiculosFiltrados = useMemo(() => {
-    const termo = (valor) => valor.trim().toLowerCase();
-    return veiculos.filter((veiculo) => {
-      const modelo = modeloPorId[veiculo.modelo_id];
-      const marcaNome = modelo ? (marcaNomePorId[modelo.marca_id] || '') : '';
-      const modeloNome = modelo?.nome || '';
-
-      if (abaCondicao === 'novo' && veiculo.condicao !== 'novo') return false;
-      if (abaCondicao === 'seminovo' && veiculo.condicao === 'novo') return false;
-
-      if (filtros.marca && !marcaNome.toLowerCase().includes(termo(filtros.marca))) return false;
-      if (filtros.modelo && !modeloNome.toLowerCase().includes(termo(filtros.modelo))) return false;
-      if (filtros.chassi && !veiculo.chassi.toLowerCase().includes(termo(filtros.chassi))) return false;
-      if (filtros.cor && !(veiculo.cor || '').toLowerCase().includes(termo(filtros.cor))) return false;
-      if (filtros.placa && !(veiculo.placa || '').toLowerCase().includes(termo(filtros.placa))) return false;
-      if (filtros.km && Number(veiculo.km || 0) > Number(filtros.km)) return false;
-      if (filtros.preco && Number(veiculo.preco || 0) > Number(filtros.preco)) return false;
-      if (filtros.condicao && veiculo.condicao !== filtros.condicao) return false;
-      if (filtros.status && veiculo.status !== filtros.status) return false;
-
-      if (busca.trim()) {
-        const alvo = `${marcaNome} ${modeloNome} ${veiculo.chassi} ${veiculo.placa || ''}`.toLowerCase();
-        if (!alvo.includes(termo(busca))) return false;
-      }
-      return true;
-    });
-  }, [veiculos, filtros, abaCondicao, busca, modeloPorId, marcaNomePorId]);
-
-  const resumoEstoque = useMemo(() => ({
-    total: veiculosFiltrados.length,
-    novos: veiculosFiltrados.filter((veiculo) => veiculo.condicao === 'novo').length,
-    seminovos: veiculosFiltrados.filter((veiculo) => veiculo.condicao !== 'novo').length,
-  }), [veiculosFiltrados]);
-
   const createMutation = useMutation({
     mutationFn: (data) => crmDataClient.entities.VeiculoEstoque.create(data),
     onMutate: () => {
       setForm(emptyForm);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque'] });
+      await invalidateVeiculosEstoque();
       setNovoVeiculoDialogOpen(false);
       toast({ title: 'Veiculo adicionado ao estoque', variant: 'success' });
     },
@@ -258,7 +296,7 @@ export default function Estoque() {
   const updateMutation = useMutation({
     mutationFn: ({ id, ...data }) => crmDataClient.entities.VeiculoEstoque.update(id, data),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque'] });
+      await invalidateVeiculosEstoque();
       toast({ title: 'Veiculo atualizado', variant: 'success' });
     },
     onError: (mutationError) => toast({
@@ -272,8 +310,11 @@ export default function Estoque() {
     mutationFn: (id) => crmDataClient.entities.VeiculoEstoque.delete(id),
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ['crm-veiculos-estoque'] });
-      const previousVeiculos = queryClient.getQueryData(['crm-veiculos-estoque']);
-      queryClient.setQueryData(['crm-veiculos-estoque'], (old = []) => old.filter((veiculo) => veiculo.id !== id));
+      const previousVeiculos = queryClient.getQueryData(veiculosQueryKey);
+      queryClient.setQueryData(veiculosQueryKey, (currentPage = veiculosPage) => ({
+        ...currentPage,
+        rows: (currentPage.rows || []).filter((veiculo) => veiculo.id !== id),
+      }));
       return { previousVeiculos };
     },
     onSuccess: () => {
@@ -283,7 +324,7 @@ export default function Estoque() {
       // tem FK real (propostas/vendas vinculadas ao estoque) que pode rejeitar o delete —
       // por isso desfaz a remocao otimista e devolve a linha a lista em caso de erro
       if (context?.previousVeiculos) {
-        queryClient.setQueryData(['crm-veiculos-estoque'], context.previousVeiculos);
+        queryClient.setQueryData(veiculosQueryKey, context.previousVeiculos);
       }
       toast({
         title: 'Nao foi possivel excluir o veiculo',
@@ -292,7 +333,7 @@ export default function Estoque() {
       });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['crm-veiculos-estoque'] });
+      invalidateVeiculosEstoque();
     },
   });
 
@@ -576,7 +617,7 @@ export default function Estoque() {
 
       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          Lista de veiculos em estoque ({veiculosFiltrados.length})
+          Lista de veiculos em estoque ({veiculosPage.count || 0})
         </p>
         <div className="relative w-full max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -591,11 +632,11 @@ export default function Estoque() {
 
       {isLoading ? <p className="py-10 text-sm text-muted-foreground">Carregando estoque...</p> : null}
       {error ? <p className="py-10 text-sm text-red-600">{error.message}</p> : null}
-      {!isLoading && !error && veiculosFiltrados.length === 0 ? (
+      {!isLoading && !error && veiculos.length === 0 ? (
         <p className="py-10 text-sm text-muted-foreground">Nenhum veiculo encontrado.</p>
       ) : null}
 
-      {!isLoading && !error && veiculosFiltrados.length > 0 ? (
+      {!isLoading && !error && veiculos.length > 0 ? (
         <div className="overflow-x-auto border bg-white">
           <Table>
             <TableHeader className="bg-[#1a1a1a]">
@@ -614,7 +655,7 @@ export default function Estoque() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {veiculosFiltrados.map((veiculo) => {
+              {veiculos.map((veiculo) => {
                 const modelo = modeloPorId[veiculo.modelo_id];
                 return (
                   <TableRow key={veiculo.id}>
@@ -715,6 +756,14 @@ export default function Estoque() {
               })}
             </TableBody>
           </Table>
+          <ListPagination
+            count={veiculosPage.count}
+            isFetching={isLoading}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage((prev) => Math.max(1, prev - 1))}
+            onNext={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+          />
         </div>
       ) : null}
 

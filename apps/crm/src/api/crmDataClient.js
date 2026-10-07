@@ -204,6 +204,7 @@ function mapLeadRow(row = {}) {
     sla_minutos_restantes: remainingMinutes,
     sla_status: slaStatus,
     observacoes: row.observacoes || '',
+    eh_teste: Boolean(row.eh_teste),
     ...mapBaseDates(row),
   };
 }
@@ -489,6 +490,9 @@ function mapLeadPayload(data = {}, clienteId) {
     responsavel_id: data.responsavel_id || null,
     unidade_id: data.unidade_id || null,
     observacoes: data.observacoes || null,
+    // So relevante na criacao (eh_teste so pode ser setado no create, backend ignora em
+    // update); omitido quando nao marcado para nao sobrescrever o valor existente num update.
+    ...(data.eh_teste ? { eh_teste: true } : {}),
   };
 }
 
@@ -811,6 +815,10 @@ const LeadRepository = {
 
   async get(id) {
     return getLead(id);
+  },
+
+  async excluirTeste(id) {
+    return crmApi.leads.excluirTeste(id);
   },
 
   async create(data) {
@@ -1354,6 +1362,10 @@ const DistribuicaoRepository = {
 
 const EventoRepository = {
   ...createListRepository('Evento', crmApi.atendimentos, mapEventoRow),
+
+  async listContadores(options) {
+    return crmApi.atendimentos.listContadores(options);
+  },
 
   async create(data) {
     if (!data.lead_id) {

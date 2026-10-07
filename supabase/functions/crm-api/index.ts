@@ -66,6 +66,7 @@ const ENTITY_CONFIG = {
       'primeiro_contato_em',
       'sla_primeiro_contato_em',
       'observacoes',
+      'eh_teste',
     ],
   },
   atendimentos: {
@@ -621,7 +622,7 @@ function quoteIdentifier(value: string) {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
-function buildSqlFilters(filters: Record<string, unknown> = {}, startIndex = 1, tableAlias?: string) {
+function buildSqlFilters(filters: Record<string, unknown> = {}, startIndex = 1, tableAlias?: string, extraReserved: string[] = []) {
   const clauses: string[] = [];
   const values: unknown[] = [];
   const prefix = tableAlias ? `${tableAlias}.` : '';
@@ -631,6 +632,7 @@ function buildSqlFilters(filters: Record<string, unknown> = {}, startIndex = 1, 
     'proximo_from',
     'proximo_to',
     'sla_status',
+    ...extraReserved,
   ]);
 
   for (const [field, value] of Object.entries(filters)) {
@@ -763,6 +765,8 @@ function buildSearchFilter(entity: EntityName, search: string, startIndex: numbe
     pushText('v.chassi');
     pushText('v.placa');
     pushText('cv.nome');
+    pushText('mv.nome');
+    pushText('mk.nome');
   }
 
   return {
@@ -809,6 +813,31 @@ function buildAdvancedFilters(entity: EntityName, filters: Record<string, unknow
     if (filters.responsavel_id) {
       values.push(filters.responsavel_id);
       clauses.push(`l."responsavel_id" = $${startIndex + values.length - 1}`);
+    }
+  }
+
+  if (entity === 'veiculos_estoque') {
+    const pushPartial = (expression: string, rawValue: unknown) => {
+      const term = String(rawValue ?? '').trim();
+      if (!term) return;
+      values.push(`%${term.toLowerCase()}%`);
+      clauses.push(`lower(coalesce(${expression}, '')) like $${startIndex + values.length - 1}`);
+    };
+    pushPartial('v.chassi', filters.chassi);
+    pushPartial('v.placa', filters.placa);
+    pushPartial('mk.nome', filters.marca);
+    pushPartial('mv.nome', filters.modelo);
+    pushPartial('cv.nome', filters.cor);
+
+    const kmMax = Number(filters.km_max);
+    if (Number.isFinite(kmMax) && filters.km_max !== '' && filters.km_max != null) {
+      values.push(kmMax);
+      clauses.push(`v."km" <= $${startIndex + values.length - 1}`);
+    }
+    const precoMax = Number(filters.preco_max);
+    if (Number.isFinite(precoMax) && filters.preco_max !== '' && filters.preco_max != null) {
+      values.push(precoMax);
+      clauses.push(`ve."preco" <= $${startIndex + values.length - 1}`);
     }
   }
 
@@ -875,13 +904,11 @@ function buildUpdateQuery(schema: string, table: string, id: string, payload: Re
   };
 }
 
-function buildListSelect(entity: EntityName, options: { withCount?: boolean } = {}) {
-  const countExpr = options.withCount ? 'count(*) over() as crm_total_count, ' : '';
-
+function buildListSelect(entity: EntityName) {
   if (entity === 'leads') {
     return `
       select
-        ${countExpr}l.*,
+        l.*,
         coalesce(cd.sla_alerta_minutos, 10) as sla_alerta_minutos,
         coalesce(cd.sla_primeiro_contato_minutos, 30) as sla_primeiro_contato_minutos,
         case
@@ -911,7 +938,7 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
 
   if (entity === 'veiculos_estoque') {
     return `
-      select ${countExpr}ve.*,
+      select ve.*,
         (row_to_json(v)::jsonb || jsonb_build_object('cor', cv.nome))::json as veiculo,
         vr.nome as vendedor_reserva_nome,
         cr.nome as cliente_reserva_nome
@@ -921,6 +948,8 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
       left join public.colaboradores vr on vr.id = ve.vendedor_reserva_id
       left join ${CRM_SCHEMA}.clientes_crm crc on crc.id = ve.cliente_reserva_id
       left join public.clientes cr on cr.id = crc.id
+      left join public.modelos_veiculo mv on mv.id = v.modelo_id
+      left join public.marcas_veiculo mk on mk.id = mv.marca_id
     `;
   }
 
@@ -929,7 +958,7 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
     // para que access-scope.ts continue referenciando o nome logico "clientes"
     // sem qualificacao (buildAccessScope conta com esse nome de range-table).
     return `
-      select ${countExpr}clientes.*, p.nome, p.telefone, p.telefone_normalizado,
+      select clientes.*, p.nome, p.telefone, p.telefone_normalizado,
         p.email, p.email_normalizado, p.cpf_cnpj,
         p.endereco, p.bairro, p.municipio, p.uf, p.cep,
         (
@@ -946,7 +975,7 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
     // cliente_id aponta pra clientes_crm (extensao), mas o nome mora em public.clientes
     // desde 20260915120000_extract_public_clientes.sql -- por isso o join extra pra cp.
     return `
-      select ${countExpr}conversas_atendimento.*,
+      select conversas_atendimento.*,
         case when cli.id is null then null else json_build_object('id', cli.id, 'nome', cp.nome) end as cliente,
         case when ld.id is null then null else json_build_object('id', ld.id, 'nome', ld.nome) end as lead
       from ${CRM_SCHEMA}.conversas_atendimento
@@ -958,12 +987,12 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
 
   if (entity !== 'atendimentos') {
     const entitySchema = ENTITY_CONFIG[entity].schema ?? CRM_SCHEMA;
-    return `select ${countExpr}* from ${entitySchema}.${ENTITY_CONFIG[entity].table}`;
+    return `select * from ${entitySchema}.${ENTITY_CONFIG[entity].table}`;
   }
 
   return `
     select
-      ${countExpr}a.*,
+      a.*,
       row_to_json(l) as lead,
       case
         when c.id is null then null
@@ -987,6 +1016,67 @@ function buildListSelect(entity: EntityName, options: { withCount?: boolean } = 
     left join public.colaboradores r on r.id = l.responsavel_id
     left join ${CRM_SCHEMA}.origens_lead lo on lo.id = l.origem_id
   `;
+}
+
+// Contagem separada do SELECT paginado: so os joins de fato referenciados pelo WHERE
+// (buildSqlFilters/buildSearchFilter/buildAdvancedFilters/buildAccessScope), nunca os joins
+// usados so para exibicao (lateral de veiculo em leads, nomes de vendedor/cliente de reserva
+// em veiculos_estoque, etc.) -- essas sao o que tornava o count(*) over() caro.
+// FROM/JOINs minimos para contar -- reaproveitado tanto pelo count(*) simples (buildCountFrom)
+// quanto pelos agregados condicionais de list_atividades_contadores (count(*) filter (where ...)).
+function buildCountFromClause(entity: EntityName) {
+  if (entity === 'leads') {
+    // o/r/cd: usados em buildSearchFilter (o.nome, r.nome) e buildAdvancedFilters (cd.* no
+    // filtro sla_status). A lateral de veiculos_interesse nao entra aqui -- a busca por
+    // marca/modelo/versao usa EXISTS proprio, sem depender de join.
+    return `
+      from ${CRM_SCHEMA}.leads l
+      left join public.colaboradores r on r.id = l.responsavel_id
+      left join ${CRM_SCHEMA}.configuracoes_distribuicao cd on cd.unidade_id = l.unidade_id
+      left join ${CRM_SCHEMA}.origens_lead o on o.id = l.origem_id
+    `;
+  }
+
+  if (entity === 'veiculos_estoque') {
+    // v/cv/mv/mk: usados em buildSearchFilter (v.chassi, v.placa, cv.nome, mv.nome, mk.nome).
+    // vr/cr (vendedor/cliente de reserva) so aparecem no SELECT de exibicao, nunca em filtro/busca.
+    return `
+      from ${CRM_SCHEMA}.veiculos_estoque ve
+      join public.veiculos v on v.id = ve.veiculo_id
+      left join public.cores_veiculo cv on cv.id = v.cor_id
+      left join public.modelos_veiculo mv on mv.id = v.modelo_id
+      left join public.marcas_veiculo mk on mk.id = mv.marca_id
+    `;
+  }
+
+  if (entity === 'clientes') {
+    // p: buildSearchFilter/buildAccessScope referenciam nome/email/telefone_normalizado sem
+    // alias, que so existem em public.clientes -- join obrigatorio mesmo so pra contar.
+    return `
+      from ${CRM_SCHEMA}.clientes_crm as clientes
+      join public.clientes p on p.id = clientes.id
+    `;
+  }
+
+  if (entity === 'atendimentos') {
+    // l: buildAccessScope (l.responsavel_id/criado_por) e buildSearchFilter/buildAdvancedFilters
+    // (l.nome, l.modelo_interesse, l.telefone_normalizado, l.origem_id, l.empresa). c: busca por
+    // cliente vinculado. cp/r/lo so aparecem no SELECT de exibicao.
+    return `
+      from ${CRM_SCHEMA}.atendimentos a
+      left join ${CRM_SCHEMA}.leads l on l.id = a.lead_id
+      left join ${CRM_SCHEMA}.clientes_crm c on c.id = a.cliente_id
+    `;
+  }
+
+  // conversas_atendimento, historico_atendimentos e demais entidades: filtros/busca/escopo
+  // usam so colunas da propria tabela ou EXISTS auto-contido -- nenhum join necessario.
+  const entitySchema = ENTITY_CONFIG[entity].schema ?? CRM_SCHEMA;
+  return `from ${entitySchema}.${ENTITY_CONFIG[entity].table}`;
+}
+
+function buildCountFrom(entity: EntityName) {
+  return `select count(*) as crm_total_count ${buildCountFromClause(entity)}`;
 }
 
 function baseAlias(entity: EntityName) {
@@ -1182,6 +1272,67 @@ Deno.serve(async (request) => {
       );
 
       return json({ row: rows[0] || null });
+    }
+
+    if (action === 'list_atividades_contadores') {
+      // Eventos.jsx fazia 6 roundtrips (countAtividades por status + por janela de agenda) a
+      // cada busca/filtro via Promise.all -- aqui aplica o mesmo access-scope/filtros uma unica
+      // vez e devolve tudo via count(*) filter (where ...) num unico SELECT. filters.status e
+      // as janelas de agenda sao ignorados de proposito: essas quebras sao as proprias colunas
+      // agregadas, nao filtros de entrada (Eventos.jsx so manda resumoFilters: empresa,
+      // responsavel_id, periodo).
+      const entity: EntityName = 'atendimentos';
+      const rawFilters = typeof body.filters === 'object' && body.filters ? body.filters : {};
+      const contadorSearch = typeof body.search === 'string' ? body.search : '';
+      const directFilters = { ...rawFilters };
+      delete directFilters.empresa;
+      delete directFilters.origem_id;
+      delete directFilters.responsavel_id;
+      delete directFilters.status;
+
+      const filterParts = buildSqlFilters(directFilters, 1, baseAlias(entity) || undefined);
+      const advancedParts = buildAdvancedFilters(entity, rawFilters, filterParts.values.length + 1);
+      const searchPart = buildSearchFilter(entity, contadorSearch, filterParts.values.length + advancedParts.values.length + 1);
+      const accessPart = buildAccessScope(
+        entity,
+        access,
+        collaborator,
+        filterParts.values.length + advancedParts.values.length + searchPart.values.length + 1,
+      );
+      const clauses = [...filterParts.clauses, ...advancedParts.clauses, searchPart.clause, accessPart.clause].filter(Boolean);
+      const whereClause = clauses.length ? `where ${clauses.join(' and ')}` : '';
+      const queryValues = [...filterParts.values, ...advancedParts.values, ...searchPart.values, ...accessPart.values];
+
+      // proximo_contato e "date" puro (sem hora, ver 20260618150000_add_gestao_crm_core.sql:90)
+      // -- "<"/"="/">" contra current_date reproduzem exatamente os tres filtros de
+      // getAgendaScopeDates (atrasados: <= ontem: hoje: janela e strs. futuros: >= amanha).
+      const [row] = await sql.unsafe(
+        `
+          select
+            count(*) filter (where a."status" = 'planejada') as planejada,
+            count(*) filter (where a."status" = 'concluida') as concluida,
+            count(*) filter (where a."status" = 'cancelada') as cancelada,
+            count(*) filter (where a."status" = 'planejada' and a."proximo_contato" < current_date) as atrasados,
+            count(*) filter (where a."status" = 'planejada' and a."proximo_contato" = current_date) as hoje,
+            count(*) filter (where a."status" = 'planejada' and a."proximo_contato" > current_date) as futuros
+          ${buildCountFromClause(entity)}
+          ${whereClause}
+        `,
+        queryValues,
+      );
+
+      return json({
+        statusCounts: {
+          planejada: Number(row?.planejada) || 0,
+          concluida: Number(row?.concluida) || 0,
+          cancelada: Number(row?.cancelada) || 0,
+        },
+        agendaCounts: {
+          atrasados: Number(row?.atrasados) || 0,
+          hoje: Number(row?.hoje) || 0,
+          futuros: Number(row?.futuros) || 0,
+        },
+      });
     }
 
     if (action === 'list_responsaveis') {
@@ -1537,6 +1688,13 @@ Deno.serve(async (request) => {
 
       if (leadId) {
         await ensureEntityAccess('leads', leadId, access, collaborator);
+        // eh_teste so pode ser setado na criacao (mesmo padrao de checklist_iniciar em
+        // servicos-oficina-api) -- update nunca deixa marcar/desmarcar depois.
+        delete leadPayloadRaw.eh_teste;
+      } else if (leadPayloadRaw.eh_teste === true && !['admin', 'gestor'].includes(String(access?.nivel_acesso || ''))) {
+        // Mesmo gate de 'propostas' (linha ~2109): nunca confiar no valor enviado pelo
+        // cliente sem checar o nivel de acesso no servidor.
+        return json({ error: 'Apenas administradores e gestores podem marcar um lead como teste.' }, 403);
       }
 
       let clienteIdentidadeSelecionada: Record<string, unknown> | null = null;
@@ -1578,7 +1736,10 @@ Deno.serve(async (request) => {
             const rows = await transaction.unsafe(updateQuery.text, updateQuery.values);
             clienteIdentidade = rows[0];
           } else {
-            const insertQuery = buildInsertQuery('public', 'clientes', clienteIdentidadeRaw);
+            const insertQuery = buildInsertQuery('public', 'clientes', {
+              ...clienteIdentidadeRaw,
+              origem_cadastro: 'crm_lead',
+            });
             const rows = await transaction.unsafe(insertQuery.text, insertQuery.values);
             clienteIdentidade = rows[0];
           }
@@ -1986,6 +2147,27 @@ Deno.serve(async (request) => {
       return json({ success: true });
     }
 
+    if (action === 'lead_excluir_teste') {
+      ensureCanConfigure(access);
+      const leadIdParaExcluir = typeof body.id === 'string' && body.id ? body.id : '';
+      if (!leadIdParaExcluir) return json({ error: 'id e obrigatorio.' }, 400);
+
+      // atendimentos/veiculos_interesse/propostas/vendas tem "on delete cascade" em lead_id --
+      // somem junto. historico_atendimentos/conversas_atendimento tem "on delete set null" --
+      // ficam orfaos, igual a qualquer outra exclusao de lead hoje (nao e regressao nova).
+      // Nao apaga clientes_crm/public.clientes: mesmo motivo de cliente_excluir/veiculo_excluir
+      // nao serem gated por eh_teste (20261006120000_add_eh_teste_cliente_veiculo_proposta.sql) --
+      // identidade compartilhada, risco de apagar vinculo real.
+      const rows = await sql.unsafe(
+        `delete from ${CRM_SCHEMA}.leads where id = $1 and eh_teste = true returning id;`,
+        [leadIdParaExcluir],
+      );
+      if (!rows[0]) {
+        return json({ error: 'Lead nao encontrado ou nao esta marcado como teste.' }, 400);
+      }
+      return json({ success: true });
+    }
+
     const entity = String(body.entity || '') as EntityName;
     const config = ENTITY_CONFIG[entity];
 
@@ -2049,7 +2231,19 @@ Deno.serve(async (request) => {
         delete directFilters.origem_id;
         delete directFilters.responsavel_id;
       }
-      const filterParts = buildSqlFilters(directFilters, 1, baseAlias(entity) || undefined);
+      // veiculos_estoque: marca/modelo/chassi/placa/cor/km_max/preco_max sao tratados em
+      // buildAdvancedFilters (join/operador proprios, ver comentario la) -- reservar aqui pra
+      // buildSqlFilters nao tentar igualdade direta em "ve".marca (coluna que nao existe) ou
+      // sobrescrever com semantica errada. Reservado so para esta entidade: veiculos_interesse
+      // tem colunas reais "marca"/"modelo" que continuam filtrando por igualdade normalmente.
+      const filterParts = buildSqlFilters(
+        directFilters,
+        1,
+        baseAlias(entity) || undefined,
+        entity === 'veiculos_estoque'
+          ? ['marca', 'modelo', 'chassi', 'placa', 'cor', 'km_max', 'preco_max']
+          : [],
+      );
       const advancedParts = buildAdvancedFilters(entity, filters, filterParts.values.length + 1);
       const orPart = parseOrFilter(
         orFilter,
@@ -2082,15 +2276,21 @@ Deno.serve(async (request) => {
         ...searchPart.values,
         ...accessPart.values,
       ];
-      const rows = await sql.unsafe(
-        `${buildListSelect(entity, { withCount: true })} ${whereClause} order by ${scopedColumn(entity, orderBy)} ${orderDirection} limit ${limit} offset ${effectiveOffset};`,
+      // body.count === false pula a query de contagem -- usado pelo Kanban, que busca o
+      // funil inteiro de uma vez e nao precisa do total (so da pagina, que nem existe ali).
+      const wantCount = body.count !== false;
+      const listPromise = sql.unsafe(
+        `${buildListSelect(entity)} ${whereClause} order by ${scopedColumn(entity, orderBy)} ${orderDirection} limit ${limit} offset ${effectiveOffset};`,
         queryValues,
       );
-      const total = rows[0]?.crm_total_count ?? 0;
-      for (const row of rows) delete row.crm_total_count;
+      const countPromise = wantCount
+        ? sql.unsafe(`${buildCountFrom(entity)} ${whereClause};`, queryValues)
+        : Promise.resolve(null);
+      const [rows, countRows] = await Promise.all([listPromise, countPromise]);
+      const total = wantCount ? Number(countRows?.[0]?.crm_total_count) || 0 : null;
       return json({
         rows,
-        count: Number(total) || 0,
+        count: total,
         page,
         pageSize: limit,
         offset: effectiveOffset,
@@ -2135,7 +2335,7 @@ Deno.serve(async (request) => {
           return json({ error: 'Nome e telefone sao obrigatorios.' }, 400);
         }
         const row = await sql.begin(async (transaction) => {
-          const insertIdentidade = buildInsertQuery('public', 'clientes', identidade);
+          const insertIdentidade = buildInsertQuery('public', 'clientes', { ...identidade, origem_cadastro: 'crm_manual' });
           const identRows = await transaction.unsafe(insertIdentidade.text, insertIdentidade.values);
           const identRow = identRows[0];
           const insertExtensao = buildInsertQuery(CRM_SCHEMA, 'clientes_crm', { ...extensao, id: identRow.id });

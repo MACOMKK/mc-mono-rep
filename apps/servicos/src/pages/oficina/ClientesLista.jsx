@@ -3,9 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Plus, User } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
-import { Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle } from '@macom/ui';
+import { Badge, Button, CarLoader, Dialog, DialogContent, DialogHeader, DialogTitle } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
 import { formatDocumento, formatTelefone } from '@/lib/oficinaFormat';
+import { ORIGEM_CADASTRO_LABEL } from '@/lib/origemCadastro';
 import Pagination from '@/components/Pagination';
 import SearchInput from '@/components/SearchInput';
 import { usePagination } from '@/hooks/usePagination';
@@ -84,7 +85,12 @@ export default function ClientesLista() {
                   <User className="h-5 w-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium uppercase">{item.nome}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="truncate font-medium uppercase">{item.nome}</p>
+                    {ORIGEM_CADASTRO_LABEL[item.origem_cadastro] && (
+                      <Badge variant="outline">{ORIGEM_CADASTRO_LABEL[item.origem_cadastro]}</Badge>
+                    )}
+                  </div>
                   <p className="truncate text-xs text-muted-foreground">
                     {[formatTelefone(item.telefone), formatDocumento(item.cpf_cnpj), item.email].filter(Boolean).join(' · ') || '—'}
                   </p>

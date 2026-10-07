@@ -20,6 +20,7 @@ import { Ban, Building2, Car, Clock3, History, Mail, MapPin, Paperclip, Pencil, 
 
 import { findEtapaDoLead, getEtapaVisual, getLeadEtapaLabel, isLeadAtivo } from '@/lib/leadStatus';
 import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 
 const STATUS_LABEL = {
   lead: 'Lead',
@@ -31,6 +32,16 @@ const STATUS_STYLE = {
   lead: 'border-blue-200 bg-blue-50 text-blue-700',
   cliente: 'border-green-200 bg-green-50 text-green-700',
   pos_venda: 'border-amber-200 bg-amber-50 text-amber-700',
+};
+
+// Labels de public.clientes.origem_cadastro — ver apps/servicos/src/lib/origemCadastro.js
+// (mesma lista de valores, duplicada aqui porque nao ha pacote @macom/* compartilhado
+// entre crm/servicos para esse tipo de constante de UI).
+const ORIGEM_CADASTRO_LABEL = {
+  crm_lead: 'Lead',
+  crm_manual: 'Cadastro manual',
+  servicos_manual: 'Oficina',
+  importacao_lote: 'Importado',
 };
 
 function LeadEtapaBadge({ lead, etapas }) {
@@ -110,6 +121,7 @@ function sortTimeline(items) {
 export default function Clientes() {
   const { etapas } = usePipelineEtapas();
   const [busca, setBusca] = useState('');
+  const buscaDebounced = useDebouncedValue(busca);
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState(null);
@@ -133,11 +145,11 @@ export default function Clientes() {
     ...(periodoFim ? { created_to: `${periodoFim}T23:59:59.999` } : {}),
   }), [empresa, periodoFim, periodoInicio]);
 
-  const clientesQueryKey = ['clientes', { filters: clienteFilters, busca, page, pageSize }];
+  const clientesQueryKey = ['clientes', { filters: clienteFilters, busca: buscaDebounced, page, pageSize }];
 
   useEffect(() => {
     setPage(1);
-  }, [busca, empresa, periodoFim, periodoInicio]);
+  }, [buscaDebounced, empresa, periodoFim, periodoInicio]);
 
   const { data: clientesPage = { rows: [], count: 0, page: 1, pageSize }, isFetching } = useQuery({
     queryKey: clientesQueryKey,
@@ -146,7 +158,7 @@ export default function Clientes() {
       page,
       limit: pageSize,
       filters: clienteFilters,
-      search: busca,
+      search: buscaDebounced,
     }),
   });
   const clientes = clientesPage.rows;
@@ -635,7 +647,14 @@ export default function Clientes() {
                   onClick={() => openCliente(cliente)}
                 >
                   <TableCell>
-                    <div className="font-bold text-sm">{cliente.nome}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="font-bold text-sm">{cliente.nome}</div>
+                      {ORIGEM_CADASTRO_LABEL[cliente.origem_cadastro] && (
+                        <Badge className="rounded-sm border border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-600">
+                          {ORIGEM_CADASTRO_LABEL[cliente.origem_cadastro]}
+                        </Badge>
+                      )}
+                    </div>
                     <div className="mt-0.5 text-[11px] uppercase tracking-wider text-muted-foreground">cadastro do cliente</div>
                   </TableCell>
                   <TableCell className="space-y-1 text-xs">
@@ -686,7 +705,14 @@ export default function Clientes() {
               <div>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-lg font-black uppercase tracking-widest">{selected.nome}</h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-black uppercase tracking-widest">{selected.nome}</h2>
+                      {ORIGEM_CADASTRO_LABEL[selected.origem_cadastro] && (
+                        <Badge className="rounded-sm border border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-600">
+                          {ORIGEM_CADASTRO_LABEL[selected.origem_cadastro]}
+                        </Badge>
+                      )}
+                    </div>
                     <div className="mt-2 grid gap-2 text-sm text-muted-foreground">
                       {selected.telefone ? <span className="flex items-center gap-2"><Phone className="h-4 w-4" />{selected.telefone}</span> : null}
                       {selected.email ? <span className="flex items-center gap-2"><Mail className="h-4 w-4" />{selected.email}</span> : null}
