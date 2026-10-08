@@ -58,6 +58,8 @@ export const TIPOS_ANEXO = [
   { value: 'conta_telefone', label: 'Conta de telefone / internet' },
   { value: 'folha_comissao', label: 'Folha ou relação de comissão' },
   { value: 'comunicado_interno', label: 'Comunicado interno' },
+  { value: 'proposta', label: 'Proposta' },
+  { value: 'ordem_servico', label: 'Ordem de Serviço' },
   { value: 'outros', label: 'Outros' },
 ];
 
@@ -75,6 +77,8 @@ const REGRAS_CLASSIFICACAO_ANEXO = [
   { termos: ['pix'], tipoAnexo: 'comprovante_pix' },
   { termos: ['orcamento', 'orçamento', 'cotacao', 'cotação'], tipoAnexo: 'orcamento' },
   { termos: ['recibo'], tipoAnexo: 'recibo' },
+  { termos: ['proposta'], tipoAnexo: 'proposta' },
+  { termos: ['ordem_servico', 'ordem de servico', 'ordem de serviço', 'ordemservico'], tipoAnexo: 'ordem_servico' },
 ];
 
 export function inferirTipoAnexo(nomeArquivo) {

@@ -120,6 +120,8 @@ const ANEXO_TIPOS = [
   'conta_telefone',
   'folha_comissao',
   'comunicado_interno',
+  'proposta',
+  'ordem_servico',
   'outros',
 ] as const;
 const ORDER_BY_COLUMNS: Record<string, string> = {

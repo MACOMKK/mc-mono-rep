@@ -3,17 +3,6 @@ import { cn } from '@/lib/utils';
 import { Phone, Car, Building2, CalendarClock, UserRound, AlertTriangle } from 'lucide-react';
 import { findEtapaDoLead, isLeadAtivo } from '@/lib/leadStatus';
 
-// Cores das etapas de sistema (mantidas como antes); etapa livre usa a cor do pipeline.
-const CORES_ETAPA_SISTEMA = {
-  novo: { color: 'border-t-blue-500', dot: 'bg-blue-500' },
-  tentativa_contato: { color: 'border-t-amber-400', dot: 'bg-amber-400' },
-  em_contato: { color: 'border-t-cyan-500', dot: 'bg-cyan-500' },
-  qualificado: { color: 'border-t-violet-500', dot: 'bg-violet-500' },
-  negociacao: { color: 'border-t-orange-500', dot: 'bg-orange-500' },
-  convertido: { color: 'border-t-green-600', dot: 'bg-green-600' },
-  perdido: { color: 'border-t-red-600', dot: 'bg-red-600' },
-};
-
 function LeadCard({ lead, index, onClick, semContatoAgendado }) {
   const isSaving = String(lead.id).startsWith('temp-');
   const slaLabel = lead.sla_status === 'concluido'
@@ -124,20 +113,19 @@ export default function LeadsKanban({ leads, etapas = [], onDragEnd, onCardClick
       <div className="flex gap-3 overflow-x-auto h-full items-stretch">
         {etapas.map((etapa) => {
           const colLeads = leadsPorEtapa.get(etapa.id) || [];
-          const coresSistema = CORES_ETAPA_SISTEMA[etapa.chave_sistema];
           const isGanho = etapa.tipo === 'ganho';
           return (
             <div
               key={etapa.id}
-              className={cn('flex flex-col h-full flex-1 min-w-[240px] max-w-[300px] bg-[#f4f4f4] border-t-4 shrink-0', coresSistema?.color)}
-              style={coresSistema ? undefined : { borderTopColor: etapa.cor }}
+              className="flex flex-col h-full flex-1 min-w-[240px] max-w-[300px] bg-[#f4f4f4] border-t-4 shrink-0"
+              style={{ borderTopColor: etapa.cor }}
             >
               {/* Column Header */}
               <div className="px-3 py-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span
-                    className={cn('w-2 h-2 rounded-full', coresSistema?.dot)}
-                    style={coresSistema ? undefined : { backgroundColor: etapa.cor }}
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: etapa.cor }}
                   />
                   <span className="text-[11px] font-black uppercase tracking-widest">{etapa.nome}</span>
                 </div>
