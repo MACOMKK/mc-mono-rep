@@ -491,6 +491,7 @@ function mapLeadPayload(data = {}, clienteId) {
     email_normalizado: normalizeEmail(email) || null,
     origem_id: data.origem_id,
     status: data.status || 'novo',
+    ...(data.pipeline_id ? { pipeline_id: data.pipeline_id } : {}),
     ...(data.etapa_id ? { etapa_id: data.etapa_id } : {}),
     modelo_interesse: data.modelo_interesse || formatVehicleLabel(data.veiculo_interesse) || null,
     empresa: normalizeEmpresa(data.empresa),

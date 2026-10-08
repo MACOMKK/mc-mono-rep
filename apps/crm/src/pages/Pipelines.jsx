@@ -187,6 +187,7 @@ export default function Pipelines() {
   const [novoPipelineAberto, setNovoPipelineAberto] = useState(false);
   const [novaEtapaAberta, setNovaEtapaAberta] = useState(false);
   const [etapaParaExcluir, setEtapaParaExcluir] = useState(null);
+  const [pipelineParaExcluir, setPipelineParaExcluir] = useState(null);
 
   const { data: pipelines = [], isLoading: carregandoPipelines } = useQuery({
     queryKey: ['crm-pipelines'],
@@ -220,6 +221,20 @@ export default function Pipelines() {
       toast({ title: 'Pipeline criado', variant: 'success' });
     },
     onError: (error) => toast({ title: 'Nao foi possivel criar o pipeline', description: error.message, variant: 'destructive' }),
+  });
+
+  const excluirPipelineMutation = useMutation({
+    mutationFn: (id) => crmDataClient.entities.Pipeline.delete(id),
+    onSuccess: async (_result, id) => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-pipelines'] });
+      if (pipelineSelecionadoId === id) setPipelineSelecionadoId(null);
+      setPipelineParaExcluir(null);
+      toast({ title: 'Pipeline excluido', variant: 'success' });
+    },
+    onError: (error) => {
+      setPipelineParaExcluir(null);
+      toast({ title: 'Nao foi possivel excluir o pipeline', description: error.message, variant: 'destructive' });
+    },
   });
 
   const proximaOrdem = (lista) => lista.reduce((maior, etapa) => Math.max(maior, etapa.ordem), -1) + 1;
@@ -463,6 +478,19 @@ export default function Pipelines() {
               </SelectContent>
             </Select>
           </div>
+          <div className="sm:col-span-2 border-t pt-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-none text-xs font-bold uppercase tracking-wider text-red-600 disabled:opacity-30"
+              disabled={pipelineSelecionado.padrao}
+              title={pipelineSelecionado.padrao ? 'O pipeline padrao nao pode ser excluido' : 'Excluir pipeline'}
+              onClick={() => setPipelineParaExcluir(pipelineSelecionado)}
+            >
+              <Trash2 className="mr-2 h-3.5 w-3.5" /> Excluir pipeline
+            </Button>
+          </div>
         </div>
       ) : null}
 
@@ -646,6 +674,29 @@ export default function Pipelines() {
               }}
             >
               Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(pipelineParaExcluir)} onOpenChange={(open) => !open && setPipelineParaExcluir(null)}>
+        <AlertDialogContent className="rounded-none">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-black uppercase tracking-widest">Excluir pipeline</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o pipeline "{pipelineParaExcluir?.nome}" e todas as suas etapas?
+              Essa acao nao pode ser desfeita. Pipelines com leads nao podem ser excluidos: mova ou exclua os
+              leads antes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-none text-xs font-bold uppercase tracking-wider">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-none bg-red-600 text-xs font-bold uppercase tracking-wider hover:bg-red-700"
+              disabled={excluirPipelineMutation.isPending}
+              onClick={() => excluirPipelineMutation.mutate(pipelineParaExcluir.id)}
+            >
+              {excluirPipelineMutation.isPending ? 'Excluindo...' : 'Excluir'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
