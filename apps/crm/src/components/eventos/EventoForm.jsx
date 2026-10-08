@@ -112,9 +112,9 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
 
   // Motivo exigido pelo resultado conforme a etapa atual do lead (espelha
   // prepare_activity_business_state / apply_activity_outcome).
-  const { etapas } = usePipelineEtapas({ pipelineId: selectedLead?.pipeline_id || undefined });
+  const { etapas, automacoes } = usePipelineEtapas({ pipelineId: selectedLead?.pipeline_id || undefined });
   const etapaAtualLead = findEtapaDoLead(etapas, selectedLead);
-  const motivoAplicaEm = needsResult ? resultadoMotivoAplicaEm(data.resultado, etapaAtualLead, etapas) : null;
+  const motivoAplicaEm = needsResult ? resultadoMotivoAplicaEm(data.resultado, etapaAtualLead, etapas, automacoes) : null;
   const needsMotivoStatus = Boolean(motivoAplicaEm);
 
   const canSave = Boolean(

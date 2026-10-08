@@ -89,7 +89,8 @@ export default function Leads() {
   const [statusTarget, setStatusTarget] = useState(null); // { lead, etapa }
   const [statusMotivoId, setStatusMotivoId] = useState('');
   const [statusFiltro, setStatusFiltro] = useState('todos'); // 'todos' ou id da etapa
-  const { etapas, etapasAtivas } = usePipelineEtapas();
+  const [pipelineId, setPipelineId] = useState(null);
+  const { pipeline, pipelines, etapas, etapasAtivas } = usePipelineEtapas({ pipelineId: pipelineId || undefined });
   const [viewMode, setViewMode] = useState('kanban');
   const [busca, setBusca] = useState('');
   const buscaDebounced = useDebouncedValue(busca);
@@ -104,6 +105,7 @@ export default function Leads() {
   const pageSize = 50;
 
   const filters = useMemo(() => ({
+    ...(pipeline?.id ? { pipeline_id: pipeline.id } : {}),
     ...(empresa !== 'Todas' ? { empresa } : {}),
     ...(statusFiltro !== 'todos' ? { etapa_id: statusFiltro } : {}),
     ...(responsavelFiltro !== 'todos' && responsavelFiltro !== 'sem_responsavel' ? { responsavel_id: responsavelFiltro } : {}),
@@ -112,13 +114,17 @@ export default function Leads() {
     ...(slaFiltro !== 'todos' ? { sla_status: slaFiltro } : {}),
     ...(periodoInicio ? { created_from: `${periodoInicio}T00:00:00` } : {}),
     ...(periodoFim ? { created_to: `${periodoFim}T23:59:59.999` } : {}),
-  }), [empresa, origemFiltro, periodoFim, periodoInicio, responsavelFiltro, slaFiltro, statusFiltro]);
+  }), [empresa, origemFiltro, periodoFim, periodoInicio, pipeline?.id, responsavelFiltro, slaFiltro, statusFiltro]);
 
   const leadsQueryKey = ['leads', { filters, busca: buscaDebounced, page, pageSize }];
 
   useEffect(() => {
     setPage(1);
-  }, [buscaDebounced, empresa, origemFiltro, periodoFim, periodoInicio, responsavelFiltro, slaFiltro, statusFiltro]);
+  }, [buscaDebounced, empresa, origemFiltro, periodoFim, periodoInicio, pipeline?.id, responsavelFiltro, slaFiltro, statusFiltro]);
+
+  useEffect(() => {
+    setStatusFiltro('todos');
+  }, [pipeline?.id]);
 
   const { data: leadsPage = { rows: [], count: 0, page: 1, pageSize }, isFetching, isError, error: leadsError } = useQuery({
     queryKey: leadsQueryKey,
@@ -678,6 +684,18 @@ export default function Leads() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {pipelines.length > 1 ? (
+            <Select value={pipeline?.id || ''} onValueChange={(value) => setPipelineId(value)}>
+              <SelectTrigger className="h-9 w-44 rounded-none text-xs font-bold uppercase tracking-wider">
+                <SelectValue placeholder="Pipeline" />
+              </SelectTrigger>
+              <SelectContent>
+                {pipelines.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <div className="flex border border-border bg-white">
             <button
               onClick={() => setViewMode('kanban')}
@@ -915,6 +933,7 @@ export default function Leads() {
           open={formOpen}
           onOpenChange={setFormOpen}
           lead={editing}
+          defaultPipelineId={!editing ? pipeline?.id : undefined}
           responsaveis={responsaveis}
           onSave={(data) => saveMutation.mutate({ id: editing?.id || null, data })}
           onAutoSave={(data) => editing?.id && autoSaveMutation.mutate({ id: editing.id, data })}

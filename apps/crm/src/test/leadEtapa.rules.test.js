@@ -17,7 +17,7 @@ import {
 //   prepare_activity_business_state() -> 20261002210000_crm_prepare_activity_business_state_por_etapa.sql
 
 const etapa = (id, ordem, tipo, chave_sistema = null, extra = {}) => ({
-  id, nome: id, cor: '#3b82f6', ordem, tipo, chave_sistema, ativo: true, ...extra,
+  id, nome: id, cor: '#3b82f6', ordem, tipo, chave_sistema, ativo: true, exige_motivo: false, ...extra,
 });
 
 const ETAPAS = [
@@ -25,13 +25,24 @@ const ETAPAS = [
   etapa('tentativa', 1, 'em_andamento', 'tentativa_contato'),
   etapa('livre-antes-contato', 1.5, 'em_andamento'),
   etapa('em_contato', 2, 'em_andamento', 'em_contato'),
-  etapa('qualificado', 3, 'em_andamento', 'qualificado'),
+  etapa('qualificado', 3, 'em_andamento', 'qualificado', { exige_motivo: true }),
   etapa('negociacao', 4, 'em_andamento', 'negociacao'),
   etapa('livre-pos-negoc', 4.5, 'em_andamento'),
   etapa('convertido', 5, 'ganho', 'convertido'),
   etapa('perdido', 6, 'perdido', 'perdido'),
 ];
 const byId = (id) => ETAPAS.find((item) => item.id === id);
+
+// Automacoes (fase 2.7): replica o backfill da migration 20261008130000 para o pipeline
+// Comercial -- mesmo mapa resultado -> etapa que antes vinha hardcoded por chave_sistema.
+const automacao = (resultado, etapaDestinoId) => ({ resultado, etapa_destino_id: etapaDestinoId });
+const AUTOMACOES = [
+  automacao('contato_realizado', 'em_contato'),
+  automacao('sem_resposta', 'tentativa'),
+  automacao('visita_agendada', 'qualificado'),
+  automacao('test_drive', 'qualificado'),
+  automacao('proposta_enviada', 'negociacao'),
+];
 
 describe('etapaMotivoAplicaEm (espelha prepare_lead_phase1)', () => {
   it('exige motivo em qualificado (por chave) e nas etapas de ganho/perdido (por tipo)', () => {
@@ -58,51 +69,55 @@ describe('isLeadEligibleForResultadoEtapa (espelha apply_activity_outcome)', () 
   });
 
   it('demais resultados so com etapa em andamento e ordem <= a do alvo', () => {
-    expect(isLeadEligibleForResultadoEtapa('visita_agendada', byId('em_contato'), ETAPAS)).toBe(true);
-    expect(isLeadEligibleForResultadoEtapa('test_drive', byId('qualificado'), ETAPAS)).toBe(true);
-    expect(isLeadEligibleForResultadoEtapa('visita_agendada', byId('negociacao'), ETAPAS)).toBe(false);
-    expect(isLeadEligibleForResultadoEtapa('proposta_enviada', byId('livre-pos-negoc'), ETAPAS)).toBe(false);
-    expect(isLeadEligibleForResultadoEtapa('contato_realizado', byId('livre-antes-contato'), ETAPAS)).toBe(true);
-    expect(isLeadEligibleForResultadoEtapa('proposta_enviada', byId('convertido'), ETAPAS)).toBe(false);
-    expect(isLeadEligibleForResultadoEtapa('contato_realizado', byId('perdido'), ETAPAS)).toBe(false);
+    expect(isLeadEligibleForResultadoEtapa('visita_agendada', byId('em_contato'), ETAPAS, AUTOMACOES)).toBe(true);
+    expect(isLeadEligibleForResultadoEtapa('test_drive', byId('qualificado'), ETAPAS, AUTOMACOES)).toBe(true);
+    expect(isLeadEligibleForResultadoEtapa('visita_agendada', byId('negociacao'), ETAPAS, AUTOMACOES)).toBe(false);
+    expect(isLeadEligibleForResultadoEtapa('proposta_enviada', byId('livre-pos-negoc'), ETAPAS, AUTOMACOES)).toBe(false);
+    expect(isLeadEligibleForResultadoEtapa('contato_realizado', byId('livre-antes-contato'), ETAPAS, AUTOMACOES)).toBe(true);
+    expect(isLeadEligibleForResultadoEtapa('proposta_enviada', byId('convertido'), ETAPAS, AUTOMACOES)).toBe(false);
+    expect(isLeadEligibleForResultadoEtapa('contato_realizado', byId('perdido'), ETAPAS, AUTOMACOES)).toBe(false);
   });
 
-  it('resultado desconhecido ou pipeline sem a etapa alvo -> nao move', () => {
-    expect(isLeadEligibleForResultadoEtapa('inexistente', byId('novo'), ETAPAS)).toBe(false);
-    const semQualificado = ETAPAS.filter((item) => item.chave_sistema !== 'qualificado');
-    expect(isLeadEligibleForResultadoEtapa('visita_agendada', byId('novo'), semQualificado)).toBe(false);
+  it('resultado desconhecido ou pipeline sem automacao cadastrada -> nao move', () => {
+    expect(isLeadEligibleForResultadoEtapa('inexistente', byId('novo'), ETAPAS, AUTOMACOES)).toBe(false);
+    const semAutomacaoQualificado = AUTOMACOES.filter((item) => item.resultado !== 'visita_agendada');
+    expect(isLeadEligibleForResultadoEtapa('visita_agendada', byId('novo'), ETAPAS, semAutomacaoQualificado)).toBe(false);
   });
 });
 
 describe('resolveEtapaAlvoResultado', () => {
-  it('usa a etapa de sistema e, para venda/perdido, cai na 1a etapa ativa do tipo', () => {
-    expect(resolveEtapaAlvoResultado('proposta_enviada', ETAPAS).id).toBe('negociacao');
+  it('usa a automacao configurada e, para venda/perdido, a etapa de sistema (fallback 1a etapa ativa do tipo)', () => {
+    expect(resolveEtapaAlvoResultado('proposta_enviada', ETAPAS, AUTOMACOES).id).toBe('negociacao');
     const semConvertido = [
       ...ETAPAS.filter((item) => item.chave_sistema !== 'convertido'),
       etapa('ganho-b', 9, 'ganho'),
       etapa('ganho-a', 8, 'ganho'),
       etapa('ganho-inativo', 7, 'ganho', null, { ativo: false }),
     ];
-    expect(resolveEtapaAlvoResultado('venda_realizada', semConvertido).id).toBe('ganho-a');
+    expect(resolveEtapaAlvoResultado('venda_realizada', semConvertido, AUTOMACOES).id).toBe('ganho-a');
+  });
+
+  it('sem automacao cadastrada para o resultado, nao resolve alvo', () => {
+    expect(resolveEtapaAlvoResultado('proposta_enviada', ETAPAS, [])).toBeNull();
   });
 });
 
 describe('resultadoMotivoAplicaEm (espelha prepare_activity_business_state)', () => {
   it('venda/perdido sempre exigem motivo', () => {
-    expect(resultadoMotivoAplicaEm('venda_realizada', byId('negociacao'), ETAPAS)).toBe('ganho');
-    expect(resultadoMotivoAplicaEm('lead_perdido', byId('perdido'), ETAPAS)).toBe('perdido');
+    expect(resultadoMotivoAplicaEm('venda_realizada', byId('negociacao'), ETAPAS, AUTOMACOES)).toBe('ganho');
+    expect(resultadoMotivoAplicaEm('lead_perdido', byId('perdido'), ETAPAS, AUTOMACOES)).toBe('perdido');
   });
 
-  it('visita/test_drive so exigem quando vao mover para qualificado', () => {
-    expect(resultadoMotivoAplicaEm('visita_agendada', byId('novo'), ETAPAS)).toBe('qualificado');
-    expect(resultadoMotivoAplicaEm('test_drive', byId('qualificado'), ETAPAS)).toBe('qualificado');
-    expect(resultadoMotivoAplicaEm('visita_agendada', byId('negociacao'), ETAPAS)).toBeNull();
-    expect(resultadoMotivoAplicaEm('visita_agendada', byId('perdido'), ETAPAS)).toBeNull();
+  it('visita/test_drive so exigem quando a automacao leva para uma etapa que exige motivo', () => {
+    expect(resultadoMotivoAplicaEm('visita_agendada', byId('novo'), ETAPAS, AUTOMACOES)).toBe('qualificado');
+    expect(resultadoMotivoAplicaEm('test_drive', byId('qualificado'), ETAPAS, AUTOMACOES)).toBe('qualificado');
+    expect(resultadoMotivoAplicaEm('visita_agendada', byId('negociacao'), ETAPAS, AUTOMACOES)).toBeNull();
+    expect(resultadoMotivoAplicaEm('visita_agendada', byId('perdido'), ETAPAS, AUTOMACOES)).toBeNull();
   });
 
   it('demais resultados nao exigem motivo', () => {
     ['proposta_enviada', 'contato_realizado', 'sem_resposta'].forEach((resultado) => {
-      expect(resultadoMotivoAplicaEm(resultado, byId('novo'), ETAPAS)).toBeNull();
+      expect(resultadoMotivoAplicaEm(resultado, byId('novo'), ETAPAS, AUTOMACOES)).toBeNull();
     });
   });
 });

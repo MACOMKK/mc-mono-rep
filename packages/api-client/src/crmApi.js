@@ -240,6 +240,7 @@ export const crmApi = {
   },
   pipelines: buildEntity('pipelines'),
   etapas_pipeline: buildEntity('etapas_pipeline'),
+  pipeline_automacoes: buildEntity('pipeline_automacoes'),
   motivos_status: buildEntity('motivos_status'),
   propostas: {
     ...buildEntity('propostas'),

@@ -108,15 +108,12 @@ export const MOTIVO_APLICA_EM_LABEL = {
   perdido: 'Perdido',
 };
 
-// Etapa de sistema (chave_sistema) que cada resultado de atividade busca no pipeline do lead.
-export const RESULTADO_ETAPA_CHAVE = {
+// Alvo de venda_realizada/lead_perdido: etapa de sistema (chave_sistema) do pipeline do lead,
+// nao configuravel por pipeline_automacoes (fase 2.7) -- qualquer pipeline so tem uma nocao de
+// "ganho"/"perdido" por tipo, entao nao faz sentido ser por-pipeline.
+const RESULTADO_ETAPA_CHAVE_FIXA = {
   venda_realizada: 'convertido',
   lead_perdido: 'perdido',
-  proposta_enviada: 'negociacao',
-  visita_agendada: 'qualificado',
-  test_drive: 'qualificado',
-  contato_realizado: 'em_contato',
-  sem_resposta: 'tentativa_contato',
 };
 
 const RESULTADO_ETAPA_TIPO_FALLBACK = {
@@ -130,10 +127,13 @@ export function etapaTipoFromStatus(status) {
   return STATUS_TIPO[status] || 'em_andamento';
 }
 
+// Motivo exigido para o lead permanecer/entrar nesta etapa: sempre em ganho/perdido (por tipo,
+// nao configuravel); nas demais, so se a etapa tiver `exige_motivo` marcado na tela de Pipelines
+// (fase 2.7 -- antes disso, exigia so na etapa de sistema 'qualificado').
 export function etapaMotivoAplicaEm(etapa) {
   if (!etapa) return null;
   if (etapa.tipo === 'ganho' || etapa.tipo === 'perdido') return etapa.tipo;
-  if (etapa.chave_sistema === 'qualificado') return 'qualificado';
+  if (etapa.exige_motivo) return 'qualificado';
   return null;
 }
 
@@ -195,37 +195,40 @@ export function getEtapaVisual(etapa, { variant = 'badge', status } = {}) {
 }
 
 // Etapa que a conclusao da atividade com este resultado busca no pipeline (mesma busca de
-// apply_activity_outcome): etapa de sistema; venda/perdido caem na 1a etapa ativa do tipo.
-export function resolveEtapaAlvoResultado(resultado, etapas = []) {
-  const chave = RESULTADO_ETAPA_CHAVE[resultado];
-  if (!chave) return null;
-  const porChave = etapas.find((etapa) => etapa.chave_sistema === chave);
-  if (porChave) return porChave;
-  const tipo = RESULTADO_ETAPA_TIPO_FALLBACK[resultado];
-  if (!tipo) return null;
-  return [...etapas]
-    .filter((etapa) => etapa.tipo === tipo && etapa.ativo !== false)
-    .sort((a, b) => Number(a.ordem) - Number(b.ordem))[0] || null;
+// apply_activity_outcome): venda/perdido pela etapa de sistema (fallback 1a etapa ativa do
+// tipo); os demais resultados pela automacao configurada em Pipelines (fase 2.7) -- sem
+// automacao cadastrada para o pipeline, retorna null (o resultado nao move o lead).
+export function resolveEtapaAlvoResultado(resultado, etapas = [], automacoes = []) {
+  const chave = RESULTADO_ETAPA_CHAVE_FIXA[resultado];
+  if (chave) {
+    const porChave = etapas.find((etapa) => etapa.chave_sistema === chave);
+    if (porChave) return porChave;
+    const tipo = RESULTADO_ETAPA_TIPO_FALLBACK[resultado];
+    return [...etapas]
+      .filter((etapa) => etapa.tipo === tipo && etapa.ativo !== false)
+      .sort((a, b) => Number(a.ordem) - Number(b.ordem))[0] || null;
+  }
+  const automacao = automacoes.find((item) => item.resultado === resultado);
+  if (!automacao) return null;
+  return etapas.find((etapa) => etapa.id === automacao.etapa_destino_id) || null;
 }
 
 // Replica a elegibilidade de apply_activity_outcome: venda/perdido de qualquer etapa; os
 // demais so com etapa atual em_andamento e ordem <= ordem do alvo.
-export function isLeadEligibleForResultadoEtapa(resultado, etapaAtual, etapas = []) {
-  if (!(resultado in RESULTADO_ETAPA_CHAVE)) return false;
-  const alvo = resolveEtapaAlvoResultado(resultado, etapas);
+export function isLeadEligibleForResultadoEtapa(resultado, etapaAtual, etapas = [], automacoes = []) {
+  const alvo = resolveEtapaAlvoResultado(resultado, etapas, automacoes);
   if (!alvo) return false;
   if (resultado in RESULTADO_ETAPA_TIPO_FALLBACK) return true;
   return isEtapaEmAndamento(etapaAtual) && Number(etapaAtual.ordem) <= Number(alvo.ordem);
 }
 
 // Motivo (aplica_em) exigido ao concluir a atividade, ou null. Espelha
-// prepare_activity_business_state: venda/perdido sempre; visita/test_drive so quando a
-// atividade vai mover o lead para a etapa qualificado.
-export function resultadoMotivoAplicaEm(resultado, etapaAtual, etapas = []) {
+// prepare_activity_business_state: venda/perdido sempre; demais resultados so quando a etapa
+// destino da automacao exige motivo e a atividade realmente vai mover o lead pra la.
+export function resultadoMotivoAplicaEm(resultado, etapaAtual, etapas = [], automacoes = []) {
   if (resultado === 'venda_realizada') return 'ganho';
   if (resultado === 'lead_perdido') return 'perdido';
-  if (resultado === 'visita_agendada' || resultado === 'test_drive') {
-    return isLeadEligibleForResultadoEtapa(resultado, etapaAtual, etapas) ? 'qualificado' : null;
-  }
-  return null;
+  const alvo = resolveEtapaAlvoResultado(resultado, etapas, automacoes);
+  if (!alvo || !alvo.exige_motivo) return null;
+  return isLeadEligibleForResultadoEtapa(resultado, etapaAtual, etapas, automacoes) ? 'qualificado' : null;
 }

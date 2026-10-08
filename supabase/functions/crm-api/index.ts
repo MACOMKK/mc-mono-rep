@@ -191,13 +191,19 @@ const ENTITY_CONFIG = {
     table: 'pipelines',
     orderBy: 'nome',
     orderDirection: 'asc',
-    allowedFields: ['nome', 'padrao', 'ativo'],
+    allowedFields: ['nome', 'padrao', 'ativo', 'etapa_inicial_id', 'etapa_cancelamento_id'],
   },
   etapas_pipeline: {
     table: 'etapas_pipeline',
     orderBy: 'ordem',
     orderDirection: 'asc',
-    allowedFields: ['pipeline_id', 'nome', 'cor', 'ordem', 'tipo', 'ativo'],
+    allowedFields: ['pipeline_id', 'nome', 'cor', 'ordem', 'tipo', 'ativo', 'exige_motivo'],
+  },
+  pipeline_automacoes: {
+    table: 'pipeline_automacoes',
+    orderBy: 'resultado',
+    orderDirection: 'asc',
+    allowedFields: ['pipeline_id', 'resultado', 'etapa_destino_id'],
   },
   motivos_status: {
     table: 'motivos_status',
@@ -403,6 +409,18 @@ function mapDatabaseError(error: unknown) {
     return 'Ja existe uma etapa de sistema com esta chave neste pipeline.';
   }
 
+  if (message.includes('pipelines_etapa_inicial_id_fkey') || message.includes('pipelines_etapa_cancelamento_id_fkey')) {
+    return 'Esta etapa esta configurada como etapa inicial ou de cancelamento de um pipeline. Troque a configuracao antes de excluir.';
+  }
+
+  if (message.includes('pipeline_automacoes_pipeline_id_resultado_key')) {
+    return 'Ja existe uma automacao cadastrada para este resultado neste pipeline.';
+  }
+
+  if (message.includes('pipeline_automacoes_etapa_destino_id_fkey')) {
+    return 'Esta etapa possui automacoes vinculadas. Remova-as antes de excluir.';
+  }
+
   if (message.includes('nao pode ser excluido') || message.includes('nao podem ser excluidas') || message.includes('nao podem trocar de pipeline')) {
     return message;
   }
@@ -421,7 +439,11 @@ function mapDatabaseError(error: unknown) {
     || message.includes('Etapa do pipeline nao encontrada')
     || message.includes('O status e a etapa informados para o lead nao conferem')
     || message.includes('A etapa nao pertence ao pipeline do lead')
-    || message.includes('O pipeline do lead nao possui etapa')) {
+    || message.includes('O pipeline do lead nao possui etapa')
+    || message.includes('etapa inicial ou de cancelamento')
+    || message.includes('destino de uma automacao')
+    || message.includes('precisa manter pelo menos uma etapa ativa')
+    || message.includes('A etapa destino nao pertence a este pipeline')) {
     return message;
   }
 
@@ -2077,9 +2099,9 @@ Deno.serve(async (request) => {
           [canceledVenda.veiculo_estoque_id],
         );
 
-        // Lead em etapa de ganho volta para a etapa de sistema 'negociacao' do pipeline dele
-        // (sem ela, para a ultima etapa ativa em andamento). O status e derivado da etapa
-        // pelo trigger trg_crm_leads_a_sync_etapa.
+        // Lead em etapa de ganho volta para a pipelines.etapa_cancelamento_id configurada
+        // (fallback: etapa de sistema 'negociacao', depois a ultima etapa ativa em andamento).
+        // O status e derivado da etapa pelo trigger trg_crm_leads_a_sync_etapa.
         const leadRows = await transaction.unsafe(
           `select status from ${CRM_SCHEMA}.leads where id = $1 limit 1;`,
           [canceledVenda.lead_id],
@@ -2089,6 +2111,7 @@ Deno.serve(async (request) => {
         const reopenedRows = await transaction.unsafe(
           `update ${CRM_SCHEMA}.leads l
            set etapa_id = coalesce(
+             (select p.etapa_cancelamento_id from ${CRM_SCHEMA}.pipelines p where p.id = l.pipeline_id),
              (select e.id from ${CRM_SCHEMA}.etapas_pipeline e
               where e.pipeline_id = l.pipeline_id and e.chave_sistema = 'negociacao'),
              (select e.id from ${CRM_SCHEMA}.etapas_pipeline e
@@ -2176,7 +2199,7 @@ Deno.serve(async (request) => {
     }
 
     if (
-      ['categorias_veiculo', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'cores_veiculo', 'veiculos_estoque', 'pipelines', 'etapas_pipeline'].includes(entity)
+      ['categorias_veiculo', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'cores_veiculo', 'veiculos_estoque', 'pipelines', 'etapas_pipeline', 'pipeline_automacoes'].includes(entity)
       && ['create', 'update', 'delete'].includes(action)
     ) {
       ensureCanConfigure(access);
@@ -2306,7 +2329,7 @@ Deno.serve(async (request) => {
       if (entity === 'propostas' && payload.eh_teste === true && !['admin', 'gestor'].includes(String(access?.nivel_acesso || ''))) {
         return json({ error: 'Apenas administradores e gestores podem marcar uma proposta como teste.' }, 403);
       }
-      const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'cores_veiculo', 'pipelines', 'etapas_pipeline', 'motivos_status', 'conversas_atendimento', 'mensagens_atendimento'];
+      const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'cores_veiculo', 'pipelines', 'etapas_pipeline', 'pipeline_automacoes', 'motivos_status', 'conversas_atendimento', 'mensagens_atendimento'];
       if (collaborator?.id && !entitiesWithoutCriadoPor.includes(entity)) payload.criado_por = collaborator.id;
       if (entity === 'atendimentos' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);

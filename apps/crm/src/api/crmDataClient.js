@@ -283,6 +283,8 @@ function mapPipelineRow(row = {}) {
     nome: row.nome || '',
     padrao: row.padrao === true,
     ativo: row.ativo !== false,
+    etapa_inicial_id: row.etapa_inicial_id || null,
+    etapa_cancelamento_id: row.etapa_cancelamento_id || null,
     ...mapBaseDates(row),
   };
 }
@@ -297,6 +299,17 @@ function mapEtapaPipelineRow(row = {}) {
     tipo: row.tipo || 'em_andamento',
     chave_sistema: row.chave_sistema || null,
     ativo: row.ativo !== false,
+    exige_motivo: row.exige_motivo === true,
+    ...mapBaseDates(row),
+  };
+}
+
+function mapPipelineAutomacaoRow(row = {}) {
+  return {
+    id: row.id,
+    pipeline_id: row.pipeline_id || '',
+    resultado: row.resultado || '',
+    etapa_destino_id: row.etapa_destino_id || '',
     ...mapBaseDates(row),
   };
 }
@@ -986,7 +999,13 @@ const PipelineRepository = {
   },
 
   async update(id, data) {
-    const row = await crmApi.pipelines.update(id, { nome: data.nome, padrao: data.padrao === true, ativo: data.ativo !== false });
+    const row = await crmApi.pipelines.update(id, {
+      nome: data.nome,
+      padrao: data.padrao === true,
+      ativo: data.ativo !== false,
+      ...(data.etapa_inicial_id !== undefined ? { etapa_inicial_id: data.etapa_inicial_id } : {}),
+      ...(data.etapa_cancelamento_id !== undefined ? { etapa_cancelamento_id: data.etapa_cancelamento_id } : {}),
+    });
     return mapPipelineRow(row);
   },
 };
@@ -1014,8 +1033,31 @@ const EtapaPipelineRepository = {
       ordem: data.ordem,
       ...(data.tipo ? { tipo: data.tipo } : {}),
       ativo: data.ativo !== false,
+      ...(data.exige_motivo !== undefined ? { exige_motivo: data.exige_motivo === true } : {}),
     });
     return mapEtapaPipelineRow(row);
+  },
+};
+
+const PipelineAutomacaoRepository = {
+  ...createListRepository('PipelineAutomacao', crmApi.pipeline_automacoes, mapPipelineAutomacaoRow),
+
+  async create(data) {
+    const row = await crmApi.pipeline_automacoes.create({
+      pipeline_id: data.pipeline_id,
+      resultado: data.resultado,
+      etapa_destino_id: data.etapa_destino_id,
+    });
+    return mapPipelineAutomacaoRow(row);
+  },
+
+  async update(id, data) {
+    const row = await crmApi.pipeline_automacoes.update(id, {
+      pipeline_id: data.pipeline_id,
+      resultado: data.resultado,
+      etapa_destino_id: data.etapa_destino_id,
+    });
+    return mapPipelineAutomacaoRow(row);
   },
 };
 
@@ -1471,6 +1513,7 @@ export const crmDataClient = {
     MotivoStatus: MotivoStatusRepository,
     Pipeline: PipelineRepository,
     EtapaPipeline: EtapaPipelineRepository,
+    PipelineAutomacao: PipelineAutomacaoRepository,
     MarcaVeiculo: MarcaVeiculoRepository,
     ModeloVeiculo: ModeloVeiculoRepository,
     VersaoVeiculo: VersaoVeiculoRepository,

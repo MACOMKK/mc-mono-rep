@@ -35,11 +35,22 @@ export function usePipelineEtapas({ pipelineId, enabled = true } = {}) {
   );
   const etapasAtivas = useMemo(() => etapasOrdenadas.filter((etapa) => etapa.ativo), [etapasOrdenadas]);
 
+  const { data: automacoes = [], isLoading: carregandoAutomacoes } = useQuery({
+    queryKey: ['crm-pipeline-automacoes', pipeline?.id],
+    enabled: enabled && Boolean(pipeline?.id),
+    staleTime: 5 * 60 * 1000,
+    queryFn: () => crmDataClient.entities.PipelineAutomacao.listPage({
+      filters: { pipeline_id: pipeline.id },
+      limit: 100,
+    }).then((result) => result.rows),
+  });
+
   return {
     pipeline,
     pipelines,
     etapas: etapasOrdenadas,
     etapasAtivas,
-    isLoading: carregandoPipelines || (Boolean(pipeline?.id) && carregandoEtapas),
+    automacoes,
+    isLoading: carregandoPipelines || (Boolean(pipeline?.id) && (carregandoEtapas || carregandoAutomacoes)),
   };
 }

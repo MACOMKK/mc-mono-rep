@@ -67,6 +67,7 @@ export default function LeadForm({
   open,
   onOpenChange,
   lead,
+  defaultPipelineId,
   responsaveis = [],
   notes = [],
   attachments = [],
@@ -89,6 +90,7 @@ export default function LeadForm({
     cpf_cnpj: '',
     origem_id: '',
     status: 'novo',
+    pipeline_id: defaultPipelineId || undefined,
     modelo_interesse: '',
     veiculo_interesse: {
       marca: '',
@@ -123,7 +125,7 @@ export default function LeadForm({
   const [nomeError, setNomeError] = useState('');
   const [telefoneError, setTelefoneError] = useState('');
   const [statusRequirementError, setStatusRequirementError] = useState('');
-  const { etapas } = usePipelineEtapas({ pipelineId: lead?.pipeline_id || undefined });
+  const { etapas } = usePipelineEtapas({ pipelineId: lead?.pipeline_id || defaultPipelineId || undefined });
   const etapaAtual = findEtapaDoLead(etapas, data);
   const motivoAplicaEm = etapaMotivoAplicaEm(etapaAtual);
   // Etapas ativas do pipeline; a etapa tipo 'ganho' fica desabilitada (o lead so e convertido

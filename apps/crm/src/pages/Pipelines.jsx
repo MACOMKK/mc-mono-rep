@@ -21,9 +21,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/components/ui/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ETAPA_TIPO_LABEL } from '@/lib/leadStatus';
 
 const CORES_PALETA = ['#3b82f6', '#16a34a', '#fbbf24', '#f87171', '#c084fc', '#06b6d4', '#f97316', '#94a3b8'];
+
+const RESULTADO_ATIVIDADE_LABEL = {
+  contato_realizado: 'Contato realizado',
+  sem_resposta: 'Sem resposta',
+  visita_agendada: 'Visita agendada',
+  test_drive: 'Test drive',
+  proposta_enviada: 'Proposta enviada',
+};
 
 function NovoPipelineDialog({ open, onOpenChange, onSave, saving }) {
   const [nome, setNome] = useState('');
@@ -71,12 +80,14 @@ function NovaEtapaDialog({ open, onOpenChange, onSave, saving }) {
   const [nome, setNome] = useState('');
   const [cor, setCor] = useState(CORES_PALETA[0]);
   const [tipo, setTipo] = useState('em_andamento');
+  const [exigeMotivo, setExigeMotivo] = useState(false);
 
   const handleOpenChange = (nextOpen) => {
     if (nextOpen) {
       setNome('');
       setCor(CORES_PALETA[0]);
       setTipo('em_andamento');
+      setExigeMotivo(false);
     }
     onOpenChange(nextOpen);
   };
@@ -136,6 +147,18 @@ function NovaEtapaDialog({ open, onOpenChange, onSave, saving }) {
               ))}
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="nova-etapa-exige-motivo"
+              checked={tipo === 'ganho' || tipo === 'perdido' ? true : exigeMotivo}
+              disabled={tipo === 'ganho' || tipo === 'perdido'}
+              onCheckedChange={(value) => setExigeMotivo(value === true)}
+            />
+            <Label htmlFor="nova-etapa-exige-motivo" className="text-xs font-normal normal-case">
+              Exige motivo para o lead entrar nesta etapa
+              {(tipo === 'ganho' || tipo === 'perdido') ? ' (sempre exige, por ser etapa de encerramento)' : ''}
+            </Label>
+          </div>
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" className="rounded-none text-xs font-bold uppercase tracking-wider" onClick={() => handleOpenChange(false)}>
@@ -145,7 +168,7 @@ function NovaEtapaDialog({ open, onOpenChange, onSave, saving }) {
             type="button"
             disabled={!nome.trim() || saving}
             className="rounded-none text-xs font-bold uppercase tracking-wider"
-            onClick={() => onSave({ nome: nome.trim(), cor, tipo })}
+            onClick={() => onSave({ nome: nome.trim(), cor, tipo, exige_motivo: exigeMotivo })}
           >
             {saving ? 'Criando...' : 'Criar etapa'}
           </Button>
@@ -202,14 +225,15 @@ export default function Pipelines() {
   const proximaOrdem = (lista) => lista.reduce((maior, etapa) => Math.max(maior, etapa.ordem), -1) + 1;
 
   const criarEtapaMutation = useMutation({
-    mutationFn: ({ nome, cor, tipo }) => crmDataClient.entities.EtapaPipeline.create({
+    mutationFn: ({ nome, cor, tipo, exige_motivo }) => crmDataClient.entities.EtapaPipeline.create({
       pipeline_id: pipelineSelecionadoId,
       nome,
       cor,
       tipo,
+      exige_motivo,
       ordem: proximaOrdem(etapas),
     }),
-    onMutate: async ({ nome, cor, tipo }) => {
+    onMutate: async ({ nome, cor, tipo, exige_motivo }) => {
       setNovaEtapaAberta(false);
       const queryKey = ['crm-etapas-pipeline', pipelineSelecionadoId];
       await queryClient.cancelQueries({ queryKey });
@@ -221,6 +245,7 @@ export default function Pipelines() {
         cor,
         ordem: proximaOrdem(etapas),
         tipo,
+        exige_motivo,
         chave_sistema: null,
         _otimista: true,
       };
@@ -262,6 +287,45 @@ export default function Pipelines() {
       if (context) queryClient.setQueryData(context.queryKey, context.etapasAnteriores);
       toast({ title: 'Nao foi possivel excluir a etapa', description: error.message, variant: 'destructive' });
     },
+  });
+
+  const pipelineSelecionado = pipelines.find((pipeline) => pipeline.id === pipelineSelecionadoId) || null;
+  const etapasEmAndamento = etapas.filter((item) => item.tipo === 'em_andamento' && item.ativo);
+
+  const atualizarPipelineMutation = useMutation({
+    mutationFn: ({ id, ...data }) => crmDataClient.entities.Pipeline.update(id, data),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-pipelines'] });
+      toast({ title: 'Pipeline atualizado', variant: 'success' });
+    },
+    onError: (error) => toast({ title: 'Nao foi possivel atualizar o pipeline', description: error.message, variant: 'destructive' }),
+  });
+
+  const { data: automacoes = [] } = useQuery({
+    queryKey: ['crm-pipeline-automacoes', pipelineSelecionadoId],
+    enabled: podeConfigurar && Boolean(pipelineSelecionadoId),
+    queryFn: () => crmDataClient.entities.PipelineAutomacao.listPage({
+      filters: { pipeline_id: pipelineSelecionadoId },
+      limit: 100,
+    }).then((result) => result.rows),
+  });
+
+  const salvarAutomacaoMutation = useMutation({
+    mutationFn: ({ id, resultado, etapa_destino_id }) => (id
+      ? crmDataClient.entities.PipelineAutomacao.update(id, { pipeline_id: pipelineSelecionadoId, resultado, etapa_destino_id })
+      : crmDataClient.entities.PipelineAutomacao.create({ pipeline_id: pipelineSelecionadoId, resultado, etapa_destino_id })),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-pipeline-automacoes', pipelineSelecionadoId] });
+    },
+    onError: (error) => toast({ title: 'Nao foi possivel salvar a automacao', description: error.message, variant: 'destructive' }),
+  });
+
+  const excluirAutomacaoMutation = useMutation({
+    mutationFn: (id) => crmDataClient.entities.PipelineAutomacao.delete(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-pipeline-automacoes', pipelineSelecionadoId] });
+    },
+    onError: (error) => toast({ title: 'Nao foi possivel remover a automacao', description: error.message, variant: 'destructive' }),
   });
 
   if (!podeConfigurar) {
@@ -367,6 +431,41 @@ export default function Pipelines() {
         </Button>
       </div>
 
+      {!carregandoEtapas && pipelineSelecionado ? (
+        <div className="mb-5 grid gap-3 border bg-white p-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold uppercase tracking-wider">Etapa inicial</Label>
+            <p className="text-[11px] text-muted-foreground">Onde um lead novo deste pipeline nasce.</p>
+            <Select
+              value={pipelineSelecionado.etapa_inicial_id || ''}
+              onValueChange={(value) => atualizarPipelineMutation.mutate({ id: pipelineSelecionado.id, etapa_inicial_id: value })}
+            >
+              <SelectTrigger className="h-9 rounded-none"><SelectValue placeholder="Nao configurada" /></SelectTrigger>
+              <SelectContent>
+                {etapasEmAndamento.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold uppercase tracking-wider">Etapa de cancelamento de venda</Label>
+            <p className="text-[11px] text-muted-foreground">Para onde o lead volta se a venda for cancelada.</p>
+            <Select
+              value={pipelineSelecionado.etapa_cancelamento_id || ''}
+              onValueChange={(value) => atualizarPipelineMutation.mutate({ id: pipelineSelecionado.id, etapa_cancelamento_id: value })}
+            >
+              <SelectTrigger className="h-9 rounded-none"><SelectValue placeholder="Nao configurada" /></SelectTrigger>
+              <SelectContent>
+                {etapasEmAndamento.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      ) : null}
+
       {carregandoEtapas ? <p className="py-10 text-sm text-muted-foreground">Carregando etapas...</p> : null}
 
       {!carregandoEtapas && pipelineSelecionadoId ? (
@@ -412,6 +511,24 @@ export default function Pipelines() {
                         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                           {ETAPA_TIPO_LABEL[etapa.tipo] || etapa.tipo}
                         </span>
+                        <div className="flex items-center gap-1.5" title="Exige motivo para o lead entrar nesta etapa">
+                          <Checkbox
+                            id={`exige-motivo-${etapa.id}`}
+                            checked={etapa.tipo === 'ganho' || etapa.tipo === 'perdido' ? true : etapa.exige_motivo}
+                            disabled={etapa.tipo === 'ganho' || etapa.tipo === 'perdido' || Boolean(etapa._otimista)}
+                            onCheckedChange={(value) => atualizarEtapaMutation.mutate({
+                              id: etapa.id,
+                              pipeline_id: etapa.pipeline_id,
+                              nome: etapa.nome,
+                              cor: etapa.cor,
+                              ordem: etapa.ordem,
+                              exige_motivo: value === true,
+                            })}
+                          />
+                          <Label htmlFor={`exige-motivo-${etapa.id}`} className="text-[10px] font-normal normal-case text-muted-foreground">
+                            Exige motivo
+                          </Label>
+                        </div>
                         {etapa.chave_sistema ? (
                           <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                             <Lock className="h-3 w-3" /> Sistema
@@ -440,6 +557,49 @@ export default function Pipelines() {
             )}
           </Droppable>
         </DragDropContext>
+      ) : null}
+
+      {!carregandoEtapas && pipelineSelecionadoId ? (
+        <div className="mt-5 border bg-white p-3">
+          <h2 className="text-xs font-black uppercase tracking-widest">Automações por atividade</h2>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Para onde o lead vai quando uma atividade é concluída com este resultado. Sem automação
+            cadastrada, o resultado não move o lead neste pipeline.
+          </p>
+          <div className="mt-3 space-y-2">
+            {Object.entries(RESULTADO_ATIVIDADE_LABEL).map(([resultado, label]) => {
+              const automacao = automacoes.find((item) => item.resultado === resultado);
+              return (
+                <div key={resultado} className="flex items-center gap-3">
+                  <span className="w-40 shrink-0 text-xs font-bold uppercase tracking-wider">{label}</span>
+                  <Select
+                    value={automacao?.etapa_destino_id || ''}
+                    onValueChange={(value) => salvarAutomacaoMutation.mutate({ id: automacao?.id, resultado, etapa_destino_id: value })}
+                  >
+                    <SelectTrigger className="h-9 max-w-xs rounded-none"><SelectValue placeholder="Sem automação" /></SelectTrigger>
+                    <SelectContent>
+                      {etapasEmAndamento.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {automacao ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 rounded-none text-red-600"
+                      title="Remover automação"
+                      onClick={() => excluirAutomacaoMutation.mutate(automacao.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       ) : null}
 
       {pipelineSelecionadoId ? (
