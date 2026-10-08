@@ -39,6 +39,7 @@ import {
   formatDocumento,
   formatTelefone,
   onlyLetters,
+  validarFornecedorObrigatorios,
 } from '@/lib/financeiroFormat';
 import { normalize } from '@/lib/normalize';
 
@@ -221,6 +222,11 @@ export default function Fornecedores() {
     event.preventDefault();
     const nome = form.nome.trim();
     if (!nome) return;
+    const erro = validarFornecedorObrigatorios(form);
+    if (erro) {
+      toast({ title: 'Preencha os dados do fornecedor', description: erro });
+      return;
+    }
     if (editRow) {
       atualizarMutation.mutate({ id: editRow.id, dados: { ...form, nome, ativo: editRow.ativo } });
     } else {
@@ -365,7 +371,7 @@ export default function Fornecedores() {
                 </select>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="documento">CPF/CNPJ</Label>
+                <Label htmlFor="documento">CPF/CNPJ *</Label>
                 <Input
                   id="documento"
                   inputMode="numeric"
@@ -392,7 +398,7 @@ export default function Fornecedores() {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="telefone">Telefone</Label>
+                <Label htmlFor="telefone">Telefone *</Label>
                 <Input
                   id="telefone"
                   inputMode="numeric"
@@ -402,20 +408,20 @@ export default function Fornecedores() {
               </div>
 
               <div className="space-y-1 sm:col-span-2">
-                <Label htmlFor="endereco">Endereço</Label>
+                <Label htmlFor="endereco">Endereço *</Label>
                 <Input id="endereco" maxLength={150} value={form.endereco} onChange={(e) => updateForm('endereco', e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="cidade">Cidade</Label>
+                <Label htmlFor="cidade">Cidade *</Label>
                 <Input id="cidade" maxLength={80} value={form.cidade} onChange={(e) => updateForm('cidade', e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label htmlFor="uf">UF</Label>
+                  <Label htmlFor="uf">UF *</Label>
                   <Input id="uf" maxLength={2} value={form.uf} onChange={(e) => updateForm('uf', onlyLetters(e.target.value).toUpperCase())} />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="cep">CEP</Label>
+                  <Label htmlFor="cep">CEP *</Label>
                   <Input id="cep" inputMode="numeric" value={form.cep} onChange={(e) => updateForm('cep', formatCep(e.target.value))} />
                 </div>
               </div>

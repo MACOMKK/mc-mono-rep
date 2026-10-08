@@ -19,6 +19,7 @@ import {
   formatTelefone,
   inferirTipoAnexo,
   onlyLetters,
+  validarFornecedorObrigatorios,
 } from '@/lib/financeiroFormat';
 import {
   Button,
@@ -408,6 +409,11 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
     event.preventDefault();
     const nome = novoFornecedorForm.nome.trim();
     if (!nome) return;
+    const erro = validarFornecedorObrigatorios(novoFornecedorForm);
+    if (erro) {
+      toast({ title: 'Preencha os dados do fornecedor', description: erro });
+      return;
+    }
     criarFornecedorMutation.mutate({ ...novoFornecedorForm, nome });
   }
 
@@ -1104,7 +1110,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
                 </select>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="novoFornecedorDocumento">CPF/CNPJ</Label>
+                <Label htmlFor="novoFornecedorDocumento">CPF/CNPJ *</Label>
                 <Input
                   id="novoFornecedorDocumento"
                   inputMode="numeric"
@@ -1131,7 +1137,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="novoFornecedorTelefone">Telefone</Label>
+                <Label htmlFor="novoFornecedorTelefone">Telefone *</Label>
                 <Input
                   id="novoFornecedorTelefone"
                   inputMode="numeric"
@@ -1141,7 +1147,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
               </div>
 
               <div className="space-y-1 sm:col-span-2">
-                <Label htmlFor="novoFornecedorEndereco">Endereço</Label>
+                <Label htmlFor="novoFornecedorEndereco">Endereço *</Label>
                 <Input
                   id="novoFornecedorEndereco"
                   maxLength={150}
@@ -1150,7 +1156,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="novoFornecedorCidade">Cidade</Label>
+                <Label htmlFor="novoFornecedorCidade">Cidade *</Label>
                 <Input
                   id="novoFornecedorCidade"
                   maxLength={80}
@@ -1160,7 +1166,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label htmlFor="novoFornecedorUf">UF</Label>
+                  <Label htmlFor="novoFornecedorUf">UF *</Label>
                   <Input
                     id="novoFornecedorUf"
                     maxLength={2}
@@ -1169,7 +1175,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="novoFornecedorCep">CEP</Label>
+                  <Label htmlFor="novoFornecedorCep">CEP *</Label>
                   <Input
                     id="novoFornecedorCep"
                     inputMode="numeric"

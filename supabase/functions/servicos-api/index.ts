@@ -203,6 +203,30 @@ function extrairDadosFornecedor(body: Record<string, unknown>) {
   };
 }
 
+function validarFornecedorObrigatorios(dados: ReturnType<typeof extrairDadosFornecedor>) {
+  const documento = dados.documento || '';
+  if (documento.length !== 11 && documento.length !== 14) return 'Informe um CPF (11 digitos) ou CNPJ (14 digitos).';
+  if ((dados.telefone || '').length < 10) return 'Informe o telefone com DDD.';
+  if (!dados.endereco) return 'Informe o endereco.';
+  if (!dados.cidade) return 'Informe a cidade.';
+  if ((dados.uf || '').length !== 2) return 'Informe a UF com 2 letras.';
+  if ((dados.cep || '').length !== 8) return 'Informe o CEP com 8 digitos.';
+  return null;
+}
+
+// documento ja tem indice unico (idx_servicos_fornecedores_documento); checar antes so pra
+// devolver uma mensagem clara em vez do "duplicate key" do Postgres.
+async function ensureDocumentoFornecedorUnico(sql: any, documento: string | null, ignorarId: string | null) {
+  if (!documento) return;
+  const rows = await sql.unsafe(
+    `select nome from ${SERVICOS_SCHEMA}.fornecedores where documento = $1 and ($2::uuid is null or id <> $2::uuid) limit 1;`,
+    [documento, ignorarId],
+  );
+  if (rows[0]) {
+    throw Object.assign(new Error(`Ja existe um fornecedor com esse CPF/CNPJ: ${rows[0].nome}.`), { status: 400 });
+  }
+}
+
 function getAccessLevel(access: Record<string, unknown> | null) {
   return String(access?.nivel_acesso || '');
 }
@@ -1308,12 +1332,16 @@ Deno.serve(async (request) => {
       const nome = String(fornecedorBody.nome || '').trim();
       if (!nome) throw Object.assign(new Error('Informe o nome do fornecedor.'), { status: 400 });
       const dados = extrairDadosFornecedor(fornecedorBody);
+      // Mesma regra de validarFornecedorObrigatorios no front (vale tambem no atualizar_fornecedor).
+      const erroObrigatorio = validarFornecedorObrigatorios(dados);
+      if (erroObrigatorio) throw Object.assign(new Error(erroObrigatorio), { status: 400 });
 
       const existing = await sql.unsafe(
         `select id, nome, ativo, criado_em, atualizado_em from ${SERVICOS_SCHEMA}.fornecedores where lower(nome) = lower($1) limit 1;`,
         [nome],
       );
       if (existing[0]) return json({ row: existing[0] });
+      await ensureDocumentoFornecedorUnico(sql, dados.documento, null);
 
       const rows = await sql.unsafe(
         `
@@ -1353,11 +1381,28 @@ Deno.serve(async (request) => {
       const ativo = Boolean(fornecedorBody.ativo);
       const dados = extrairDadosFornecedor(fornecedorBody);
 
+      // Obrigatorios tambem na edicao. Excecao: so inativar/reativar (nome e dados iguais ao
+      // que ja esta salvo) passa, pra nao travar fornecedores antigos cadastrados sem esses dados.
+      const atualRows = await sql.unsafe(
+        `select nome, tipo_pessoa, documento, inscricao_estadual, email, telefone, endereco, cidade, uf, cep
+           from ${SERVICOS_SCHEMA}.fornecedores where id = $1 limit 1;`,
+        [id],
+      );
+      const atual = atualRows[0];
+      if (!atual) throw Object.assign(new Error('Fornecedor nao encontrado.'), { status: 404 });
+      const soAlternouAtivo = atual.nome === nome &&
+        (Object.keys(dados) as (keyof typeof dados)[]).every((campo) => (atual[campo] ?? null) === dados[campo]);
+      if (!soAlternouAtivo) {
+        const erroObrigatorio = validarFornecedorObrigatorios(dados);
+        if (erroObrigatorio) throw Object.assign(new Error(erroObrigatorio), { status: 400 });
+      }
+
       const duplicated = await sql.unsafe(
         `select id from ${SERVICOS_SCHEMA}.fornecedores where lower(nome) = lower($1) and id <> $2 limit 1;`,
         [nome, id],
       );
       if (duplicated[0]) throw Object.assign(new Error('Ja existe um fornecedor com esse nome.'), { status: 400 });
+      await ensureDocumentoFornecedorUnico(sql, dados.documento, id);
 
       const rows = await sql.unsafe(
         `

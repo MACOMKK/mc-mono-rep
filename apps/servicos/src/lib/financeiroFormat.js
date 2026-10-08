@@ -147,6 +147,21 @@ export const FORNECEDOR_FORM_VAZIO = {
   cep: '',
 };
 
+// Campos obrigatorios no cadastro e na edicao de fornecedor. Mesma regra do criar_fornecedor e
+// atualizar_fornecedor na servicos-api (que so dispensa quando apenas inativa/reativa).
+// Retorna a mensagem do primeiro problema encontrado, ou null se estiver tudo ok.
+export function validarFornecedorObrigatorios(form) {
+  const documento = onlyDigits(form.documento);
+  if (documento.length !== 11 && documento.length !== 14) return 'Informe um CPF (11 dígitos) ou CNPJ (14 dígitos).';
+  const telefone = onlyDigits(form.telefone);
+  if (telefone.length < 10) return 'Informe o telefone com DDD.';
+  if (!String(form.endereco || '').trim()) return 'Informe o endereço.';
+  if (!String(form.cidade || '').trim()) return 'Informe a cidade.';
+  if (onlyLetters(form.uf).length !== 2) return 'Informe a UF com 2 letras.';
+  if (onlyDigits(form.cep).length !== 8) return 'Informe o CEP com 8 dígitos.';
+  return null;
+}
+
 export function formatValor(valor) {
   return Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
