@@ -490,7 +490,8 @@ function mapLeadPayload(data = {}, clienteId) {
     email: email || null,
     email_normalizado: normalizeEmail(email) || null,
     origem_id: data.origem_id,
-    status: data.status || 'novo',
+    // status nao e mais enviado: e so espelho de leitura, sempre derivado de etapa_id pelo
+    // trigger gestao_crm.sync_lead_etapa_status() (inversao da sync, fase 2.7).
     ...(data.pipeline_id ? { pipeline_id: data.pipeline_id } : {}),
     ...(data.etapa_id ? { etapa_id: data.etapa_id } : {}),
     modelo_interesse: data.modelo_interesse || formatVehicleLabel(data.veiculo_interesse) || null,
@@ -874,16 +875,10 @@ const LeadRepository = {
 
   async update(id, data) {
     const current = await getLead(id);
-    // Quem troca a etapa manda etapa_id; o status vai como esta e o banco o deriva da etapa
-    // (trg_crm_leads_a_sync_etapa). Quem ainda troca so o status mantem a etapa atual e o
-    // banco deriva a etapa do status.
-    const etapaMudou = Boolean(data.etapa_id) && data.etapa_id !== current.etapa_id;
-    const nextData = {
-      ...current,
-      ...data,
-      ...(etapaMudou ? { status: current.status } : {}),
-      ...(!etapaMudou && data.status && data.status !== current.status ? { etapa_id: '' } : {}),
-    };
+    // status nao e mais enviado (inversao da sync, fase 2.7): o banco sempre deriva de etapa_id
+    // (trg_crm_leads_a_sync_etapa). Mudar a etapa e sempre por etapa_id -- nao existe mais um
+    // caminho de mudar status sem etapa_id.
+    const nextData = { ...current, ...data };
     const clientePayload = mapClientePayload({
       nome: nextData.nome,
       telefone: nextData.telefone,
