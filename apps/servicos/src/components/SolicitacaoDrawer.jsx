@@ -211,10 +211,15 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const isAprovadorDestino = Boolean(user?.id) && String(solicitacao?.aprovador_destino_id) === String(user?.id);
   const podeAdicionarAnexo = Boolean(user?.isFinanceiro) || isDonoSolicitacao;
   const dentroDaJanelaRemocao = solicitacao?.status === 'pendente' || solicitacao?.pendencia_bloqueio === true;
-  const podeRemoverAnexo = (Boolean(user?.isFinanceiro) || isDonoSolicitacao) && dentroDaJanelaRemocao;
-  // Fora da janela de remocao normal, so financeiro pode corrigir anexo enviado errado, e so em
-  // `pago` -- em `aprovado` o caminho e reprovar/reabrir a solicitacao (ver plano de correcao de
-  // anexo em `pago`, servicos-api substituir_anexo).
+  // Admin do sistema (Camada 1) remove fora da janela, pra urgencias -- menos em `pago`, onde o
+  // anexo e evidencia do pagamento (mesma regra do remover_anexo na servicos-api).
+  const isAdminSistema = user?.system_access_level === 'admin';
+  const podeRemoverAnexo =
+    ((Boolean(user?.isFinanceiro) || isDonoSolicitacao) && dentroDaJanelaRemocao) ||
+    (isAdminSistema && solicitacao?.status !== 'pago');
+  // Em `pago` ninguem remove: so financeiro pode corrigir anexo enviado errado, substituindo o
+  // arquivo (servicos-api substituir_anexo). Em `aprovado`, quem nao e admin do sistema precisa
+  // reprovar/reabrir a solicitacao pra remover.
   const podeSubstituirAnexo = Boolean(user?.isFinanceiro) && solicitacao?.status === 'pago';
   // Janela mais ampla que dentroDaJanelaRemocao: aqui inclui 'aprovado' de proposito (ver
   // atualizar_vencimento/atualizar_vencimento_parcela na servicos-api) -- so nao vale mais

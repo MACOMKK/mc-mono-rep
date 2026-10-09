@@ -124,7 +124,9 @@ reais (só adicionar coluna `mod_<novo>` na tabela, seguindo o mesmo padrão).
   - Anexos multi-arquivo: `list_anexos`, `registrar_anexo`, `remover_anexo` (tabela
     `anexos_solicitacao`, categorias `comprovante_solicitacao | nf_boleto | pdf_unificado | rh |
     comprovante_pagamento`; upload é feito direto do client pro Storage, a function só registra
-    metadados e gera signed URL).
+    metadados e gera signed URL). `remover_anexo`: solicitante e papel `financeiro` só com a
+    solicitação `pendente` ou com pendência aberta; admin do sistema (Camada 1) em qualquer
+    status exceto `pago` (urgências) — em `pago` o caminho é `substituir_anexo`.
   - Parcelamento: `list_parcelas`, `criar_parcelas` (só financeiro, solicitação precisa estar
     `aprovado`; substitui o plano de parcelas existente se nenhuma ainda foi paga),
     `registrar_pagamento_parcela` (só financeiro, marca uma parcela como `pago` — quando a

@@ -3111,7 +3111,17 @@ Deno.serve(async (request) => {
       const dentroDaJanela = anexo.solicitacao_status === 'pendente' || anexo.pendencia_bloqueio === true;
       const podeComoFinanceiro = isFinanceiro(moduleRole) && dentroDaJanela;
       const podeComoDono = String(anexo.solicitante_id) === String(collaborator!.id) && dentroDaJanela;
-      if (!podeComoFinanceiro && !podeComoDono) {
+      // Admin do sistema (Camada 1) pode remover fora da janela, pra casos de urgencia -- menos em
+      // `pago`, onde o anexo e a evidencia do pagamento (la o caminho e substituir_anexo).
+      const isAdminSistema = getAccessLevel(access) === 'admin';
+      const podeComoAdmin = isAdminSistema && anexo.solicitacao_status !== 'pago';
+      if (!podeComoFinanceiro && !podeComoDono && !podeComoAdmin) {
+        if (isAdminSistema) {
+          throw Object.assign(
+            new Error('Anexo de solicitação paga não pode ser removido; use Substituir.'),
+            { status: 403 },
+          );
+        }
         throw Object.assign(
           new Error('Anexos só podem ser removidos enquanto a solicitação estiver pendente.'),
           { status: 403 },
