@@ -206,7 +206,7 @@ export default function HomeHighlightsCarousel({ disabled = false }) {
               ) : null}
 
               <div className="relative grid min-h-[320px] items-center gap-6 px-5 pb-16 pt-6 sm:min-h-[360px] sm:gap-8 sm:px-12 sm:pb-20 sm:pt-9 lg:grid-cols-[minmax(0,1.12fr)_minmax(260px,0.88fr)]">
-                <div className="grid min-h-[240px] max-w-2xl grid-rows-[auto_auto_1fr_auto] self-center sm:min-h-[260px]">
+                <div className="grid min-h-[240px] max-w-3xl grid-rows-[auto_auto_1fr_auto] self-center sm:min-h-[260px]">
                   <div className="flex flex-wrap items-center gap-3">
                     <span
                       className="inline-flex rounded-full px-3 py-1 text-[11px] font-bold text-white shadow-sm sm:px-4 sm:text-xs"
@@ -216,8 +216,8 @@ export default function HomeHighlightsCarousel({ disabled = false }) {
                     </span>
                   </div>
 
-                  <h1 className="mt-4 max-w-[650px] text-[1.85rem] font-black leading-[0.96] text-white sm:mt-5 sm:text-[3.15rem]">
-                    <span className="block line-clamp-3 sm:line-clamp-2">{title}</span>
+                  <h1 className="mt-4 max-w-[760px] text-[1.85rem] font-black leading-[0.96] text-white sm:mt-5 sm:text-[2.5rem]">
+                    <span className="block line-clamp-3">{title}</span>
                   </h1>
 
                   <p className="mt-3 max-w-[620px] text-sm leading-6 text-white/80 sm:mt-4 sm:text-[0.98rem]">
