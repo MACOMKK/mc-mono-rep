@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Camera, Lock, Trash2 } from 'lucide-react';
 import {
   Button,
@@ -229,6 +229,26 @@ export default function ChecklistForm() {
       }),
     );
   }, [idParam, avaliacaoId, cliente, veiculo, unidadeId, os, km, nivelCombustivel, pinturaSuja, observacoes, comunicacoes, etapa]);
+
+  // Cliente selecionado antes do veiculo: sugere os veiculos ja vinculados a ele (um
+  // cliente pode ter varios) em vez de obrigar o usuario a buscar o veiculo do zero.
+  // Nunca auto-seleciona sozinho (mesmo com 1 resultado so) -- so sugere, sempre com clique
+  // explicito, pra "Trocar" no campo Veiculo conseguir deixar o campo vazio de verdade (sem
+  // o proprio efeito re-selecionar o mesmo veiculo na hora e travar o usuario ali).
+  const { data: veiculosDoCliente = [] } = useQuery({
+    queryKey: ['oficina', 'cliente-veiculos', cliente?.id],
+    queryFn: () => oficinaApi.clientes.veiculos(cliente.id),
+    enabled: Boolean(cliente?.id) && !veiculo,
+    staleTime: 30_000,
+  });
+
+  // Caminho inverso: veiculo buscado/selecionado primeiro ja traz o dono atual
+  // (cliente_atual_id/cliente_atual_nome, ver veiculo_buscar) -- aproveita sem round-trip extra.
+  useEffect(() => {
+    if (veiculo?.cliente_atual_id && !cliente) {
+      setCliente({ id: veiculo.cliente_atual_id, nome: veiculo.cliente_atual_nome });
+    }
+  }, [veiculo, cliente]);
 
   const limparRascunho = () => localStorage.removeItem(DRAFT_KEY);
 
@@ -525,7 +545,24 @@ export default function ChecklistForm() {
       {etapa === 0 && (
         <div className="flex flex-col gap-4">
           <ClienteVeiculoPicker tipo="cliente" label="Cliente (opcional)" value={cliente} onChange={setCliente} />
-          <ClienteVeiculoPicker tipo="veiculo" label="Veículo *" value={veiculo} onChange={setVeiculo} />
+          {cliente && !veiculo && veiculosDoCliente.length > 0 && (
+            <div className="flex flex-col gap-2 rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Veículos de {cliente.nome}</p>
+              <div className="flex flex-col divide-y rounded-lg border">
+                {veiculosDoCliente.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="p-2 text-left text-sm hover:bg-accent"
+                    onClick={() => setVeiculo(item)}
+                  >
+                    {[item.marca_nome, item.modelo_nome, item.placa || item.chassi].filter(Boolean).join(' · ')}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <ClienteVeiculoPicker tipo="veiculo" label="Veículo *" value={veiculo} onChange={setVeiculo} clienteId={cliente?.id} />
           <div className="space-y-2">
             <Label htmlFor="unidade">Unidade *</Label>
             <Select value={unidadeId} onValueChange={setUnidadeId}>

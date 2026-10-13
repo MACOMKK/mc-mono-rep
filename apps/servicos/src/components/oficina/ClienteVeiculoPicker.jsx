@@ -112,7 +112,9 @@ export function ClienteForm({ inicial, onCriado, onCancelar }) {
 }
 
 // `inicial` (com id, modelo_id, marca_id, versao_id, cor_id, placa, chassi, km) liga o modo edicao.
-export function VeiculoForm({ inicial, onCriado, onCancelar }) {
+// `clienteId`, quando informado (cliente ja selecionado no picker ao lado), vincula o veiculo
+// recem-cadastrado a esse cliente direto no insert (ver veiculo_criar).
+export function VeiculoForm({ inicial, clienteId, onCriado, onCancelar }) {
   const { user } = useAuth();
   const editando = Boolean(inicial?.id);
   const [marcas, setMarcas] = useState([]);
@@ -183,7 +185,7 @@ export function VeiculoForm({ inicial, onCriado, onCancelar }) {
       };
       const veiculo = editando
         ? await oficinaApi.veiculos.atualizar({ id: inicial.id, versaoId: inicial.versao_id, ...dados })
-        : await oficinaApi.veiculos.criar({ ...dados, ehTeste: user?.isOficinaAdmin && ehTeste });
+        : await oficinaApi.veiculos.criar({ ...dados, ehTeste: user?.isOficinaAdmin && ehTeste, clienteId });
       onCriado(veiculo);
     } catch (error) {
       setErro(error.message || (editando ? 'Não foi possível salvar o veículo.' : 'Não foi possível cadastrar o veículo.'));
@@ -295,7 +297,7 @@ export function VeiculoForm({ inicial, onCriado, onCancelar }) {
   );
 }
 
-export default function ClienteVeiculoPicker({ tipo, value, onChange, label }) {
+export default function ClienteVeiculoPicker({ tipo, value, onChange, label, clienteId }) {
   const [busca, setBusca] = useState('');
   const [mostrarForm, setMostrarForm] = useState(false);
   const buscaDebounced = useDebouncedValue(busca);
@@ -389,6 +391,7 @@ export default function ClienteVeiculoPicker({ tipo, value, onChange, label }) {
 
       {mostrarForm && tipo === 'veiculo' && (
         <VeiculoForm
+          clienteId={clienteId}
           onCriado={(veiculo) => {
             onChange(veiculo);
             setMostrarForm(false);

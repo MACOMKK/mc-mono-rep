@@ -1048,6 +1048,28 @@ Deno.serve(async (request) => {
       return json({ cliente, veiculos, checklists });
     }
 
+    // Versao leve de cliente_obter.veiculos, sem checklists -- usada no picker de
+    // "Nova avaliacao" pra sugerir os veiculos do cliente assim que ele e selecionado.
+    if (action === 'cliente_veiculos_listar') {
+      const clienteId = String(body.cliente_id || '');
+      if (!clienteId) return json({ error: 'cliente_id e obrigatorio.' }, 400);
+
+      const rows = await sql.unsafe(
+        `
+          select v.id, v.placa, v.chassi, cv.nome as cor, v.km, mv.nome as modelo_nome, ma.nome as marca_nome
+          from public.veiculos v
+          left join public.modelos_veiculo mv on mv.id = v.modelo_id
+          left join public.marcas_veiculo ma on ma.id = mv.marca_id
+          left join public.cores_veiculo cv on cv.id = v.cor_id
+          where v.cliente_atual_id = $1
+          order by v.atualizado_em desc;
+        `,
+        [clienteId],
+      );
+
+      return json({ rows });
+    }
+
     // Edita o registro global de public.clientes (compartilhado com o CRM). Mesma padronizacao
     // do cliente_criar; as colunas *_normalizado acompanham as colunas exibidas.
     if (action === 'cliente_atualizar') {
@@ -1306,28 +1328,43 @@ Deno.serve(async (request) => {
       if (!modeloId || !chassi) return json({ error: 'modelo_id e chassi sao obrigatorios.' }, 400);
 
       const placa = body.placa ? String(body.placa).trim().toUpperCase().replace(/\s+/g, '') : null;
+      const clienteId = body.cliente_id ? String(body.cliente_id) : null;
 
       // Mesma regra do checklist_iniciar: so admin pode marcar como teste, e so na criacao.
       const ehTeste = body.eh_teste === true && moduleRole === 'admin';
 
-      const rows = await sql.unsafe(
-        `
-          insert into public.veiculos (modelo_id, versao_id, chassi, placa, cor_id, km, eh_teste, origem_cadastro)
-          values ($1, $2, $3, $4, $5, $6, $7, 'servicos_manual')
-          returning id, placa, chassi, cor_id, km, eh_teste;
-        `,
-        [
-          modeloId,
-          body.versao_id ? String(body.versao_id) : null,
-          chassi,
-          placa,
-          body.cor_id ? String(body.cor_id) : null,
-          body.km != null ? Number(body.km) : null,
-          ehTeste,
-        ],
-      );
+      // Se vier cliente_id (veiculo cadastrado com o cliente ja selecionado no picker), o
+      // veiculo ja nasce com dono -- mesmo padrao de veiculo_transferir, so que na mesma
+      // transacao do insert em vez de uma chamada separada depois.
+      const row = await sql.begin(async (trx) => {
+        const rows = await trx.unsafe(
+          `
+            insert into public.veiculos (modelo_id, versao_id, chassi, placa, cor_id, km, eh_teste, origem_cadastro, cliente_atual_id)
+            values ($1, $2, $3, $4, $5, $6, $7, 'servicos_manual', $8)
+            returning id, placa, chassi, cor_id, km, eh_teste, cliente_atual_id;
+          `,
+          [
+            modeloId,
+            body.versao_id ? String(body.versao_id) : null,
+            chassi,
+            placa,
+            body.cor_id ? String(body.cor_id) : null,
+            body.km != null ? Number(body.km) : null,
+            ehTeste,
+            clienteId,
+          ],
+        );
+        const veiculo = rows[0];
+        if (clienteId && veiculo) {
+          await trx.unsafe(
+            `insert into public.veiculos_proprietarios (veiculo_id, cliente_id) values ($1, $2);`,
+            [veiculo.id, clienteId],
+          );
+        }
+        return veiculo;
+      });
 
-      return json({ row: rows[0] }, 201);
+      return json({ row }, 201);
     }
 
     // Corrige os dados do veiculo. Nao mexe em cliente_atual_id (troca de dono e so via
