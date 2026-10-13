@@ -997,8 +997,7 @@ Deno.serve(async (request) => {
             or c.nome ilike '%' || $1 || '%'
             or c.email ilike '%' || $1 || '%'
             or ($2 <> '' and (c.telefone_normalizado like '%' || $2 || '%' or c.cpf_cnpj_normalizado like '%' || $2 || '%'))
-          order by c.nome
-          limit 500;
+          order by c.nome;
         `,
         [busca, digitos],
       );
@@ -1166,8 +1165,7 @@ Deno.serve(async (request) => {
           left join public.cores_veiculo cv on cv.id = v.cor_id
           left join public.clientes c on c.id = v.cliente_atual_id
           where $1 = '' or v.placa ilike '%' || $1 || '%' or v.chassi ilike '%' || $1 || '%'
-          order by v.atualizado_em desc
-          limit 500;
+          order by v.atualizado_em desc;
         `,
         [busca],
       );
