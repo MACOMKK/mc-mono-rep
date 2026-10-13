@@ -103,7 +103,7 @@ const ATIVIDADES_VISIVEIS = 4;
 export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity, onCreateProposta, onExcluirTeste, canExcluirTeste }) {
   const veiculo = lead?.veiculo_interesse || null;
   const { etapas } = usePipelineEtapas({ pipelineId: lead?.pipeline_id || undefined });
-  const etapaVisual = getEtapaVisual(findEtapaDoLead(etapas, lead), { status: lead?.status });
+  const etapaVisual = getEtapaVisual(findEtapaDoLead(etapas, lead), { etapaTipo: lead?.etapa_tipo });
   const [showAllAtividades, setShowAllAtividades] = useState(false);
   const [section, setSection] = useState('visao_geral');
 
@@ -243,7 +243,7 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
                 <Block icon={LayoutDashboard} title="Situação">
                   <Item label="Etapa">{getLeadEtapaLabel(etapas, lead)}</Item>
                   <Item label="Origem">{lead.origem || '-'}</Item>
-                  {lead.status === 'perdido' ? (
+                  {lead.etapa_tipo === 'perdido' ? (
                     <Item label="Motivo da perda">{lead.motivo_perda || '-'}</Item>
                   ) : null}
                 </Block>
@@ -450,7 +450,7 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
                   <div className="space-y-1.5 md:col-span-2">
                     {vendas.length === 0 ? (
                       <EmptyState>
-                        {lead.status === 'convertido' ? 'Nenhuma venda vinculada a este lead.' : 'Este lead ainda não foi convertido em venda.'}
+                        {lead.etapa_tipo === 'ganho' ? 'Nenhuma venda vinculada a este lead.' : 'Este lead ainda não foi convertido em venda.'}
                       </EmptyState>
                     ) : (
                       vendas.map((venda) => (

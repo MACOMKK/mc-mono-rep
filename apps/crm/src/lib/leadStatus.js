@@ -38,8 +38,6 @@ export const LEAD_STATUS_BADGE = {
   perdido: 'bg-red-600 text-white',
 };
 
-export const ACTIVE_LEAD_STATUSES = ['novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao'];
-
 // Status que exigem justificativa antes do lead avancar. `motivo: true` exige selecionar
 // um gestao_crm.motivos_status (catalogo) cadastrado para aquele status; `fields` lista
 // colunas do lead que ja existem no cadastro e que precisam estar preenchidas. Aplicado
@@ -64,25 +62,6 @@ export const RESULTADO_LEAD_STATUS_TARGET = {
   visita_agendada: 'qualificado',
   test_drive: 'qualificado',
 };
-
-// Guard de elegibilidade: replica o WHERE de gestao_crm.apply_activity_outcome() --
-// a transicao (e portanto a exigencia de motivo/previsao) so ocorre se o lead ainda
-// estiver num status "anterior" ao alvo. Se o lead ja passou do alvo, o UPDATE do
-// trigger e um no-op e nada e exigido.
-const RESULTADO_ELIGIBLE_LEAD_STATUSES = {
-  venda_realizada: null, // sempre roda, independente do status atual
-  lead_perdido: null, // sempre roda, independente do status atual
-  proposta_enviada: ['novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao'],
-  visita_agendada: ['novo', 'tentativa_contato', 'em_contato', 'qualificado'],
-  test_drive: ['novo', 'tentativa_contato', 'em_contato', 'qualificado'],
-};
-
-export function isLeadEligibleForResultado(resultado, leadStatus) {
-  if (!(resultado in RESULTADO_ELIGIBLE_LEAD_STATUSES)) return false;
-  const eligibleStatuses = RESULTADO_ELIGIBLE_LEAD_STATUSES[resultado];
-  if (eligibleStatuses === null) return true;
-  return eligibleStatuses.includes(leadStatus);
-}
 
 // ---------------------------------------------------------------------------------------
 // Etapas do pipeline (gestao_crm.etapas_pipeline) -- Fase 2.5 do PLANO_LEADS_PIPELINE.
@@ -121,12 +100,6 @@ const RESULTADO_ETAPA_TIPO_FALLBACK = {
   lead_perdido: 'perdido',
 };
 
-const STATUS_TIPO = { convertido: 'ganho', perdido: 'perdido' };
-
-export function etapaTipoFromStatus(status) {
-  return STATUS_TIPO[status] || 'em_andamento';
-}
-
 // Motivo exigido para o lead permanecer/entrar nesta etapa: sempre em ganho/perdido (por tipo,
 // nao configuravel); nas demais, so se a etapa tiver `exige_motivo` marcado na tela de Pipelines
 // (fase 2.7 -- antes disso, exigia so na etapa de sistema 'qualificado').
@@ -146,21 +119,17 @@ export function isEtapaEmAndamento(etapa) {
 }
 
 export function isLeadAtivo(lead) {
-  if (!lead) return false;
-  if (lead.etapa_tipo) return lead.etapa_tipo === 'em_andamento';
-  return ACTIVE_LEAD_STATUSES.includes(lead.status);
+  return lead?.etapa_tipo === 'em_andamento';
 }
 
 export function findEtapaDoLead(etapas = [], lead) {
   if (!lead) return null;
-  return etapas.find((etapa) => etapa.id === lead.etapa_id)
-    || etapas.find((etapa) => etapa.chave_sistema && etapa.chave_sistema === lead.status)
-    || null;
+  return etapas.find((etapa) => etapa.id === lead.etapa_id) || null;
 }
 
 export function getLeadEtapaLabel(etapas = [], lead) {
   if (!lead) return '';
-  return findEtapaDoLead(etapas, lead)?.nome || LEAD_STATUS_LABEL[lead.status] || lead.status || '';
+  return findEtapaDoLead(etapas, lead)?.nome || ETAPA_TIPO_LABEL[lead.etapa_tipo] || lead.etapa_tipo || '';
 }
 
 function hexToRgb(hex) {
@@ -177,13 +146,29 @@ function readableTextColor(hex) {
   return luminance > 0.6 ? '#1a1a1a' : '#ffffff';
 }
 
+// Paleta generica por etapa_tipo, usada so quando a etapa especifica nao foi resolvida
+// (lista de etapas ainda carregando, ou etapa_id fora do pipeline carregado).
+const ETAPA_TIPO_BADGE = {
+  em_andamento: LEAD_STATUS_BADGE.novo,
+  ganho: LEAD_STATUS_BADGE.convertido,
+  perdido: LEAD_STATUS_BADGE.perdido,
+};
+const ETAPA_TIPO_STYLE = {
+  em_andamento: LEAD_STATUS_STYLE.novo,
+  ganho: LEAD_STATUS_STYLE.convertido,
+  perdido: LEAD_STATUS_STYLE.perdido,
+};
+
 // Visual do badge da etapa. Etapa de sistema mantem as classes de sempre; etapa livre usa a
 // cor cadastrada no pipeline. variant: 'badge' (solido) ou 'style' (borda + fundo claro).
-export function getEtapaVisual(etapa, { variant = 'badge', status } = {}) {
-  const chave = etapa?.chave_sistema || (!etapa ? status : null);
+export function getEtapaVisual(etapa, { variant = 'badge', etapaTipo } = {}) {
   const classes = variant === 'style' ? LEAD_STATUS_STYLE : LEAD_STATUS_BADGE;
+  const chave = etapa?.chave_sistema;
   if (chave && classes[chave]) return { className: classes[chave], style: undefined };
-  if (!etapa) return { className: classes.novo, style: undefined };
+  if (!etapa) {
+    const tipoClasses = variant === 'style' ? ETAPA_TIPO_STYLE : ETAPA_TIPO_BADGE;
+    return { className: tipoClasses[etapaTipo] || tipoClasses.em_andamento, style: undefined };
+  }
 
   if (variant === 'style') {
     return {

@@ -847,7 +847,7 @@ export default function Leads() {
                     </TableCell>
                   </TableRow>
                 ) : filtrados.map((lead, i) => {
-                  const etapaVisual = getEtapaVisual(findEtapaDoLead(etapas, lead), { status: lead.status });
+                  const etapaVisual = getEtapaVisual(findEtapaDoLead(etapas, lead), { etapaTipo: lead.etapa_tipo });
                   return (
                     <TableRow
                       key={lead.id}

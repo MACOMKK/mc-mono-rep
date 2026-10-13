@@ -3,7 +3,6 @@ import { assertSupabaseConfigured, supabase } from '@macom/api-client/supabaseCl
 import {
   LEAD_STATUS_LABEL,
   etapaExigeMotivo,
-  etapaTipoFromStatus,
 } from '@/lib/leadStatus';
 
 const CRM_ATTACHMENTS_BUCKET = 'crm-anexos';
@@ -184,7 +183,7 @@ function mapLeadRow(row = {}) {
     status: row.status || 'novo',
     pipeline_id: row.pipeline_id || '',
     etapa_id: row.etapa_id || '',
-    etapa_tipo: row.etapa_tipo || etapaTipoFromStatus(row.status || 'novo'),
+    etapa_tipo: row.etapa_tipo || 'em_andamento',
     motivo_status_id: row.motivo_status_id || '',
     modelo_interesse: vehicleLabel || row.modelo_interesse || '',
     veiculo_interesse: vehicle.id ? vehicle : null,

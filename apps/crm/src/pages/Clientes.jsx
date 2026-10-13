@@ -45,7 +45,7 @@ const ORIGEM_CADASTRO_LABEL = {
 };
 
 function LeadEtapaBadge({ lead, etapas }) {
-  const visual = getEtapaVisual(findEtapaDoLead(etapas, lead), { variant: 'style', status: lead.status });
+  const visual = getEtapaVisual(findEtapaDoLead(etapas, lead), { variant: 'style', etapaTipo: lead.etapa_tipo });
   return (
     <Badge className={cn('rounded-sm border text-[10px] uppercase tracking-wider', visual.className)} style={visual.style}>
       {getLeadEtapaLabel(etapas, lead)}

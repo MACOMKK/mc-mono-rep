@@ -123,16 +123,16 @@ describe('resultadoMotivoAplicaEm (espelha prepare_activity_business_state)', ()
 });
 
 describe('lead x etapa', () => {
-  it('acha a etapa por etapa_id e, sem ele, pela etapa de sistema do status', () => {
-    expect(findEtapaDoLead(ETAPAS, { etapa_id: 'livre-pos-negoc', status: 'negociacao' }).id).toBe('livre-pos-negoc');
-    expect(findEtapaDoLead(ETAPAS, { etapa_id: '', status: 'qualificado' }).id).toBe('qualificado');
-    expect(getLeadEtapaLabel([], { status: 'negociacao' })).toBe('Negociação');
+  it('acha a etapa por etapa_id; sem bater com nenhuma, cai no fallback por etapa_tipo', () => {
+    expect(findEtapaDoLead(ETAPAS, { etapa_id: 'livre-pos-negoc' }).id).toBe('livre-pos-negoc');
+    expect(findEtapaDoLead(ETAPAS, { etapa_id: 'inexistente' })).toBeNull();
+    expect(getLeadEtapaLabel([], { etapa_tipo: 'em_andamento' })).toBe('Em andamento');
   });
 
-  it('lead ativo pelo etapa_tipo (com fallback no status)', () => {
-    expect(isLeadAtivo({ etapa_tipo: 'em_andamento', status: 'perdido' })).toBe(true);
-    expect(isLeadAtivo({ etapa_tipo: 'ganho', status: 'negociacao' })).toBe(false);
-    expect(isLeadAtivo({ status: 'em_contato' })).toBe(true);
+  it('lead ativo e determinado so pelo etapa_tipo', () => {
+    expect(isLeadAtivo({ etapa_tipo: 'em_andamento' })).toBe(true);
+    expect(isLeadAtivo({ etapa_tipo: 'ganho' })).toBe(false);
+    expect(isLeadAtivo({ etapa_tipo: 'perdido' })).toBe(false);
     expect(isLeadAtivo(null)).toBe(false);
   });
 
@@ -141,5 +141,11 @@ describe('lead x etapa', () => {
     const livre = getEtapaVisual(etapa('x', 1, 'em_andamento', null, { cor: '#fbbf24' }));
     expect(livre.style.backgroundColor).toBe('#fbbf24');
     expect(livre.style.color).toBe('#1a1a1a');
+  });
+
+  it('visual sem etapa resolvida cai na paleta generica por etapa_tipo', () => {
+    expect(getEtapaVisual(null, { etapaTipo: 'ganho' }).className).toContain('bg-green-600');
+    expect(getEtapaVisual(null, { etapaTipo: 'perdido' }).className).toContain('bg-red-600');
+    expect(getEtapaVisual(null).className).toContain('bg-blue-600');
   });
 });

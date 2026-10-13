@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   LEAD_STATUS_REQUIREMENTS,
   RESULTADO_LEAD_STATUS_TARGET,
-  isLeadEligibleForResultado,
 } from '@/lib/leadStatus';
 
 // Este teste fixa em JS as regras hoje implementadas em duas triggers Postgres distintas,
@@ -55,38 +54,5 @@ describe('RESULTADO_LEAD_STATUS_TARGET (espelha apply_activity_outcome)', () => 
     // entao o form nao precisa saber do alvo para decidir campos obrigatorios.
     expect(RESULTADO_LEAD_STATUS_TARGET.contato_realizado).toBeUndefined();
     expect(RESULTADO_LEAD_STATUS_TARGET.sem_resposta).toBeUndefined();
-  });
-});
-
-describe('isLeadEligibleForResultado (espelha o WHERE de apply_activity_outcome)', () => {
-  const ACTIVE_BEFORE_NEGOCIACAO = ['novo', 'tentativa_contato', 'em_contato', 'qualificado'];
-  const ACTIVE_BEFORE_QUALIFICADO = ['novo', 'tentativa_contato', 'em_contato', 'qualificado'];
-
-  it('venda_realizada e lead_perdido sao sempre elegiveis, em qualquer status', () => {
-    for (const status of ['novo', 'negociacao', 'convertido', 'perdido', 'qualificado']) {
-      expect(isLeadEligibleForResultado('venda_realizada', status)).toBe(true);
-      expect(isLeadEligibleForResultado('lead_perdido', status)).toBe(true);
-    }
-  });
-
-  it('proposta_enviada e elegivel ate negociacao, mas nao apos convertido/perdido', () => {
-    for (const status of [...ACTIVE_BEFORE_NEGOCIACAO, 'negociacao']) {
-      expect(isLeadEligibleForResultado('proposta_enviada', status)).toBe(true);
-    }
-    expect(isLeadEligibleForResultado('proposta_enviada', 'convertido')).toBe(false);
-    expect(isLeadEligibleForResultado('proposta_enviada', 'perdido')).toBe(false);
-  });
-
-  it('visita_agendada e test_drive sao elegiveis ate qualificado, mas nao em negociacao em diante', () => {
-    for (const status of ACTIVE_BEFORE_QUALIFICADO) {
-      expect(isLeadEligibleForResultado('visita_agendada', status)).toBe(true);
-      expect(isLeadEligibleForResultado('test_drive', status)).toBe(true);
-    }
-    expect(isLeadEligibleForResultado('visita_agendada', 'negociacao')).toBe(false);
-    expect(isLeadEligibleForResultado('test_drive', 'negociacao')).toBe(false);
-  });
-
-  it('resultado desconhecido nunca e elegivel', () => {
-    expect(isLeadEligibleForResultado('resultado_inexistente', 'novo')).toBe(false);
   });
 });
