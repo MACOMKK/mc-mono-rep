@@ -170,7 +170,7 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
       limit: 10,
       filters: { lead_id: lead.id },
     }),
-    enabled: open && Boolean(lead?.id) && lead?.status === 'convertido',
+    enabled: open && Boolean(lead?.id) && lead?.etapa_tipo === 'ganho',
   });
   const vendas = vendasPage.rows || [];
 

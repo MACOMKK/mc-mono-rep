@@ -89,7 +89,6 @@ export default function LeadForm({
     email: '',
     cpf_cnpj: '',
     origem_id: '',
-    status: 'novo',
     pipeline_id: defaultPipelineId || undefined,
     modelo_interesse: '',
     veiculo_interesse: {

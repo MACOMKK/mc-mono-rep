@@ -1,23 +1,6 @@
-export const LEAD_STATUS = [
-  'novo',
-  'tentativa_contato',
-  'em_contato',
-  'qualificado',
-  'negociacao',
-  'convertido',
-  'perdido',
-];
-
-export const LEAD_STATUS_LABEL = {
-  novo: 'Novo',
-  tentativa_contato: 'Tentativa de contato',
-  em_contato: 'Em contato',
-  qualificado: 'Qualificado',
-  negociacao: 'Negociação',
-  convertido: 'Convertido',
-  perdido: 'Perdido',
-};
-
+// Paleta de cor por `chave_sistema` da etapa (vocabulario fixo: novo/tentativa_contato/
+// em_contato/qualificado/negociacao/convertido/perdido) -- independente da antiga coluna
+// leads.status (removida na fase 2.6), usada por getEtapaVisual() a partir de etapa.chave_sistema.
 export const LEAD_STATUS_STYLE = {
   novo: 'border-blue-200 bg-blue-50 text-blue-700',
   tentativa_contato: 'border-amber-200 bg-amber-50 text-amber-700',
@@ -36,31 +19,6 @@ export const LEAD_STATUS_BADGE = {
   negociacao: 'bg-orange-500 text-white',
   convertido: 'bg-green-600 text-white',
   perdido: 'bg-red-600 text-white',
-};
-
-// Status que exigem justificativa antes do lead avancar. `motivo: true` exige selecionar
-// um gestao_crm.motivos_status (catalogo) cadastrado para aquele status; `fields` lista
-// colunas do lead que ja existem no cadastro e que precisam estar preenchidas. Aplicado
-// tanto no Kanban (drag-and-drop) quanto no formulario de edicao do lead; o backend
-// (trigger gestao_crm.prepare_lead_phase1) reforca a mesma regra.
-export const LEAD_STATUS_REQUIREMENTS = {
-  qualificado: { motivo: true, fields: [] },
-  negociacao: { motivo: false, fields: [] },
-  convertido: { motivo: true, fields: [] },
-  perdido: { motivo: true, fields: [] },
-};
-
-// Resultado de gestao_crm.atendimentos -> status de lead que a conclusao da atividade
-// provoca (gestao_crm.apply_activity_outcome()). Usado para decidir, no formulario de
-// conclusao de atividade (EventoForm), quando exigir motivo -- mesma exigencia de
-// LEAD_STATUS_REQUIREMENTS, so que disparada pelo resultado do atendimento em vez de
-// uma mudanca manual de status no Kanban/LeadForm.
-export const RESULTADO_LEAD_STATUS_TARGET = {
-  venda_realizada: 'convertido',
-  lead_perdido: 'perdido',
-  proposta_enviada: 'negociacao',
-  visita_agendada: 'qualificado',
-  test_drive: 'qualificado',
 };
 
 // ---------------------------------------------------------------------------------------

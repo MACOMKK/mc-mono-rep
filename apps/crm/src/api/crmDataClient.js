@@ -1,9 +1,6 @@
 import { crmApi } from '@macom/api-client/crmApi';
 import { assertSupabaseConfigured, supabase } from '@macom/api-client/supabaseClient';
-import {
-  LEAD_STATUS_LABEL,
-  etapaExigeMotivo,
-} from '@/lib/leadStatus';
+import { etapaExigeMotivo } from '@/lib/leadStatus';
 
 const CRM_ATTACHMENTS_BUCKET = 'crm-anexos';
 
@@ -180,7 +177,6 @@ function mapLeadRow(row = {}) {
     email_normalizado: row.email_normalizado || normalizeEmail(row.email),
     origem_id: row.origem_id || '',
     origem: row.origem_nome || '',
-    status: row.status || 'novo',
     pipeline_id: row.pipeline_id || '',
     etapa_id: row.etapa_id || '',
     etapa_tipo: row.etapa_tipo || 'em_andamento',
@@ -268,7 +264,6 @@ function mapOrigemLeadRow(row = {}) {
 function mapMotivoStatusRow(row = {}) {
   return {
     id: row.id,
-    status: row.status || '',
     aplica_em: row.aplica_em || '',
     nome: row.nome || '',
     ativo: row.ativo !== false,
@@ -467,14 +462,11 @@ function mapLeadPayload(data = {}, clienteId) {
   const phone = requireNormalizedPhone(data.telefone, 'Lead');
   const email = requireValidEmail(data.email, 'Lead');
 
-  // data.etapa (objeto da etapa destino) vem de quem move o lead por etapa (Kanban/LeadForm);
-  // sem ele vale a regra antiga por status. A regra de verdade e do banco (prepare_lead_phase1).
-  const exigeMotivo = data.etapa
-    ? etapaExigeMotivo(data.etapa)
-    : ['qualificado', 'convertido', 'perdido'].includes(data.status);
-  if (exigeMotivo && !data.motivo_status_id) {
-    const destino = data.etapa?.nome || LEAD_STATUS_LABEL[data.status] || data.status;
-    throw new Error(`Selecione um motivo para mover o lead para ${destino}.`);
+  // data.etapa (objeto da etapa destino) vem de quem move o lead por etapa (Kanban/LeadForm) --
+  // sempre obrigatorio desde a fase 2.6 (leads.status saiu, nao ha mais fallback por status).
+  // A regra de verdade e do banco (prepare_lead_phase1).
+  if (data.etapa && etapaExigeMotivo(data.etapa) && !data.motivo_status_id) {
+    throw new Error(`Selecione um motivo para mover o lead para ${data.etapa.nome}.`);
   }
 
   if (!data.origem_id) {
@@ -489,8 +481,8 @@ function mapLeadPayload(data = {}, clienteId) {
     email: email || null,
     email_normalizado: normalizeEmail(email) || null,
     origem_id: data.origem_id,
-    // status nao e mais enviado: e so espelho de leitura, sempre derivado de etapa_id pelo
-    // trigger gestao_crm.sync_lead_etapa_status() (inversao da sync, fase 2.7).
+    // leads.status nao existe mais (fase 2.6): etapa_id/etapa_tipo e a unica fonte, via trigger
+    // gestao_crm.sync_lead_etapa_status().
     ...(data.pipeline_id ? { pipeline_id: data.pipeline_id } : {}),
     ...(data.etapa_id ? { etapa_id: data.etapa_id } : {}),
     modelo_interesse: data.modelo_interesse || formatVehicleLabel(data.veiculo_interesse) || null,
@@ -656,7 +648,6 @@ async function uploadLeadAttachment({ lead, file }) {
     descricao: file.name || safeName,
     entidade: 'Lead',
     entidade_id: lead.id,
-    status: lead.status,
     metadados: {
       origem: 'lead_attachment',
       bucket: CRM_ATTACHMENTS_BUCKET,
@@ -841,7 +832,7 @@ const LeadRepository = {
       telefone: data.telefone,
       email: data.email,
       empresa: data.empresa,
-      status_relacionamento: data.status === 'convertido' ? 'cliente' : 'lead',
+      status_relacionamento: data.etapa_tipo === 'ganho' ? 'cliente' : 'lead',
     });
     const leadPayload = mapLeadPayload(data);
     const vehiclePayload = hasVehicleInterest(data) ? mapVeiculoInteressePayload(data) : null;
@@ -874,16 +865,15 @@ const LeadRepository = {
 
   async update(id, data) {
     const current = await getLead(id);
-    // status nao e mais enviado (inversao da sync, fase 2.7): o banco sempre deriva de etapa_id
-    // (trg_crm_leads_a_sync_etapa). Mudar a etapa e sempre por etapa_id -- nao existe mais um
-    // caminho de mudar status sem etapa_id.
+    // leads.status nao existe mais (fase 2.6): mudar a etapa e sempre por etapa_id, o banco
+    // deriva etapa_tipo (trg_crm_leads_a_sync_etapa).
     const nextData = { ...current, ...data };
     const clientePayload = mapClientePayload({
       nome: nextData.nome,
       telefone: nextData.telefone,
       email: nextData.email,
       empresa: nextData.empresa,
-      status_relacionamento: nextData.etapa_tipo === 'ganho' || nextData.status === 'convertido' ? 'cliente' : 'lead',
+      status_relacionamento: nextData.etapa_tipo === 'ganho' ? 'cliente' : 'lead',
     });
     const leadPayload = mapLeadPayload(nextData);
     const vehiclePayload = hasVehicleInterest(data) ? mapVeiculoInteressePayload(data, id) : null;
@@ -964,11 +954,9 @@ const OrigemLeadRepository = {
 const MotivoStatusRepository = {
   ...createListRepository('MotivoStatus', crmApi.motivos_status, mapMotivoStatusRow),
 
-  // aplica_em (qualificado | ganho | perdido) e o campo novo; status ainda e aceito e o banco
-  // sincroniza um com o outro (sync_motivo_status_aplica_em) ate o corte da 2.6.
   async create(data) {
     const row = await crmApi.motivos_status.create({
-      ...(data.aplica_em ? { aplica_em: data.aplica_em } : { status: data.status }),
+      aplica_em: data.aplica_em,
       nome: data.nome,
       ativo: data.ativo !== false,
     });
@@ -977,7 +965,7 @@ const MotivoStatusRepository = {
 
   async update(id, data) {
     const row = await crmApi.motivos_status.update(id, {
-      ...(data.aplica_em ? { aplica_em: data.aplica_em } : { status: data.status }),
+      aplica_em: data.aplica_em,
       nome: data.nome,
       ativo: data.ativo !== false,
     });

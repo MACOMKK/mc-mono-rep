@@ -37,15 +37,6 @@ import {
 import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 
-// Status que o lead assume ao entrar na etapa (espelho de trg_crm_leads_a_sync_etapa), so
-// para o update otimista do Kanban -- o valor real volta do banco.
-const statusOtimistaDaEtapa = (etapa, statusAtual) => {
-  if (etapa.chave_sistema) return etapa.chave_sistema;
-  if (etapa.tipo === 'ganho') return 'convertido';
-  if (etapa.tipo === 'perdido') return 'perdido';
-  return ['novo', 'tentativa_contato', 'em_contato', 'qualificado', 'negociacao'].includes(statusAtual) ? statusAtual : 'em_contato';
-};
-
 const SLA_STYLES = {
   atrasado: 'bg-red-100 text-red-700',
   alerta: 'bg-amber-100 text-amber-700',
@@ -213,7 +204,6 @@ export default function Leads() {
                 id: tempId,
                 created_date: now,
                 updated_date: now,
-                status: 'novo',
                 empresa: data.empresa || 'Macom Ananindeua',
                 ...optimisticData,
               },
@@ -427,7 +417,7 @@ export default function Leads() {
       const previousLeads = queryClient.getQueryData(leadsQueryKey);
       const previousLeadsKanban = queryClient.getQueryData(leadsKanbanQueryKey);
       const applyEtapa = (lead) => (lead.id === id
-        ? { ...lead, etapa_id: etapa.id, etapa_tipo: etapa.tipo, status: statusOtimistaDaEtapa(etapa, lead.status) }
+        ? { ...lead, etapa_id: etapa.id, etapa_tipo: etapa.tipo }
         : lead);
 
       queryClient.setQueryData(leadsQueryKey, (currentPage = leadsPage) => ({
@@ -474,7 +464,6 @@ export default function Leads() {
       descricao: text,
       entidade: 'Lead',
       entidade_id: lead.id,
-      status: lead.status,
       metadados: { origem: 'lead_note' },
     }),
     onMutate: async ({ lead, text }) => {
@@ -492,7 +481,6 @@ export default function Leads() {
           descricao: text,
           entidade: 'Lead',
           entidade_id: lead.id,
-          status: lead.status,
           metadados: { origem: 'lead_note', pendente: true },
           created_date: new Date().toISOString(),
           updated_date: new Date().toISOString(),
@@ -542,7 +530,6 @@ export default function Leads() {
           descricao: file.name,
           entidade: 'Lead',
           entidade_id: lead.id,
-          status: lead.status,
           metadados: {
             origem: 'lead_attachment',
             nome: file.name,

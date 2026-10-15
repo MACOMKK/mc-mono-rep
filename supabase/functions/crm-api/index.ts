@@ -52,7 +52,6 @@ const ENTITY_CONFIG = {
       'email',
       'email_normalizado',
       'origem_id',
-      'status',
       'pipeline_id',
       'etapa_id',
       'modelo_interesse',
@@ -209,7 +208,7 @@ const ENTITY_CONFIG = {
     table: 'motivos_status',
     orderBy: 'nome',
     orderDirection: 'asc',
-    allowedFields: ['status', 'aplica_em', 'nome', 'ativo'],
+    allowedFields: ['aplica_em', 'nome', 'ativo'],
   },
   propostas: {
     table: 'propostas',
@@ -461,13 +460,8 @@ function mapDatabaseError(error: unknown) {
     return message;
   }
 
-  if (message.includes('motivos_status_status_nome_key')) {
-    return 'Ja existe um motivo com este nome para este status.';
-  }
-
-  if (message.includes('Tipo do motivo invalido')
-    || message.includes('O status e o tipo informados para o motivo nao conferem')) {
-    return message;
+  if (message.includes('motivos_status_aplica_em_nome_key')) {
+    return 'Ja existe um motivo com este nome para este tipo.';
   }
 
   if (message.includes('etapas_pipeline_tipo_check')) {
@@ -897,7 +891,7 @@ async function ensureLeadAccessLight(
   const scope = buildAccessScope('leads', access, collaborator, 2);
   const whereScope = scope.clause ? `and ${scope.clause}` : '';
   const rows = await sql.unsafe(
-    `select l.id, l.cliente_id, l.status, l.responsavel_id, l.unidade_id from ${CRM_SCHEMA}.leads l where l.id = $1 ${whereScope} limit 1;`,
+    `select l.id, l.cliente_id, l.responsavel_id, l.unidade_id from ${CRM_SCHEMA}.leads l where l.id = $1 ${whereScope} limit 1;`,
     [id, ...scope.values],
   );
 
@@ -1844,7 +1838,6 @@ Deno.serve(async (request) => {
             descricao: body.historico.descricao,
             entidade: 'Lead',
             entidade_id: leadRow.id,
-            status: leadRow.status,
           };
           if (collaborator?.id) historicoPayload.criado_por = collaborator.id;
           const insertQuery = buildInsertQuery(CRM_SCHEMA, 'historico_atendimentos', historicoPayload);
@@ -2101,14 +2094,9 @@ Deno.serve(async (request) => {
 
         // Lead em etapa de ganho volta para a pipelines.etapa_cancelamento_id configurada
         // (fallback: etapa de sistema 'negociacao', depois a ultima etapa ativa em andamento).
-        // O status e derivado da etapa pelo trigger trg_crm_leads_a_sync_etapa.
-        const leadRows = await transaction.unsafe(
-          `select status from ${CRM_SCHEMA}.leads where id = $1 limit 1;`,
-          [canceledVenda.lead_id],
-        );
-        let leadStatus = leadRows[0]?.status;
-
-        const reopenedRows = await transaction.unsafe(
+        // etapa_tipo e atualizado pelo trigger trg_crm_leads_a_sync_etapa (status nao existe mais
+        // desde a fase 2.6 -- corte do legado).
+        await transaction.unsafe(
           `update ${CRM_SCHEMA}.leads l
            set etapa_id = coalesce(
              (select p.etapa_cancelamento_id from ${CRM_SCHEMA}.pipelines p where p.id = l.pipeline_id),
@@ -2123,22 +2111,19 @@ Deno.serve(async (request) => {
              and exists (
                select 1 from ${CRM_SCHEMA}.etapas_pipeline e
                where e.pipeline_id = l.pipeline_id and e.tipo = 'em_andamento' and e.ativo
-             )
-           returning l.status;`,
+             );`,
           [canceledVenda.lead_id],
         );
-        if (reopenedRows[0]) leadStatus = reopenedRows[0].status;
 
         await transaction.unsafe(
           `insert into ${CRM_SCHEMA}.historico_atendimentos (
-            cliente_id, lead_id, tipo, descricao, entidade, entidade_id, status, metadados, criado_por
-          ) values ($1, $2, 'venda_cancelada', $3, 'Venda', $4, $5, $6, $7);`,
+            cliente_id, lead_id, tipo, descricao, entidade, entidade_id, metadados, criado_por
+          ) values ($1, $2, 'venda_cancelada', $3, 'Venda', $4, $5, $6);`,
           [
             canceledVenda.cliente_id,
             canceledVenda.lead_id,
             `Venda cancelada: ${motivoCancelamento}`,
             vendaId,
-            leadStatus,
             JSON.stringify({ venda_id: vendaId, motivo_cancelamento: motivoCancelamento }),
             collaborator?.id ?? null,
           ],

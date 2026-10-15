@@ -168,7 +168,7 @@ export default function Propostas() {
   });
 
   const motivosConvertido = useMemo(
-    () => motivosStatus.filter((motivo) => (motivo.aplica_em ? motivo.aplica_em === 'ganho' : motivo.status === 'convertido') && motivo.ativo),
+    () => motivosStatus.filter((motivo) => motivo.aplica_em === 'ganho' && motivo.ativo),
     [motivosStatus],
   );
 

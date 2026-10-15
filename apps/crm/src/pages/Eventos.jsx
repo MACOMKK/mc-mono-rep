@@ -205,12 +205,12 @@ export default function Eventos() {
 
       if (data.status === 'concluida' && data.resultado === 'venda_realizada') {
         queryClient.setQueryData(formLeadsQueryKey, (current = []) =>
-          current.map((lead) => lead.id === data.lead_id ? { ...lead, status: 'convertido', etapa_tipo: 'ganho' } : lead)
+          current.map((lead) => lead.id === data.lead_id ? { ...lead, etapa_tipo: 'ganho' } : lead)
         );
       } else if (data.status === 'concluida' && data.resultado === 'lead_perdido') {
         queryClient.setQueryData(formLeadsQueryKey, (current = []) =>
           current.map((lead) => lead.id === data.lead_id
-            ? { ...lead, status: 'perdido', etapa_tipo: 'perdido', motivo_perda: data.motivo_resultado || '' }
+            ? { ...lead, etapa_tipo: 'perdido', motivo_perda: data.motivo_resultado || '' }
             : lead)
         );
       }
