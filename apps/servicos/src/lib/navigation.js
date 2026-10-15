@@ -29,7 +29,7 @@ export const servicosModules = [
       { key: 'aprovacoes', label: 'Aprovações', icon: CheckCircle2, path: '/aprovacoes', requires: 'isAprovador' },
       { key: 'pagamentos', label: 'Contas a pagar', icon: Receipt, path: '/pagamentos', requires: 'isPagador' },
       { key: 'calendario-vencimentos', label: 'Calendário', icon: CalendarDays, path: '/calendario-vencimentos', requires: 'isPagador' },
-      { key: 'fornecedores', label: 'Fornecedores', icon: Building2, path: '/fornecedores', requires: 'isFinanceiro' },
+      { key: 'fornecedores', label: 'Fornecedores', icon: Building2, path: '/fornecedores', requires: 'isPagador' },
       { key: 'categorias', label: 'Categorias', icon: Tag, path: '/categorias', requires: 'isFinanceiro' },
       { key: 'relatorios', label: 'Relatórios', icon: BarChart3, path: '/relatorios', requires: 'isFinanceiro' },
     ],

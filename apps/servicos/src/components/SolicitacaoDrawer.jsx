@@ -66,6 +66,7 @@ import {
   TabsTrigger,
   useToast,
 } from '@macom/ui';
+import FornecedorDetalheDialog from '@/components/FornecedorDetalheDialog';
 import { useAuth } from '@/lib/AuthContext';
 import { isAllowedAnexoMimeType, MAX_ANEXO_SIZE, substituirAnexo, uploadAnexo } from '@/lib/anexoUpload';
 import { getFriendlyErrorMessage } from '@/lib/errorMessage';
@@ -183,6 +184,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
 
   const [novoTipoAnexo, setNovoTipoAnexo] = useState('');
   const [numeroCopiado, setNumeroCopiado] = useState(false);
+  const [fornecedorDialogAberto, setFornecedorDialogAberto] = useState(false);
   const precisaClassificarAnexo = !novoTipoAnexo;
   const [novoSigiloso, setNovoSigiloso] = useState(false);
   const [novoExigirDuasAssinaturas, setNovoExigirDuasAssinaturas] = useState(false);
@@ -291,7 +293,8 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
     }
   }
 
-  function handleAbrirFornecedor() {
+  function handleGerenciarFornecedores() {
+    setFornecedorDialogAberto(false);
     onOpenChange(false);
     navigate('/fornecedores');
   }
@@ -876,12 +879,23 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                     {solicitacao.tipo_beneficiario === 'colaborador' ? (
                       <CampoDetalhe icon={User} label="Colaborador (suprimento de caixa)" value={solicitacao.fornecedor} />
                     ) : (
-                      <CampoDetalhe
-                        icon={Building2}
-                        label="Fornecedor"
-                        value={solicitacao.fornecedor}
-                        onClick={user?.isFinanceiro && solicitacao.fornecedor ? handleAbrirFornecedor : undefined}
-                      />
+                      <>
+                        <CampoDetalhe
+                          icon={Building2}
+                          label="Fornecedor"
+                          value={solicitacao.fornecedor}
+                          onClick={user?.isPagador && solicitacao.fornecedor_id ? () => setFornecedorDialogAberto(true) : undefined}
+                        />
+                        {user?.isPagador && (
+                          <FornecedorDetalheDialog
+                            open={fornecedorDialogAberto}
+                            onOpenChange={setFornecedorDialogAberto}
+                            solicitacaoId={solicitacao.id}
+                            podeGerenciar={Boolean(user?.isPagador)}
+                            onGerenciar={handleGerenciarFornecedores}
+                          />
+                        )}
+                      </>
                     )}
                     <CampoDetalhe icon={UserCheck} label="Aprovador responsável" value={solicitacao.aprovador_destino_nome} />
                     <CampoDetalhe icon={Wallet} label="Valor" value={formatValor(solicitacao.valor)} />

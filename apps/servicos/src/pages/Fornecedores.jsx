@@ -33,6 +33,7 @@ import CopyButton from '@/components/CopyButton';
 import Pagination from '@/components/Pagination';
 import SearchInput from '@/components/SearchInput';
 import { usePagination } from '@/hooks/usePagination';
+import { useAuth } from '@/lib/AuthContext';
 import {
   FORNECEDOR_FORM_VAZIO,
   formatCep,
@@ -97,7 +98,10 @@ function invalidateFornecedoresCatalogo(queryClient) {
   queryClient.invalidateQueries({ queryKey: ['servicos', 'catalogos-solicitacao'] });
 }
 
+// Financeiro gerencia (cadastra, edita, inativa, exclui); contas a pagar so consulta.
 export default function Fornecedores() {
+  const { user } = useAuth();
+  const podeGerenciar = Boolean(user?.isFinanceiro);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -252,16 +256,19 @@ export default function Fornecedores() {
         <h2 className="text-xl font-bold">Fornecedores</h2>
         <p className="text-sm text-muted-foreground">
           Fornecedores usados nas solicitações de pagamento.
+          {!podeGerenciar && ' Somente consulta.'}
         </p>
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <SearchInput value={busca} onChange={setBusca} placeholder="Buscar por nome ou documento..." className="max-w-sm" />
 
-        <Button onClick={openNovo}>
-          <Plus className="mr-1 h-4 w-4" />
-          Cadastrar fornecedor
-        </Button>
+        {podeGerenciar && (
+          <Button onClick={openNovo}>
+            <Plus className="mr-1 h-4 w-4" />
+            Cadastrar fornecedor
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -279,7 +286,7 @@ export default function Fornecedores() {
                 <TableHead>Documento</TableHead>
                 <TableHead>Cadastrado em</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                {podeGerenciar && <TableHead className="text-right">Ações</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -295,16 +302,19 @@ export default function Fornecedores() {
                   <TableCell>{formatData(row.criado_em)}</TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-2">
-                      <Switch
-                        checked={row.ativo}
-                        disabled={isTogglingAtivo(row.id)}
-                        onCheckedChange={() => handleToggleAtivo(row)}
-                      />
+                      {podeGerenciar && (
+                        <Switch
+                          checked={row.ativo}
+                          disabled={isTogglingAtivo(row.id)}
+                          onCheckedChange={() => handleToggleAtivo(row)}
+                        />
+                      )}
                       <Badge variant={row.ativo ? 'default' : 'secondary'}>
                         {row.ativo ? 'Ativo' : 'Inativo'}
                       </Badge>
                     </div>
                   </TableCell>
+                  {podeGerenciar && (
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" aria-label="Editar fornecedor" onClick={() => openEdit(row)}>
@@ -333,6 +343,7 @@ export default function Fornecedores() {
                       </TooltipProvider>
                     </div>
                   </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -474,10 +485,12 @@ export default function Fornecedores() {
             <Button type="button" variant="outline" onClick={closeView}>
               Fechar
             </Button>
-            <Button type="button" onClick={() => openEdit(viewRow)}>
-              <Pencil className="mr-1 h-4 w-4" />
-              Editar
-            </Button>
+            {podeGerenciar && (
+              <Button type="button" onClick={() => openEdit(viewRow)}>
+                <Pencil className="mr-1 h-4 w-4" />
+                Editar
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

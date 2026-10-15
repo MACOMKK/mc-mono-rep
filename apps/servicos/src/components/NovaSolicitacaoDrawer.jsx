@@ -93,6 +93,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
   const [descartarOpen, setDescartarOpen] = useState(false);
   const [novoFornecedorForm, setNovoFornecedorForm] = useState(FORNECEDOR_FORM_VAZIO);
   const [buscaFornecedor, setBuscaFornecedor] = useState('');
+  const [buscaCategoria, setBuscaCategoria] = useState('');
 
   useEffect(() => {
     setVisible(open);
@@ -228,6 +229,12 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
       [item.nome, item.documento].filter(Boolean).some((campo) => campo.toLowerCase().includes(termo)),
     );
   }, [fornecedores, buscaFornecedor]);
+
+  const categoriasFiltradas = useMemo(() => {
+    const termo = buscaCategoria.trim().toLowerCase();
+    if (!termo) return categorias;
+    return categorias.filter((item) => item.nome?.toLowerCase().includes(termo));
+  }, [categorias, buscaCategoria]);
 
   const unidadesDaEmpresa = form.empresaId
     ? unidades.filter((item) => item.empresa_id === form.empresaId)
@@ -763,16 +770,37 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
               <Label htmlFor="categoria">
                 Categoria <span className="text-destructive">*</span>
               </Label>
-              <Select value={form.categoriaId} onValueChange={setField('categoriaId')} disabled={catalogosLoading}>
+              <Select
+                value={form.categoriaId}
+                onValueChange={setField('categoriaId')}
+                onOpenChange={(nextOpen) => {
+                  if (!nextOpen) setBuscaCategoria('');
+                }}
+                disabled={catalogosLoading}
+              >
                 <SelectTrigger id="categoria">
                   <SelectValue placeholder={catalogosLoading ? 'Carregando...' : 'Selecione a categoria'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {categorias.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.nome}
-                    </SelectItem>
-                  ))}
+                  <div className="sticky top-0 z-10 -mx-1 -mt-1 mb-1 bg-popover p-1 pb-1.5">
+                    <Input
+                      autoFocus
+                      placeholder="Buscar categoria..."
+                      value={buscaCategoria}
+                      onChange={(event) => setBuscaCategoria(event.target.value)}
+                      onKeyDown={(event) => event.stopPropagation()}
+                      className="h-8"
+                    />
+                  </div>
+                  {categoriasFiltradas.length === 0 ? (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">Nenhuma categoria encontrada</div>
+                  ) : (
+                    categoriasFiltradas.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.nome}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>

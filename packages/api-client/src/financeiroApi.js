@@ -93,6 +93,10 @@ export const financeiroApi = {
       const result = await invokeServicos({ action: 'list_fornecedores_admin' });
       return result.rows || [];
     },
+    async getDaSolicitacao(solicitacaoId) {
+      const result = await invokeServicos({ action: 'get_fornecedor_solicitacao', solicitacao_id: solicitacaoId });
+      return result.row || null;
+    },
     async criar(dados) {
       const result = await invokeServicos({ action: 'criar_fornecedor', ...dados });
       return result.row || null;

@@ -95,7 +95,7 @@ const ServicosRoutes = () => {
         {user?.isAprovador && <Route path="/aprovacoes" element={<Aprovacoes />} />}
         {user?.isPagador && <Route path="/pagamentos" element={<Pagamentos />} />}
         {user?.isPagador && <Route path="/calendario-vencimentos" element={<CalendarioVencimentos />} />}
-        {user?.isFinanceiro && <Route path="/fornecedores" element={<Fornecedores />} />}
+        {user?.isPagador && <Route path="/fornecedores" element={<Fornecedores />} />}
         {user?.isFinanceiro && <Route path="/categorias" element={<Categorias />} />}
         {user?.isFinanceiro && <Route path="/relatorios" element={<Relatorios />} />}
         {user?.system_access_level === 'admin' && <Route path="/configuracoes" element={<Configuracoes />} />}

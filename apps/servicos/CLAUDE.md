@@ -138,8 +138,12 @@ reais (só adicionar coluna `mod_<novo>` na tabela, seguindo o mesmo padrão).
   - Fornecedores (`gestao_servicos.fornecedores`): cadastro exclusivo do papel `financeiro`
     (checado via `isFinanceiro(moduleRole)`, que já cobre admin da Camada 1 — `getServicosModuleRole`
     retorna `'financeiro'` pra admin). Tela dedicada `/fornecedores` (`src/pages/Fornecedores.jsx`,
-    só no menu pra `isFinanceiro`), ações `list_fornecedores_admin` (todos, com `ativo`),
-    `criar_fornecedor` e `atualizar_fornecedor`. `list_fornecedores`
+    no menu pra `isPagador`): o financeiro gerencia; o `contas_a_pagar` só consulta (sem
+    cadastrar/editar/inativar/excluir, controlado por `podeGerenciar = isFinanceiro` na tela).
+    Ações `list_fornecedores_admin` (leitura, `isPagador`; todos, com `ativo`), `criar_fornecedor`
+    e `atualizar_fornecedor`/`deletar_fornecedor` (`isFinanceiro`). Ficha rápida no drawer:
+    `get_fornecedor_solicitacao` (`isPagador`, escopada pela solicitação via `ensureRowAccess`)
+    alimenta o modal `FornecedorDetalheDialog.jsx` ao clicar no fornecedor. `list_fornecedores`
     (usada no select do `NovaSolicitacaoDrawer.jsx`, disponível a qualquer solicitante) só retorna
     `ativo = true`. Fornecedor é inativado, nunca apagado — `solicitacoes_pagamento.fornecedor_id`
     referencia a linha e `fornecedor` já é snapshot do nome, então inativar não quebra histórico.

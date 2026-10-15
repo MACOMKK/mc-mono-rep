@@ -1298,9 +1298,11 @@ Deno.serve(async (request) => {
       return json({ rows });
     }
 
+    // Leitura liberada a quem paga (contas a pagar ve a tela /fornecedores em modo consulta);
+    // criar/editar/excluir pela tela continuam so do financeiro (atualizar/deletar checam isFinanceiro).
     if (action === 'list_fornecedores_admin') {
-      if (!isFinanceiro(moduleRole)) {
-        throw Object.assign(new Error('Apenas o financeiro pode gerenciar fornecedores.'), { status: 403 });
+      if (!isPagador(moduleRole)) {
+        throw Object.assign(new Error('Sem permissao para ver os fornecedores.'), { status: 403 });
       }
 
       const rows = await sql.unsafe(
@@ -1316,6 +1318,34 @@ Deno.serve(async (request) => {
         `,
       );
       return json({ rows: rows.map((row) => ({ ...row, total_solicitacoes: Number(row.total_solicitacoes) })) });
+    }
+
+    // Ficha (somente leitura) do fornecedor de UMA solicitacao, pro modal do drawer. Liberada a
+    // quem paga (financeiro + contas a pagar), mas escopada pela solicitacao via ensureRowAccess:
+    // contas a pagar so ve fornecedor de solicitacao que ja consegue ver, sem acesso a tela de gestao.
+    if (action === 'get_fornecedor_solicitacao') {
+      if (!isPagador(moduleRole)) {
+        throw Object.assign(new Error('Sem permissao para ver os dados do fornecedor.'), { status: 403 });
+      }
+      const solicitacaoId = String(body.solicitacao_id || '');
+      if (!solicitacaoId) return json({ error: 'ID obrigatorio.' }, 400);
+      const solicitacao = await ensureRowAccess(solicitacaoId, moduleRole, collaborator);
+      if (!solicitacao.fornecedor_id) {
+        return json({ error: 'Solicitacao sem fornecedor vinculado.' }, 404);
+      }
+
+      const rows = await sql.unsafe(
+        `
+          select id, nome, ativo, tipo_pessoa, documento, inscricao_estadual, email, telefone,
+            endereco, cidade, uf, cep
+          from ${SERVICOS_SCHEMA}.fornecedores
+          where id = $1
+          limit 1;
+        `,
+        [solicitacao.fornecedor_id],
+      );
+      if (!rows[0]) return json({ error: 'Fornecedor nao encontrado.' }, 404);
+      return json({ row: rows[0] });
     }
 
     if (action === 'criar_fornecedor') {
