@@ -826,6 +826,7 @@ export default function ChecklistForm() {
           <AssinaturaModal
             open={modalAssinaturaEntradaAberto}
             titulo="Assinatura do cliente na entrada"
+            nomeCliente={cliente?.nome}
             onCancel={() => setModalAssinaturaEntradaAberto(false)}
             onConfirm={(dataUrl, { nome, vinculo, detalheVinculo }) => {
               setAssinaturaEntrada(dataUrl);

@@ -19,7 +19,7 @@ import { toUpperText } from '@/lib/oficinaFormat';
 const SIGNATURE_CANVAS_WIDTH = 600;
 const SIGNATURE_CANVAS_HEIGHT = 220;
 
-export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'Assinatura do cliente' }) {
+export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'Assinatura do cliente', nomeCliente = '' }) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef(null);
@@ -97,6 +97,13 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
     setIsEmpty(true);
   };
 
+  const handleVinculoChange = (next) => {
+    setVinculo(next);
+    if (next === 'Proprietário' && !nome.trim() && nomeCliente) {
+      setNome(toUpperText(nomeCliente));
+    }
+  };
+
   const handleConfirmar = () => {
     const canvas = canvasRef.current;
     if (!canvas || isEmpty || !nome.trim()) return;
@@ -130,7 +137,7 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium">Vínculo com o cliente</label>
-            <Select value={vinculo} onValueChange={setVinculo}>
+            <Select value={vinculo} onValueChange={handleVinculoChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecione (opcional)" />
               </SelectTrigger>
