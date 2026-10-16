@@ -458,7 +458,7 @@ export default function Estoque() {
   };
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-6">
+    <div className="px-4 py-6 md:px-6 xl:px-10 2xl:px-16">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4 border-b pb-5">
         <div className="flex gap-3">
           <div className="w-1.5 shrink-0 bg-primary" />

@@ -167,7 +167,7 @@ export default function Atendimento() {
   });
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-[1400px] px-4 md:px-6">
+    <div className="flex h-[calc(100vh-3.5rem)] px-4 md:px-6 xl:px-10 2xl:px-16">
       <div className="flex w-72 shrink-0 flex-col border-r border-border">
         <div className="border-b border-border px-4 py-4">
           <h1 className="text-xl font-black uppercase tracking-widest">Atendimento</h1>

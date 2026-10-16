@@ -91,7 +91,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-5">
+    <div className="px-4 md:px-6 xl:px-10 2xl:px-16 py-5">
       <div className="mb-5">
         <h1 className="text-xl font-black uppercase tracking-widest">Dashboard</h1>
         <p className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">

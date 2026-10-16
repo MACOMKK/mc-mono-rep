@@ -575,7 +575,7 @@ export default function Clientes() {
   }
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-5 md:px-6">
+    <div className="px-4 py-5 md:px-6 xl:px-10 2xl:px-16">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-black uppercase tracking-widest">Contatos e Clientes</h1>
