@@ -82,6 +82,24 @@ export default function Leads() {
   const [statusFiltro, setStatusFiltro] = useState('todos'); // 'todos' ou id da etapa
   const [pipelineId, setPipelineId] = useState(null);
   const { pipeline, pipelines, etapas, etapasAtivas } = usePipelineEtapas({ pipelineId: pipelineId || undefined });
+  const [pipelineMoveTarget, setPipelineMoveTarget] = useState(null); // lead sendo movido de pipeline
+  const [movePipelineId, setMovePipelineId] = useState('');
+  const [moveEtapaId, setMoveEtapaId] = useState('');
+  const [moveMotivoId, setMoveMotivoId] = useState('');
+  const {
+    pipeline: movePipeline,
+    etapasAtivas: moveEtapasAtivas,
+  } = usePipelineEtapas({ pipelineId: movePipelineId || undefined, enabled: Boolean(movePipelineId) });
+  const moveEtapasEmAndamento = useMemo(
+    () => moveEtapasAtivas.filter((item) => item.tipo === 'em_andamento'),
+    [moveEtapasAtivas],
+  );
+  useEffect(() => {
+    if (!movePipelineId || moveEtapasEmAndamento.length === 0) return;
+    const sugestao = moveEtapasEmAndamento.find((item) => item.id === movePipeline?.etapa_inicial_id)
+      || moveEtapasEmAndamento[0];
+    setMoveEtapaId(sugestao?.id || '');
+  }, [movePipelineId, movePipeline, moveEtapasEmAndamento]);
   const [viewMode, setViewMode] = useState('kanban');
   const [busca, setBusca] = useState('');
   const buscaDebounced = useDebouncedValue(busca);
@@ -450,6 +468,33 @@ export default function Leads() {
 
       toast({
         title: 'Nao foi possivel atualizar o lead',
+        description: error.message || 'Revise os dados informados.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const movePipelineMutation = useMutation({
+    mutationFn: ({ id, pipeline_id, etapa_id, motivo_status_id }) => crmDataClient.entities.Lead.update(id, {
+      pipeline_id,
+      etapa_id,
+      ...(motivo_status_id ? { motivo_status_id } : {}),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['leads-kanban'] });
+      queryClient.invalidateQueries({ queryKey: ['clientes'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-historico', pipelineMoveTarget?.id] });
+      setPipelineMoveTarget(null);
+      setMovePipelineId('');
+      setMoveEtapaId('');
+      setMoveMotivoId('');
+      setViewingLead(null);
+      toast({ title: 'Lead movido de pipeline com sucesso.' });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel mudar o lead de pipeline',
         description: error.message || 'Revise os dados informados.',
         variant: 'destructive',
       });
@@ -898,6 +943,12 @@ export default function Leads() {
         onCreateProposta={() => viewingLeadAtual && navigate(`/propostas?leadId=${viewingLeadAtual.id}`)}
         canExcluirTeste={canConfigure}
         onExcluirTeste={() => setLeadParaExcluirTeste(viewingLeadAtual)}
+        onMudarPipeline={() => {
+          setPipelineMoveTarget(viewingLeadAtual);
+          setMovePipelineId('');
+          setMoveEtapaId('');
+          setMoveMotivoId('');
+        }}
       />
 
       {activityFormOpen && viewingLead && (
@@ -986,6 +1037,102 @@ export default function Leads() {
                   </Button>
                   <Button type="submit" disabled={!canSubmit || updateStatusMutation.isPending} className="rounded-none text-xs font-bold uppercase tracking-wider">
                     {updateStatusMutation.isPending ? 'Salvando...' : 'Confirmar'}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
+
+      {(() => {
+        const etapaDestino = moveEtapasEmAndamento.find((item) => item.id === moveEtapaId) || null;
+        const motivoAplicaEmMove = etapaDestino ? etapaMotivoAplicaEm(etapaDestino) : null;
+        const closeMoveDialog = () => {
+          setPipelineMoveTarget(null);
+          setMovePipelineId('');
+          setMoveEtapaId('');
+          setMoveMotivoId('');
+        };
+        const canSubmitMove = Boolean(pipelineMoveTarget) && Boolean(movePipelineId) && Boolean(moveEtapaId)
+          && (!motivoAplicaEmMove || Boolean(moveMotivoId));
+
+        return (
+          <Dialog open={Boolean(pipelineMoveTarget)} onOpenChange={(next) => { if (!next) closeMoveDialog(); }}>
+            <DialogContent className="max-w-md rounded-none p-0">
+              <DialogHeader className="px-6 py-4 bg-[#1a1a1a]">
+                <DialogTitle className="text-sm font-black uppercase tracking-widest text-white">
+                  Mudar lead de pipeline
+                </DialogTitle>
+              </DialogHeader>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!pipelineMoveTarget || !canSubmitMove) return;
+                  movePipelineMutation.mutate({
+                    id: pipelineMoveTarget.id,
+                    pipeline_id: movePipelineId,
+                    etapa_id: moveEtapaId,
+                    ...(motivoAplicaEmMove ? { motivo_status_id: moveMotivoId } : {}),
+                  });
+                }}
+                className="flex flex-col gap-4 p-6"
+              >
+                <p className="text-xs text-muted-foreground">
+                  Mover <strong>{pipelineMoveTarget?.nome}</strong> para outro pipeline. O lead sai do pipeline
+                  atual e passa a aparecer no Kanban do pipeline escolhido, na etapa selecionada.
+                </p>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Pipeline de destino</label>
+                  <Select value={movePipelineId} onValueChange={setMovePipelineId}>
+                    <SelectTrigger className="h-9 rounded-none text-xs font-bold uppercase tracking-wider">
+                      <SelectValue placeholder="Selecione o pipeline" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pipelines
+                        .filter((item) => item.ativo && item.id !== pipelineMoveTarget?.pipeline_id)
+                        .map((item) => (
+                          <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {movePipelineId ? (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Etapa de destino</label>
+                    <Select value={moveEtapaId} onValueChange={setMoveEtapaId}>
+                      <SelectTrigger className="h-9 rounded-none text-xs font-bold uppercase tracking-wider">
+                        <SelectValue placeholder="Selecione a etapa" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {moveEtapasEmAndamento.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
+
+                {motivoAplicaEmMove && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Motivo</label>
+                    <MotivoStatusSelect
+                      aplicaEm={motivoAplicaEmMove}
+                      value={moveMotivoId}
+                      onChange={setMoveMotivoId}
+                      motivosStatus={motivosStatus}
+                    />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2">
+                  <Button type="button" variant="outline" className="rounded-none text-xs font-bold uppercase tracking-wider" onClick={closeMoveDialog}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" disabled={!canSubmitMove || movePipelineMutation.isPending} className="rounded-none text-xs font-bold uppercase tracking-wider">
+                    {movePipelineMutation.isPending ? 'Salvando...' : 'Confirmar'}
                   </Button>
                 </div>
               </form>

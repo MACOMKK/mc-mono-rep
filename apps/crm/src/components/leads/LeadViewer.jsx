@@ -25,6 +25,7 @@ import {
   History,
   Download,
   Trash2,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 function formatDate(value) {
@@ -100,7 +101,7 @@ function EmptyState({ children }) {
 
 const ATIVIDADES_VISIVEIS = 4;
 
-export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity, onCreateProposta, onExcluirTeste, canExcluirTeste }) {
+export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity, onCreateProposta, onExcluirTeste, canExcluirTeste, onMudarPipeline }) {
   const veiculo = lead?.veiculo_interesse || null;
   const { etapas } = usePipelineEtapas({ pipelineId: lead?.pipeline_id || undefined });
   const etapaVisual = getEtapaVisual(findEtapaDoLead(etapas, lead), { etapaTipo: lead?.etapa_tipo });
@@ -507,6 +508,16 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
             Fechar
           </Button>
           <div className="flex items-center gap-2">
+            {lead.etapa_tipo === 'em_andamento' && onMudarPipeline ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-none text-xs font-bold uppercase tracking-wider"
+                onClick={onMudarPipeline}
+              >
+                <ArrowLeftRight className="mr-1.5 h-3.5 w-3.5" /> Mudar de pipeline
+              </Button>
+            ) : null}
             {lead.eh_teste && canExcluirTeste ? (
               <Button
                 type="button"
