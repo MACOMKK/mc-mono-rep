@@ -705,7 +705,7 @@ export default function Leads() {
 
   return (
     <div className={cn(
-      'max-w-[1400px] mx-auto px-4 md:px-6',
+      viewMode === 'kanban' ? 'w-full px-4 md:px-6' : 'max-w-[1400px] mx-auto px-4 md:px-6',
       viewMode === 'kanban' ? 'pt-5 h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden' : 'py-5'
     )}>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">

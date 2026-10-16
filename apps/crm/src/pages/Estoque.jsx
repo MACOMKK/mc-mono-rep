@@ -443,11 +443,16 @@ export default function Estoque() {
   };
 
   const handleSalvarReserva = () => {
+    const temReserva = Boolean(reservaForm.vendedor_reserva_id && reservaForm.cliente_reserva_id);
+    const status = temReserva
+      ? 'reservado'
+      : (reservaDialogVeiculo.status === 'reservado' ? 'disponivel' : reservaDialogVeiculo.status);
     updateMutation.mutate({
       id: reservaDialogVeiculo.id,
       ...reservaDialogVeiculo,
       vendedor_reserva_id: reservaForm.vendedor_reserva_id || null,
       cliente_reserva_id: reservaForm.cliente_reserva_id || null,
+      status,
     });
     setReservaDialogVeiculo(null);
   };

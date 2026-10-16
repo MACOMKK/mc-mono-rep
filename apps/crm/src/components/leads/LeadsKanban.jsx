@@ -117,7 +117,7 @@ export default function LeadsKanban({ leads, etapas = [], onDragEnd, onCardClick
           return (
             <div
               key={etapa.id}
-              className="flex flex-col h-full flex-1 min-w-[240px] max-w-[300px] bg-[#f4f4f4] border-t-4 shrink-0"
+              className="flex flex-col h-full flex-1 min-w-[240px] bg-[#f4f4f4] border-t-4 shrink-0"
               style={{ borderTopColor: etapa.cor }}
             >
               {/* Column Header */}
