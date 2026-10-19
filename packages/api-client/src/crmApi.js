@@ -237,7 +237,11 @@ export const crmApi = {
     async saveFull(payload) {
       return invokeCrm({ action: 'save_veiculo_estoque_full', ...payload });
     },
+    async reserva(payload) {
+      return invokeCrm({ action: 'veiculo_estoque_reserva', ...payload });
+    },
   },
+  veiculos_estoque_historico_reserva: buildEntity('veiculos_estoque_historico_reserva'),
   pipelines: buildEntity('pipelines'),
   etapas_pipeline: buildEntity('etapas_pipeline'),
   pipeline_automacoes: buildEntity('pipeline_automacoes'),

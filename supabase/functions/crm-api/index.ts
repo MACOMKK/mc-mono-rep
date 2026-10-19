@@ -186,6 +186,14 @@ const ENTITY_CONFIG = {
       'cliente_reserva_id',
     ],
   },
+  // Somente leitura -- gravado so pela action veiculo_estoque_reserva e pela edge function de
+  // expiracao por TTL (crm-veiculos-estoque-expira-reserva), nunca via create/update generico.
+  veiculos_estoque_historico_reserva: {
+    table: 'veiculos_estoque_historico_reserva',
+    orderBy: 'alterado_em',
+    orderDirection: 'desc',
+    allowedFields: [],
+  },
   pipelines: {
     table: 'pipelines',
     orderBy: 'nome',
@@ -520,7 +528,11 @@ function mapDatabaseError(error: unknown) {
     return 'Nao e possivel excluir: existem veiculos ou versoes cadastrados neste modelo.';
   }
 
-  if (message.includes('violates foreign key constraint') && message.includes('veiculos_estoque')) {
+  if (
+    message.includes('violates foreign key constraint')
+    && message.includes('veiculos_estoque')
+    && !message.includes('veiculos_estoque_historico_reserva')
+  ) {
     return 'Nao e possivel excluir: este veiculo possui proposta ou venda vinculada.';
   }
 
@@ -969,6 +981,25 @@ function buildListSelect(entity: EntityName) {
     `;
   }
 
+  if (entity === 'veiculos_estoque_historico_reserva') {
+    return `
+      select hr.*,
+        va.nome as vendedor_anterior_nome,
+        vn.nome as vendedor_novo_nome,
+        ca.nome as cliente_anterior_nome,
+        cn.nome as cliente_novo_nome,
+        ab.nome as alterado_por_nome
+      from ${CRM_SCHEMA}.veiculos_estoque_historico_reserva hr
+      left join public.colaboradores va on va.id = hr.vendedor_anterior_id
+      left join public.colaboradores vn on vn.id = hr.vendedor_novo_id
+      left join public.colaboradores ab on ab.id = hr.alterado_por
+      left join ${CRM_SCHEMA}.clientes_crm cca on cca.id = hr.cliente_anterior_id
+      left join public.clientes ca on ca.id = cca.id
+      left join ${CRM_SCHEMA}.clientes_crm ccn on ccn.id = hr.cliente_novo_id
+      left join public.clientes cn on cn.id = ccn.id
+    `;
+  }
+
   if (entity === 'clientes') {
     // Tabela fisica e clientes_crm (extensao comercial); o FROM usa "as clientes"
     // para que access-scope.ts continue referenciando o nome logico "clientes"
@@ -1065,6 +1096,12 @@ function buildCountFromClause(entity: EntityName) {
     `;
   }
 
+  if (entity === 'veiculos_estoque_historico_reserva') {
+    // hr: filtro por veiculo_estoque_id (buildSqlFilters) usa o alias via baseAlias('hr') --
+    // precisa existir aqui tambem, mesmo sem nenhum join de fato usado no WHERE.
+    return `from ${CRM_SCHEMA}.veiculos_estoque_historico_reserva hr`;
+  }
+
   if (entity === 'clientes') {
     // p: buildSearchFilter/buildAccessScope referenciam nome/email/telefone_normalizado sem
     // alias, que so existem em public.clientes -- join obrigatorio mesmo so pra contar.
@@ -1099,6 +1136,7 @@ function baseAlias(entity: EntityName) {
   if (entity === 'atendimentos') return 'a';
   if (entity === 'leads') return 'l';
   if (entity === 'veiculos_estoque') return 've';
+  if (entity === 'veiculos_estoque_historico_reserva') return 'hr';
   // 'clientes' e nao 'c'/alias curto porque nao e um alias de verdade -- e o
   // proprio nome da tabela base no FROM (sem "as"). Necessario para desambiguar
   // colunas presentes nas duas tabelas do join (id/criado_em/atualizado_em) desde
@@ -1986,6 +2024,126 @@ Deno.serve(async (request) => {
       return json(result);
     }
 
+    // Action dedicada de reserva/liberacao: nao reenvia o veiculo inteiro (diferente de
+    // save_veiculo_estoque_full), valida regras de negocio que o update generico nunca checava
+    // (imobilizado, reserva de outro vendedor) e grava o historico da troca na mesma transacao.
+    if (action === 'veiculo_estoque_reserva') {
+      ensureCanConfigure(access);
+
+      const estoqueId = typeof body.estoqueId === 'string' && body.estoqueId ? body.estoqueId : '';
+      const acaoReserva = body.acao === 'liberar' ? 'liberar' : body.acao === 'reservar' ? 'reservar' : '';
+      const forcar = body.forcar === true;
+      const prazoHorasRaw = Number(body.prazoHoras);
+      const prazoHoras = Number.isFinite(prazoHorasRaw) && prazoHorasRaw > 0 ? prazoHorasRaw : 48;
+
+      if (!estoqueId) {
+        return json({ error: 'estoqueId obrigatorio.' }, 400);
+      }
+      if (!acaoReserva) {
+        return json({ error: 'Acao invalida. Use "reservar" ou "liberar".' }, 400);
+      }
+
+      const vendedorId = typeof body.vendedorId === 'string' && body.vendedorId ? body.vendedorId : '';
+      const clienteId = typeof body.clienteId === 'string' && body.clienteId ? body.clienteId : '';
+      if (acaoReserva === 'reservar' && (!vendedorId || !clienteId)) {
+        return json({ error: 'Selecione vendedor e cliente da reserva.' }, 400);
+      }
+
+      const estoqueRow = await sql.begin(async (transaction) => {
+        const existingRows = await transaction.unsafe(
+          `select status, situacao, vendedor_reserva_id, cliente_reserva_id
+           from ${CRM_SCHEMA}.veiculos_estoque where id = $1 limit 1 for update;`,
+          [estoqueId],
+        );
+        const existing = existingRows[0];
+        if (!existing) {
+          throw Object.assign(new Error('Veiculo em estoque nao encontrado.'), { status: 404 });
+        }
+
+        if (acaoReserva === 'reservar') {
+          if (existing.situacao === 'imobilizado') {
+            throw Object.assign(new Error('Este veiculo esta imobilizado.'), { status: 409 });
+          }
+          if (
+            existing.status === 'reservado'
+            && existing.vendedor_reserva_id
+            && existing.vendedor_reserva_id !== vendedorId
+            && !forcar
+          ) {
+            throw Object.assign(
+              new Error('Este veiculo esta reservado para outro vendedor. Confirme para assumir a reserva.'),
+              { status: 409 },
+            );
+          }
+
+          // cliente_reserva_id referencia gestao_crm.clientes_crm (extensao comercial do CRM),
+          // mas o picker de cliente do dialog busca em public.clientes (identidade generica,
+          // compartilhada entre apps -- ver 20260915120000_extract_public_clientes.sql). Um
+          // cliente que nunca passou por um lead do CRM nao tem linha em clientes_crm ainda,
+          // entao provisionamos uma aqui, mesmo padrao ja usado em save_lead_full (linha ~1803).
+          const existingExtensaoRows = await transaction.unsafe(
+            `select id from ${CRM_SCHEMA}.clientes_crm where id = $1 limit 1 for update;`,
+            [clienteId],
+          );
+          if (!existingExtensaoRows[0]) {
+            const identidadeRows = await transaction.unsafe(
+              `select id from public.clientes where id = $1 limit 1;`,
+              [clienteId],
+            );
+            if (!identidadeRows[0]) {
+              throw Object.assign(new Error('Cliente selecionado nao encontrado.'), { status: 404 });
+            }
+            const extensaoPayload = applyCreateScope('clientes', { id: clienteId }, access, collaborator);
+            if (collaborator?.id) extensaoPayload.criado_por = collaborator.id;
+            const insertExtensao = buildInsertQuery(CRM_SCHEMA, 'clientes_crm', extensaoPayload);
+            await transaction.unsafe(insertExtensao.text, insertExtensao.values);
+          }
+        }
+
+        const payload: Record<string, unknown> = acaoReserva === 'reservar'
+          ? {
+              status: 'reservado',
+              vendedor_reserva_id: vendedorId,
+              cliente_reserva_id: clienteId,
+              reserva_expira_em: new Date(Date.now() + prazoHoras * 60 * 60 * 1000).toISOString(),
+            }
+          : {
+              status: existing.status === 'reservado' ? 'disponivel' : existing.status,
+              vendedor_reserva_id: null,
+              cliente_reserva_id: null,
+              reserva_expira_em: null,
+            };
+
+        const updateQuery = buildUpdateQuery(CRM_SCHEMA, 'veiculos_estoque', estoqueId, payload);
+        const rows = await transaction.unsafe(updateQuery.text, updateQuery.values);
+
+        let acaoHistorico: 'reservado' | 'liberado' | 'trocado';
+        if (acaoReserva === 'liberar') {
+          acaoHistorico = 'liberado';
+        } else if (!existing.vendedor_reserva_id) {
+          acaoHistorico = 'reservado';
+        } else {
+          acaoHistorico = 'trocado';
+        }
+
+        const historicoPayload: Record<string, unknown> = {
+          veiculo_estoque_id: estoqueId,
+          acao: acaoHistorico,
+          vendedor_anterior_id: existing.vendedor_reserva_id,
+          cliente_anterior_id: existing.cliente_reserva_id,
+          vendedor_novo_id: acaoReserva === 'reservar' ? vendedorId : null,
+          cliente_novo_id: acaoReserva === 'reservar' ? clienteId : null,
+        };
+        if (collaborator?.id) historicoPayload.alterado_por = collaborator.id;
+        const historicoInsert = buildInsertQuery(CRM_SCHEMA, 'veiculos_estoque_historico_reserva', historicoPayload);
+        await transaction.unsafe(historicoInsert.text, historicoInsert.values);
+
+        return rows[0];
+      });
+
+      return json({ estoque: estoqueRow });
+    }
+
     // accept_proposta/close_venda sao as unicas portas para criar gestao_crm.vendas:
     // o INSERT dispara trg_crm_vendas_outcome (baixa de estoque + conversao do lead +
     // historico) dentro da mesma transacao que marca a proposta como aceita (quando
@@ -2188,6 +2346,12 @@ Deno.serve(async (request) => {
       && ['create', 'update', 'delete'].includes(action)
     ) {
       ensureCanConfigure(access);
+    }
+
+    // Historico de reserva e somente leitura: gravado so pela action veiculo_estoque_reserva e
+    // pela edge function de expiracao por TTL -- nunca via create/update/delete generico.
+    if (entity === 'veiculos_estoque_historico_reserva' && ['create', 'update', 'delete'].includes(action)) {
+      return json({ error: 'Historico de reserva e somente leitura.' }, 400);
     }
 
     // gestao_crm.vendas so pode ser criada via accept_proposta/close_venda (efeitos

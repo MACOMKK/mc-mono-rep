@@ -56,6 +56,20 @@ const SITUACAO_BADGE_CLASS = {
   imobilizado: 'bg-slate-200 text-slate-700',
 };
 
+const ACAO_HISTORICO_LABEL = {
+  reservado: 'Reservado',
+  liberado: 'Liberado',
+  trocado: 'Trocado',
+  expirado: 'Expirado',
+};
+
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('pt-BR');
+}
+
 const emptyForm = {
   modelo_id: '',
   versao_id: '',
@@ -152,7 +166,13 @@ export default function Estoque() {
   const [veiculoParaExcluir, setVeiculoParaExcluir] = useState(null);
   const [novoVeiculoDialogOpen, setNovoVeiculoDialogOpen] = useState(false);
   const [reservaDialogVeiculo, setReservaDialogVeiculo] = useState(null);
-  const [reservaForm, setReservaForm] = useState({ vendedor_reserva_id: '', cliente_reserva_id: '', cliente_reserva_nome: '' });
+  const [reservaForm, setReservaForm] = useState({
+    vendedor_reserva_id: '',
+    cliente_reserva_id: '',
+    cliente_reserva_nome: '',
+    prazo_horas: '48',
+  });
+  const [conflitoReserva, setConflitoReserva] = useState(null);
 
   // Aba (Todos/Novos/Seminovos) e o dropdown de condicao sao filtros independentes que ja
   // eram combinados em AND no filtro client-side antigo -- a intersecao dos dois conjuntos
@@ -306,6 +326,45 @@ export default function Estoque() {
     }),
   });
 
+  const reservarMutation = useMutation({
+    mutationFn: ({ id, ...data }) => crmDataClient.entities.VeiculoEstoque.reservar(id, data),
+    onSuccess: async () => {
+      await invalidateVeiculosEstoque();
+      toast({ title: 'Reserva salva', variant: 'success' });
+    },
+    onError: (mutationError, variables) => {
+      const reservadoParaOutro = /reservado para outro vendedor/i.test(mutationError.message || '');
+      if (mutationError.status === 409 && reservadoParaOutro && !variables.forcar) {
+        setConflitoReserva({ mensagem: mutationError.message, pendente: variables });
+        return;
+      }
+      toast({
+        title: 'Nao foi possivel salvar a reserva',
+        description: mutationError.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const liberarReservaMutation = useMutation({
+    mutationFn: (id) => crmDataClient.entities.VeiculoEstoque.liberarReserva(id),
+    onSuccess: async () => {
+      await invalidateVeiculosEstoque();
+      toast({ title: 'Reserva liberada', variant: 'success' });
+    },
+    onError: (mutationError) => toast({
+      title: 'Nao foi possivel liberar a reserva',
+      description: mutationError.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const historicoReservaQuery = useQuery({
+    queryKey: ['crm-veiculo-estoque-historico-reserva', reservaDialogVeiculo?.id],
+    queryFn: () => crmDataClient.entities.VeiculoEstoque.listarHistoricoReserva(reservaDialogVeiculo.id),
+    enabled: Boolean(reservaDialogVeiculo?.id),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id) => crmDataClient.entities.VeiculoEstoque.delete(id),
     onMutate: async (id) => {
@@ -435,26 +494,37 @@ export default function Estoque() {
 
   const abrirReservaDialog = (veiculo) => {
     setReservaDialogVeiculo(veiculo);
+    setConflitoReserva(null);
     setReservaForm({
       vendedor_reserva_id: veiculo.vendedor_reserva_id || '',
       cliente_reserva_id: veiculo.cliente_reserva_id || '',
       cliente_reserva_nome: veiculo.cliente_reserva_nome || '',
+      prazo_horas: '48',
     });
   };
 
   const handleSalvarReserva = () => {
     const temReserva = Boolean(reservaForm.vendedor_reserva_id && reservaForm.cliente_reserva_id);
-    const status = temReserva
-      ? 'reservado'
-      : (reservaDialogVeiculo.status === 'reservado' ? 'disponivel' : reservaDialogVeiculo.status);
-    updateMutation.mutate({
-      id: reservaDialogVeiculo.id,
-      ...reservaDialogVeiculo,
-      vendedor_reserva_id: reservaForm.vendedor_reserva_id || null,
-      cliente_reserva_id: reservaForm.cliente_reserva_id || null,
-      status,
-    });
+    if (temReserva) {
+      reservarMutation.mutate({
+        id: reservaDialogVeiculo.id,
+        vendedorId: reservaForm.vendedor_reserva_id,
+        clienteId: reservaForm.cliente_reserva_id,
+        prazoHoras: Number(reservaForm.prazo_horas) || 48,
+        forcar: false,
+      });
+    } else {
+      liberarReservaMutation.mutate(reservaDialogVeiculo.id);
+    }
     setReservaDialogVeiculo(null);
+  };
+
+  const handleConfirmarConflitoReserva = () => {
+    const pendente = conflitoReserva?.pendente;
+    setConflitoReserva(null);
+    if (pendente) {
+      reservarMutation.mutate({ ...pendente, forcar: true });
+    }
   };
 
   return (
@@ -711,6 +781,9 @@ export default function Estoque() {
                         <div className="text-xs leading-tight">
                           <p className="font-semibold text-slate-700">{veiculo.vendedor_reserva_nome || '-'}</p>
                           <p className="text-muted-foreground">{veiculo.cliente_reserva_nome || '-'}</p>
+                          {veiculo.status === 'reservado' && veiculo.reserva_expira_em ? (
+                            <p className="text-muted-foreground">expira em {formatDateTime(veiculo.reserva_expira_em)}</p>
+                          ) : null}
                         </div>
                         {canConfigure ? (
                           <Button
@@ -1137,6 +1210,39 @@ export default function Estoque() {
                 onClear={() => setReservaForm((prev) => ({ ...prev, cliente_reserva_id: '', cliente_reserva_nome: '' }))}
               />
             </div>
+            {reservaForm.vendedor_reserva_id && reservaForm.cliente_reserva_id ? (
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider">Prazo da reserva (horas)</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  className="h-9 rounded-none text-sm"
+                  value={reservaForm.prazo_horas}
+                  onChange={(event) => setReservaForm((prev) => ({ ...prev, prazo_horas: event.target.value }))}
+                />
+              </div>
+            ) : null}
+            <div className="space-y-1 border-t pt-3">
+              <Label className="text-xs font-bold uppercase tracking-wider">Historico desta reserva</Label>
+              {historicoReservaQuery.isLoading ? (
+                <p className="text-xs text-muted-foreground">Carregando...</p>
+              ) : historicoReservaQuery.data?.length ? (
+                <ul className="max-h-40 space-y-1 overflow-y-auto text-xs text-slate-700">
+                  {historicoReservaQuery.data.map((item) => (
+                    <li key={item.id} className="border-b pb-1">
+                      <span className="font-semibold uppercase">{ACAO_HISTORICO_LABEL[item.acao] || item.acao}</span>
+                      {' - '}
+                      {item.vendedor_novo_nome || item.cliente_novo_nome
+                        ? `${item.vendedor_novo_nome || '-'} / ${item.cliente_novo_nome || '-'}`
+                        : `${item.vendedor_anterior_nome || '-'} / ${item.cliente_anterior_nome || '-'}`}
+                      <span className="text-muted-foreground"> em {formatDateTime(item.alterado_em)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted-foreground">Nenhuma reserva registrada ainda.</p>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -1151,12 +1257,28 @@ export default function Estoque() {
               type="button"
               className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
               onClick={handleSalvarReserva}
+              disabled={reservarMutation.isPending || liberarReservaMutation.isPending}
             >
               Salvar reserva
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={Boolean(conflitoReserva)} onOpenChange={(open) => !open && setConflitoReserva(null)}>
+        <AlertDialogContent className="rounded-none">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-black uppercase tracking-widest">Assumir reserva de outro vendedor?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {conflitoReserva?.mensagem || 'Este veiculo esta reservado para outro vendedor.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConflitoReserva(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmarConflitoReserva}>Assumir reserva</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={Boolean(veiculoParaExcluir)} onOpenChange={(open) => !open && setVeiculoParaExcluir(null)}>
         <AlertDialogContent className="rounded-none">

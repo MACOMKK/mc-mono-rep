@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Plus, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Plus, Printer, Trash2, X } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
+import PropostaDocumento from '@/pages/PropostaDocumento';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -98,6 +99,14 @@ export default function Propostas() {
 
   const [acceptTarget, setAcceptTarget] = useState(null);
   const [vendaForm, setVendaForm] = useState(emptyVendaForm);
+
+  const [propostaImprimindo, setPropostaImprimindo] = useState(null);
+
+  const { data: leadImpressao } = useQuery({
+    queryKey: ['crm-propostas-lead-impressao', propostaImprimindo?.lead_id],
+    queryFn: () => crmDataClient.entities.Lead.get(propostaImprimindo.lead_id),
+    enabled: Boolean(propostaImprimindo?.lead_id),
+  });
 
   const { data: propostas = [], isLoading, error } = useQuery({
     queryKey: ['crm-propostas'],
@@ -288,6 +297,22 @@ export default function Propostas() {
     acceptMutation.mutate({ id: acceptTarget.id, vendaData: vendaForm });
   };
 
+  if (propostaImprimindo) {
+    const vendedorNome = responsaveis.find((item) => item.id === propostaImprimindo.vendedor_id)?.nome || '-';
+    return (
+      <div className="px-4 py-6 md:px-6 xl:px-10 2xl:px-16">
+        <PropostaDocumento
+          proposta={propostaImprimindo}
+          veiculoLabel={propostaImprimindo.veiculo_estoque_id ? veiculoLabel(propostaImprimindo.veiculo_estoque_id) : ''}
+          leadNome={leadImpressao?.nome || 'Carregando...'}
+          leadTelefone={leadImpressao?.telefone || ''}
+          vendedorNome={vendedorNome}
+          onVoltar={() => setPropostaImprimindo(null)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 py-6 md:px-6 xl:px-10 2xl:px-16">
       <div className="mb-5 flex items-center justify-between border-b pb-5">
@@ -349,6 +374,14 @@ export default function Propostas() {
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 rounded-none text-xs"
+                        onClick={() => setPropostaImprimindo(proposta)}
+                      >
+                        <Printer className="mr-1 h-3.5 w-3.5" /> Imprimir
+                      </Button>
                       {proposta.status === 'rascunho' ? (
                         <Button
                           type="button"

@@ -369,7 +369,22 @@ function mapVeiculoEstoqueRow(row = {}) {
     vendedor_reserva_nome: row.vendedor_reserva_nome || '',
     cliente_reserva_id: row.cliente_reserva_id || '',
     cliente_reserva_nome: row.cliente_reserva_nome || '',
+    reserva_expira_em: row.reserva_expira_em || null,
     ...mapBaseDates(row),
+  };
+}
+
+function mapHistoricoReservaRow(row = {}) {
+  return {
+    id: row.id,
+    veiculo_estoque_id: row.veiculo_estoque_id || '',
+    acao: row.acao || '',
+    vendedor_anterior_nome: row.vendedor_anterior_nome || '',
+    cliente_anterior_nome: row.cliente_anterior_nome || '',
+    vendedor_novo_nome: row.vendedor_novo_nome || '',
+    cliente_novo_nome: row.cliente_novo_nome || '',
+    alterado_por_nome: row.alterado_por_nome || '',
+    alterado_em: row.alterado_em || null,
   };
 }
 
@@ -1171,6 +1186,33 @@ const VeiculoEstoqueRepository = {
       },
     });
     return mapVeiculoEstoqueRow({ ...result.estoque, veiculo: result.veiculo });
+  },
+
+  async reservar(estoqueId, { vendedorId, clienteId, prazoHoras, forcar } = {}) {
+    const result = await crmApi.veiculos_estoque.reserva({
+      estoqueId,
+      acao: 'reservar',
+      vendedorId,
+      clienteId,
+      prazoHoras,
+      forcar,
+    });
+    return mapVeiculoEstoqueRow(result.estoque);
+  },
+
+  async liberarReserva(estoqueId) {
+    const result = await crmApi.veiculos_estoque.reserva({ estoqueId, acao: 'liberar' });
+    return mapVeiculoEstoqueRow(result.estoque);
+  },
+
+  async listarHistoricoReserva(estoqueId) {
+    const rows = await crmApi.veiculos_estoque_historico_reserva.list({
+      filters: { veiculo_estoque_id: estoqueId },
+      orderBy: 'alterado_em',
+      ascending: false,
+      limit: 50,
+    });
+    return rows.map(mapHistoricoReservaRow);
   },
 };
 

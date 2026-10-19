@@ -1,6 +1,6 @@
 export const CRM_SCHEMA = 'gestao_crm';
 
-export type EntityName = 'clientes' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'cores_veiculo' | 'veiculos_estoque' | 'pipelines' | 'etapas_pipeline' | 'motivos_status' | 'propostas' | 'vendas' | 'conversas_atendimento' | 'mensagens_atendimento';
+export type EntityName = 'clientes' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'cores_veiculo' | 'veiculos_estoque' | 'veiculos_estoque_historico_reserva' | 'pipelines' | 'etapas_pipeline' | 'motivos_status' | 'propostas' | 'vendas' | 'conversas_atendimento' | 'mensagens_atendimento';
 
 export function getAccessLevel(access: Record<string, unknown> | null) {
   return String(access?.nivel_acesso || '');
@@ -130,6 +130,7 @@ export function buildAccessScope(
       case 'versoes_veiculo':
       case 'cores_veiculo':
       case 'veiculos_estoque':
+      case 'veiculos_estoque_historico_reserva':
       case 'pipelines':
       case 'etapas_pipeline':
       case 'motivos_status':
@@ -240,6 +241,7 @@ export function buildAccessScope(
     case 'versoes_veiculo':
     case 'cores_veiculo':
     case 'veiculos_estoque':
+    case 'veiculos_estoque_historico_reserva':
     case 'pipelines':
     case 'etapas_pipeline':
     case 'motivos_status':
