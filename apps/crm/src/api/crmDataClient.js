@@ -137,6 +137,7 @@ function mapClienteRow(row = {}) {
     email_normalizado: row.email_normalizado || normalizeEmail(row.email),
     cpf_cnpj: row.cpf_cnpj || '',
     empresa: row.empresa || 'Macom Ananindeua',
+    unidade_id: row.unidade_id || '',
     status_relacionamento: row.status_relacionamento || 'lead',
     observacoes: row.observacoes || '',
     endereco: row.endereco || '',
@@ -461,7 +462,11 @@ function mapClientePayload(data = {}) {
     email: email || null,
     email_normalizado: normalizeEmail(email) || null,
     cpf_cnpj: data.cpf_cnpj?.trim() || null,
-    empresa: normalizeEmpresa(data.empresa),
+    // empresa nao e mais enviada pelo client -- o banco deriva de unidade_id
+    // (gestao_crm.sync_crm_cliente_empresa_from_unidade, migracao 20261020160000), evitando as
+    // duas fontes de verdade poderem divergir. So inclui unidade_id quando informado, pra nao
+    // sobrescrever com null num update parcial que nao mexe nesse campo.
+    ...(data.unidade_id ? { unidade_id: data.unidade_id } : {}),
     status_relacionamento: data.status_relacionamento || 'lead',
     observacoes: data.observacoes || null,
     endereco: data.endereco?.trim() || null,
@@ -846,7 +851,7 @@ const LeadRepository = {
       nome: data.nome,
       telefone: data.telefone,
       email: data.email,
-      empresa: data.empresa,
+      unidade_id: data.unidade_id,
       status_relacionamento: data.etapa_tipo === 'ganho' ? 'cliente' : 'lead',
     });
     const leadPayload = mapLeadPayload(data);
@@ -893,7 +898,7 @@ const LeadRepository = {
       nome: nextData.nome,
       telefone: nextData.telefone,
       email: nextData.email,
-      empresa: nextData.empresa,
+      unidade_id: nextData.unidade_id,
       status_relacionamento: nextData.etapa_tipo === 'ganho' ? 'cliente' : 'lead',
     });
     const leadPayload = mapLeadPayload(nextData);

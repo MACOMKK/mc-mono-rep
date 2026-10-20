@@ -42,6 +42,14 @@ const LeadCard = memo(function LeadCard({ lead, index, onClick, semContatoAgenda
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           onClick={() => { if (!isSaving) onClick(lead); }}
+          onKeyDown={(event) => {
+            // Space fica reservado pro drag-and-drop por teclado do @hello-pangea/dnd
+            // (dragHandleProps) -- so Enter abre o lead, sem conflitar com o lift/drop.
+            if (event.key === 'Enter' && !isSaving) {
+              event.preventDefault();
+              onClick(lead);
+            }
+          }}
           className={cn(
             'bg-white border border-border shadow-sm p-3 select-none transition-shadow',
             isSaving ? 'cursor-wait opacity-60' : 'cursor-pointer',

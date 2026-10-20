@@ -132,7 +132,7 @@ export default function Clientes() {
   const [novoContatoTelefone, setNovoContatoTelefone] = useState('');
   const [novoContatoTipo, setNovoContatoTipo] = useState('');
   const { empresa } = useEmpresa();
-  const { empresas: EMPRESAS } = useUnidadesEmpresa();
+  const { unidades } = useUnidadesEmpresa();
   const { user } = useAuth();
   const canConfigure = user?.role === 'admin' || user?.role === 'manager';
   const queryClient = useQueryClient();
@@ -645,6 +645,14 @@ export default function Clientes() {
                   key={cliente.id}
                   className={cn('cursor-pointer hover:bg-red-50', index % 2 === 0 ? 'bg-white' : 'bg-[#f9f9f9]')}
                   onClick={() => openCliente(cliente)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      openCliente(cliente);
+                    }
+                  }}
                 >
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -841,9 +849,9 @@ export default function Clientes() {
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Unidade</Label>
-                      <Select value={formData?.empresa || 'Macom Ananindeua'} onValueChange={(value) => updateField('empresa', value)}>
+                      <Select value={formData?.unidade_id || ''} onValueChange={(value) => updateField('unidade_id', value)}>
                         <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue /></SelectTrigger>
-                        <SelectContent className="rounded-none">{EMPRESAS.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+                        <SelectContent className="rounded-none">{unidades.map((item) => <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1">

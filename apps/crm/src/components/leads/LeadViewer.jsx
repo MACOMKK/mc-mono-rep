@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { crmDataClient } from '@/api/crmDataClient';
+import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { findEtapaDoLead, getEtapaVisual, getLeadEtapaLabel } from '@/lib/leadStatus';
 import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
@@ -176,7 +177,15 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
   const vendas = vendasPage.rows || [];
 
   const openAttachment = async (anexo) => {
-    await crmDataClient.entities.HistoricoAtendimento.openAttachment(anexo);
+    try {
+      await crmDataClient.entities.HistoricoAtendimento.openAttachment(anexo);
+    } catch (error) {
+      toast({
+        title: 'Nao foi possivel abrir o anexo',
+        description: error.message || 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
   };
 
   if (!lead) return null;

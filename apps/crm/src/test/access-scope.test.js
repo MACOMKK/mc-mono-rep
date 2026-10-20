@@ -95,13 +95,26 @@ describe('applyCreateScope', () => {
     expect(payload).toEqual({ unidade_id: 'outra-unidade', responsavel_id: 'outro-colab' });
   });
 
-  it('strips forged unidade_id/responsavel_id for non-leads entities regardless of level', () => {
+  it('strips forged responsavel_id for non-leads entities regardless of level', () => {
     const access = { nivel_acesso: 'admin' };
     for (const entity of ['clientes', 'atendimentos', 'historico_atendimentos', 'veiculos_interesse']) {
       const payload = applyCreateScope(entity, { unidade_id: 'forjado', responsavel_id: 'forjado' }, access, collaborator);
-      expect(payload).not.toHaveProperty('unidade_id');
       expect(payload).not.toHaveProperty('responsavel_id');
     }
+  });
+
+  it('strips forged unidade_id for entities other than leads/clientes regardless of level', () => {
+    const access = { nivel_acesso: 'admin' };
+    for (const entity of ['atendimentos', 'historico_atendimentos', 'veiculos_interesse']) {
+      const payload = applyCreateScope(entity, { unidade_id: 'forjado' }, access, collaborator);
+      expect(payload).not.toHaveProperty('unidade_id');
+    }
+  });
+
+  it('keeps unidade_id for clientes (fonte unica de empresa, derivada no banco)', () => {
+    const access = { nivel_acesso: 'admin' };
+    const payload = applyCreateScope('clientes', { unidade_id: 'outra-unidade' }, access, collaborator);
+    expect(payload).toEqual({ unidade_id: 'outra-unidade' });
   });
 
   it('always strips criado_por from client payload', () => {

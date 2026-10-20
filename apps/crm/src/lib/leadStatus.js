@@ -23,8 +23,8 @@ export const LEAD_STATUS_BADGE = {
 
 // ---------------------------------------------------------------------------------------
 // Etapas do pipeline (gestao_crm.etapas_pipeline) -- Fase 2.5 do PLANO_LEADS_PIPELINE.
-// O lead passa a ser posicionado por etapa_id; leads.status continua como espelho
-// (derivado da etapa no banco). As regras abaixo espelham o backend:
+// O lead e posicionado por etapa_id/etapa_tipo; leads.status foi removida (fase 2.6,
+// 20261015120000_crm_corte_leads_status.sql). As regras abaixo espelham o backend:
 //   - prepare_lead_phase1()            -> etapaMotivoAplicaEm / etapaExigeMotivo
 //   - apply_activity_outcome()         -> RESULTADO_ETAPA_CHAVE / resolveEtapaAlvoResultado /
 //                                         isLeadEligibleForResultadoEtapa
@@ -163,6 +163,36 @@ export function isLeadEligibleForResultadoEtapa(resultado, etapaAtual, etapas = 
   if (!alvo) return false;
   if (resultado in RESULTADO_ETAPA_TIPO_FALLBACK) return true;
   return isEtapaEmAndamento(etapaAtual) && Number(etapaAtual.ordem) <= Number(alvo.ordem);
+}
+
+// Nivel 3 (item 7) da auditoria do CRM (2026-10-20): decisao pura do drag-and-drop do Kanban
+// (Leads.jsx, handleDragEnd), extraida pra ser testavel sem montar o componente inteiro (mocks de
+// ~15 queries/mutations). Mesmo comportamento de antes, so sem os setState/mutate inline.
+export function resolveLeadDragAction(result, etapas = [], leads = []) {
+  if (!result?.destination) return { type: 'noop' };
+  const { draggableId, destination } = result;
+  const etapa = etapas.find((item) => item.id === destination.droppableId);
+  const lead = leads.find((item) => item.id === draggableId);
+  if (!lead || !etapa || findEtapaDoLead(etapas, lead)?.id === etapa.id) return { type: 'noop' };
+
+  if (etapaMotivoAplicaEm(etapa)) {
+    return { type: 'require_motivo', lead, etapa };
+  }
+  return { type: 'move', lead, etapa };
+}
+
+// Sugestao de etapa inicial ao trocar o lead de pipeline (Leads.jsx, dialogo "Mudar de
+// pipeline"): etapa_inicial_id do pipeline escolhido, com fallback pra 1a etapa em_andamento
+// ativa por ordem (mesma regra do banco, sync_lead_etapa_status).
+export function resolveEtapaInicialSugerida(etapasEmAndamento = [], etapaInicialId) {
+  return etapasEmAndamento.find((item) => item.id === etapaInicialId) || etapasEmAndamento[0] || null;
+}
+
+// Validacao do dialogo "Mudar de pipeline" (Leads.jsx, canSubmitMove): exige lead, pipeline e
+// etapa de destino escolhidos, e motivo quando a etapa de destino exigir.
+export function canSubmitLeadPipelineMove({ hasTarget, pipelineId, etapaId, etapaDestino, motivoId }) {
+  const motivoAplicaEm = etapaDestino ? etapaMotivoAplicaEm(etapaDestino) : null;
+  return Boolean(hasTarget) && Boolean(pipelineId) && Boolean(etapaId) && (!motivoAplicaEm || Boolean(motivoId));
 }
 
 // Motivo (aplica_em) exigido ao concluir a atividade, ou null. Espelha

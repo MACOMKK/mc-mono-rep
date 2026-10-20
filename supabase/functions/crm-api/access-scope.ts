@@ -259,13 +259,17 @@ export function applyCreateScope(
   mode: 'create' | 'update' = 'create',
 ) {
   // Defesa em profundidade: mesmo que allowedFields de index.ts ja bloqueie esses campos
-  // para entidades que nao sejam leads, o proprio helper de escopo nunca deve confiar
+  // para entidades que nao os aceitam, o proprio helper de escopo nunca deve confiar
   // neles vindos do payload do cliente. criado_por e sempre setado explicitamente pelo
-  // chamador (so no create, nunca no update), nunca aceito do payload.
+  // chamador (so no create, nunca no update), nunca aceito do payload. responsavel_id e
+  // exclusivo de leads; unidade_id e aceito tambem em clientes (fonte unica de empresa,
+  // ver sync_crm_cliente_empresa_from_unidade()).
   delete payload.criado_por;
   if (entity !== 'leads') {
-    delete payload.unidade_id;
     delete payload.responsavel_id;
+  }
+  if (entity !== 'leads' && entity !== 'clientes') {
+    delete payload.unidade_id;
   }
   if (entity === 'etapas_pipeline') {
     delete payload.chave_sistema;

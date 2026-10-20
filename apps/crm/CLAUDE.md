@@ -26,7 +26,7 @@ Gestão comercial automotiva: leads, clientes, atendimentos e distribuição par
 | Tabela | Campos-chave |
 |---|---|
 | `clientes` | `status_relacionamento` (lead/cliente/pos_venda) |
-| `leads` | `origem_id` referencia `origens_lead` (FK), `status` (novo/tentativa_contato/em_contato/qualificado/negociacao/convertido/perdido), SLA, responsável |
+| `leads` | `origem_id` referencia `origens_lead` (FK), `pipeline_id`/`etapa_id`/`etapa_tipo` (posição no pipeline — `leads.status` foi removida na fase 2.6), SLA, responsável |
 | `atendimentos` | `tipo` (venda/pos_venda/agendamento/retorno), `temperatura` (frio/morno/quente) |
 | `historico_atendimentos` | auditoria de mudanças. Alterações do lead (responsável, status, dados comerciais) são gravadas **só** pelo trigger `register_lead_change_history` (`20261002130000`), que cobre todos os caminhos (tela, atividade, venda, cancelamento) — não gravar histórico de troca de status na `crm-api` nem em outra função |
 | `veiculos_interesse` | veículos associados a um lead (1+ por lead, flag `principal`); `categoria_veiculo_id` (FK `categorias_veiculo`, **obrigatório**) define o segmento; `marca_id`/`modelo_id`/`versao_id` (FK `marcas_veiculo`/`modelos_veiculo`/`versoes_veiculo`) para catálogo estruturado, com `marca_outro`/`modelo_outro`/`versao_outro` como fallback quando o veículo ainda não está cadastrado (fallback é apenas interno — não há input de texto livre visível no `LeadForm.jsx`, só a opção "Não encontrei..." no select, decisão deliberada para não reintroduzir busca livre); `ano` é número livre, mas o `LeadForm.jsx` usa `ano_inicio`/`ano_fim` do modelo escolhido como `min`/`max` do input; `atributos` (jsonb) guarda os valores dos `campos_extra` do segmento (ex.: `{"cilindrada": 160}`) |
@@ -53,9 +53,10 @@ global usada por todos os apps): chassi/placa/cor/km descrevem a unidade física
 exclusivo de venda — o módulo Oficina do app `servicos` (ainda não implementado) vai precisar
 identificar o mesmo carro (abrir OS, registrar km em revisão), e duplicar esses campos por app
 faria km/cor divergirem e impediria cruzar histórico do mesmo veículo entre CRM e Oficina. O
-catálogo de Marca/Modelo/Versão **não** foi movido para `public` junto — continua em `gestao_crm`
-por ser configuração do CRM; se `servicos` precisar dele no futuro, resolve-se via API, não por FK
-cruzada, para não alastrar escopo. **Trade-off aceito conscientemente:** compartilhar
+catálogo de Marca/Modelo/Versão (`marcas_veiculo`, `modelos_veiculo`, `versoes_veiculo`,
+`categorias_veiculo`, `cores_veiculo`) está em **`public`**, não em `gestao_crm` (`20260914130000`)
+— foi movido para junto de `public.veiculos` por ser referenciado por FK de lá; se `servicos`
+precisar dele no futuro, resolve-se via API ou FK direta, sem alastrar escopo. **Trade-off aceito conscientemente:** compartilhar
 `public.veiculos` acopla `crm` a qualquer app que também vier a escrever nele — se o `crm` for
 desacoplado do monorepo algum dia, essa tabela deixa de ser "só copiar o schema `gestao_crm`" e
 exige decidir quem fica dono dela e como o outro app sincroniza; aceitável hoje porque não há
@@ -117,8 +118,10 @@ UI, lembrar de registrá-la aqui também.
 
 ## Stripe
 
-Não há integração Stripe implementada neste app hoje (apenas dependência declarada em `package.json`,
-sem uso no código). Se for adicionada, documentar aqui o fluxo (webhooks, edge function envolvida, etc).
+Não há integração Stripe implementada neste app hoje — a dependência chegou a ser declarada no
+scaffold inicial (`@stripe/react-stripe-js`/`@stripe/stripe-js`), sem nenhum uso no código, e foi
+removida do `package.json` (auditoria 2026-10-20, Nível 2). Se a integração for adicionada no
+futuro, reinstalar a dependência e documentar aqui o fluxo (webhooks, edge function envolvida, etc).
 
 ## Convenções
 

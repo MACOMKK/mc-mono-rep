@@ -29,10 +29,13 @@ import { useAuth } from '@/lib/AuthContext';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/use-toast';
 import {
+  canSubmitLeadPipelineMove,
   etapaMotivoAplicaEm,
   findEtapaDoLead,
   getEtapaVisual,
   getLeadEtapaLabel,
+  resolveEtapaInicialSugerida,
+  resolveLeadDragAction,
 } from '@/lib/leadStatus';
 import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -96,8 +99,7 @@ export default function Leads() {
   );
   useEffect(() => {
     if (!movePipelineId || moveEtapasEmAndamento.length === 0) return;
-    const sugestao = moveEtapasEmAndamento.find((item) => item.id === movePipeline?.etapa_inicial_id)
-      || moveEtapasEmAndamento[0];
+    const sugestao = resolveEtapaInicialSugerida(moveEtapasEmAndamento, movePipeline?.etapa_inicial_id);
     setMoveEtapaId(sugestao?.id || '');
   }, [movePipelineId, movePipeline, moveEtapasEmAndamento]);
   const [viewMode, setViewMode] = useState('kanban');
@@ -670,19 +672,16 @@ export default function Leads() {
   // nova a cada render de Leads.jsx (ex. a cada tecla da busca), o que por si so ja impedia
   // qualquer React.memo downstream de segurar o re-render.
   const handleDragEnd = useCallback((result) => {
-    if (!result.destination) return;
-    const { draggableId, destination } = result;
-    const etapa = etapas.find((item) => item.id === destination.droppableId);
-    const lead = leads.find((l) => l.id === draggableId);
-    if (!lead || !etapa || findEtapaDoLead(etapas, lead)?.id === etapa.id) return;
+    const action = resolveLeadDragAction(result, etapas, leads);
+    if (action.type === 'noop') return;
 
-    if (etapaMotivoAplicaEm(etapa)) {
-      setStatusTarget({ lead, etapa });
+    if (action.type === 'require_motivo') {
+      setStatusTarget({ lead: action.lead, etapa: action.etapa });
       setStatusMotivoId('');
       return;
     }
 
-    updateStatusMutation.mutate({ id: draggableId, etapa });
+    updateStatusMutation.mutate({ id: action.lead.id, etapa: action.etapa });
   }, [etapas, leads, updateStatusMutation]);
 
   const handleKanbanCardClick = useCallback((lead) => setViewingLead(lead), []);
@@ -775,6 +774,7 @@ export default function Leads() {
             value={busca}
             onChange={(event) => setBusca(event.target.value)}
             placeholder="Buscar nome, telefone, e-mail ou veiculo..."
+            aria-label="Buscar leads"
             className="h-9 rounded-none pl-9 text-sm"
           />
         </div>
@@ -813,6 +813,7 @@ export default function Leads() {
           onChange={(event) => setPeriodoInicio(event.target.value)}
           className="h-9 w-40 rounded-none text-xs"
           title="Inicio do periodo de cadastro"
+          aria-label="Inicio do periodo de cadastro"
         />
         <Input
           type="date"
@@ -820,6 +821,7 @@ export default function Leads() {
           onChange={(event) => setPeriodoFim(event.target.value)}
           className="h-9 w-40 rounded-none text-xs"
           title="Fim do periodo de cadastro"
+          aria-label="Fim do periodo de cadastro"
         />
         <Button type="button" variant="outline" size="icon" onClick={clearFilters} title="Limpar filtros" className="h-9 w-9 rounded-none">
           <RotateCcw className="h-3.5 w-3.5" />
@@ -894,6 +896,14 @@ export default function Leads() {
                       key={lead.id}
                       className={cn('cursor-pointer hover:bg-red-50 transition-colors', i % 2 === 0 ? 'bg-white' : 'bg-[#f9f9f9]')}
                       onClick={() => setViewingLead(lead)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setViewingLead(lead);
+                        }
+                      }}
                     >
                       <TableCell className="font-bold text-sm">
                         <div className="flex items-center gap-1.5">
@@ -1063,8 +1073,13 @@ export default function Leads() {
           setMoveEtapaId('');
           setMoveMotivoId('');
         };
-        const canSubmitMove = Boolean(pipelineMoveTarget) && Boolean(movePipelineId) && Boolean(moveEtapaId)
-          && (!motivoAplicaEmMove || Boolean(moveMotivoId));
+        const canSubmitMove = canSubmitLeadPipelineMove({
+          hasTarget: Boolean(pipelineMoveTarget),
+          pipelineId: movePipelineId,
+          etapaId: moveEtapaId,
+          etapaDestino,
+          motivoId: moveMotivoId,
+        });
 
         return (
           <Dialog open={Boolean(pipelineMoveTarget)} onOpenChange={(next) => { if (!next) closeMoveDialog(); }}>

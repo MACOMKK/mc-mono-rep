@@ -13,6 +13,7 @@ import { deriveUnidadesFromResponsaveis } from '@/hooks/useUnidadesEmpresa';
 import { crmDataClient } from '@/api/crmDataClient';
 import { etapaMotivoAplicaEm, findEtapaDoLead } from '@/lib/leadStatus';
 import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import MotivoStatusSelect from '@/components/leads/MotivoStatusSelect';
 import {
   BriefcaseBusiness,
@@ -26,15 +27,6 @@ import {
   Upload,
   UserRound,
 } from 'lucide-react';
-
-function useDebouncedValue(value, delay = 300) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timeout = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(timeout);
-  }, [value, delay]);
-  return debounced;
-}
 
 function formatDate(value) {
   if (!value) return '-';

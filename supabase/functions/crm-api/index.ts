@@ -31,6 +31,7 @@ const ENTITY_CONFIG = {
       'email',
       'email_normalizado',
       'empresa',
+      'unidade_id',
       'status_relacionamento',
       'observacoes',
       'endereco',
@@ -577,12 +578,21 @@ function mapDatabaseError(error: unknown) {
     return 'Lead so pode ser convertido ao aceitar uma proposta ou fechar uma venda.';
   }
 
-  return message || 'Falha ao consultar o CRM.';
+  // Erro nao mapeado acima -- nunca repassar a mensagem crua do Postgres pro cliente (pode
+  // vazar nome de tabela/coluna interna). Logar pra investigacao e devolver algo generico.
+  if (message) {
+    console.error('crm-api: erro de banco nao mapeado:', message);
+  }
+  return 'Nao foi possivel completar a operacao. Tente novamente ou contate o suporte.';
 }
 
 function getErrorStatus(error: unknown) {
   const status = Number((error as { status?: number })?.status);
   if (Number.isFinite(status) && status >= 400) return status;
+  // Erros do postgresjs expoem o SQLSTATE em `.code` -- classe 23 (integrity_constraint_violation:
+  // unique/check/fk/not_null) e sempre causada pelo payload do cliente, nunca falha interna.
+  const code = String((error as { code?: string })?.code || '');
+  if (code.startsWith('23')) return 400;
   return 500;
 }
 
@@ -624,6 +634,32 @@ function sanitizeVeiculoPayload(payload: Record<string, unknown> = {}) {
   return sanitized;
 }
 
+// Entidades cujo payload.lead_id precisa ser validado contra o escopo do usuario antes do
+// insert/update (lead_id vem direto no payload, sem passar por ensureEntityAccess do proprio
+// lead) -- a mesma checagem se aplica tanto em 'create' quanto em 'update'.
+const LEAD_ID_SCOPED_ENTITIES: EntityName[] = ['atendimentos', 'veiculos_interesse', 'propostas'];
+
+async function ensureLeadIdScope(
+  entity: EntityName,
+  payload: Record<string, unknown>,
+  access: Record<string, unknown> | null,
+  collaborator: Record<string, unknown> | null,
+) {
+  if (LEAD_ID_SCOPED_ENTITIES.includes(entity) && payload.lead_id) {
+    await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
+  }
+}
+
+// Validacao comum de accept_proposta/close_venda -- unicas portas para criar gestao_crm.vendas.
+// veiculo_estoque_id fica de fora porque cada chamador resolve/valida esse campo com uma
+// mensagem propria (accept_proposta cai no veiculo da proposta se o payload nao mandar um).
+function validateVendaPayload(payload: Record<string, unknown>): string | null {
+  if (!payload.valor_final) return 'Informe o valor final da venda.';
+  if (!payload.forma_pagamento) return 'Informe a forma de pagamento da venda.';
+  if (!payload.motivo_status_id) return 'Selecione o motivo de conversao do lead.';
+  return null;
+}
+
 // cliente e dividido entre public.clientes (identidade, reaproveitavel por
 // outros apps) e ${CRM_SCHEMA}.clientes_crm (extensao comercial do CRM) -- mesmo
 // id nas duas tabelas. Ver 20260915120000_extract_public_clientes.sql.
@@ -644,6 +680,7 @@ const CLIENTE_IDENTITY_FIELDS = [
 
 const CLIENTE_EXTENSAO_FIELDS = [
   'empresa',
+  'unidade_id',
   'status_relacionamento',
   'observacoes',
   'criado_por',
@@ -1331,15 +1368,33 @@ Deno.serve(async (request) => {
         conteudo: texto,
       };
       const insertQuery = buildInsertQuery(CRM_SCHEMA, 'mensagens_atendimento', insertPayload);
-      const rows = await sql.unsafe(insertQuery.text, insertQuery.values);
-
       const preview = texto.length > 140 ? `${texto.slice(0, 139)}…` : texto;
-      await sql.unsafe(
-        `update ${CRM_SCHEMA}.conversas_atendimento
-         set ultima_mensagem_em = now(), ultima_mensagem_preview = $2, nao_lida = false
-         where id = $1;`,
-        [conversaId, preview],
-      );
+
+      // A mensagem ja foi entregue pelo WhatsApp acima -- se o registro na conversa falhar, tenta
+      // de novo uma vez antes de desistir. Nao pode propagar o erro daqui pra cima: isso faria o
+      // frontend mostrar "erro ao enviar", o que seria falso (a mensagem realmente foi entregue).
+      let rows: Record<string, unknown>[] = [];
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          rows = await sql.unsafe(insertQuery.text, insertQuery.values);
+          await sql.unsafe(
+            `update ${CRM_SCHEMA}.conversas_atendimento
+             set ultima_mensagem_em = now(), ultima_mensagem_preview = $2, nao_lida = false
+             where id = $1;`,
+            [conversaId, preview],
+          );
+          break;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(`crm-api: falha ao registrar mensagem enviada (tentativa ${attempt}/2):`, message);
+          if (attempt === 2) {
+            return json({
+              row: null,
+              warning: 'Mensagem enviada pelo WhatsApp, mas houve falha ao registra-la na conversa. Atualize a tela para conferir.',
+            });
+          }
+        }
+      }
 
       return json({ row: rows[0] || null });
     }
@@ -1536,11 +1591,16 @@ Deno.serve(async (request) => {
       const whereScope = scope.clause ? `and ${scope.clause}` : '';
       const rows = await sql.unsafe(
         `
-          select id, nome, telefone, email, cpf_cnpj
+          select clientes.id, clientes.nome, clientes.telefone, clientes.email, clientes.cpf_cnpj
           from public.clientes
-          where (nome ilike $1 or telefone ilike $1 or cpf_cnpj ilike $1)
+          -- buildAccessScope('clientes', ...) reutiliza a clausula do CRUD generico (FROM
+          -- gestao_crm.clientes_crm as clientes), que referencia "criado_por" sem qualificar --
+          -- coluna que so existe em clientes_crm, nao na tabela de identidade public.clientes.
+          -- O join supre essa coluna para a clausula sem precisar de uma clausula dedicada.
+          join ${CRM_SCHEMA}.clientes_crm on clientes_crm.id = clientes.id
+          where (clientes.nome ilike $1 or clientes.telefone ilike $1 or clientes.cpf_cnpj ilike $1)
           ${whereScope}
-          order by nome
+          order by clientes.nome
           limit 20;
         `,
         [`%${busca}%`, ...scope.values],
@@ -2283,15 +2343,8 @@ Deno.serve(async (request) => {
       if (!veiculoEstoqueId) {
         return json({ error: 'Esta proposta nao tem um veiculo do estoque vinculado. Vincule um veiculo antes de aceitar.' }, 400);
       }
-      if (!vendaPayloadRaw.valor_final) {
-        return json({ error: 'Informe o valor final da venda.' }, 400);
-      }
-      if (!vendaPayloadRaw.forma_pagamento) {
-        return json({ error: 'Informe a forma de pagamento da venda.' }, 400);
-      }
-      if (!vendaPayloadRaw.motivo_status_id) {
-        return json({ error: 'Selecione o motivo de conversao do lead.' }, 400);
-      }
+      const vendaValidationError = validateVendaPayload(vendaPayloadRaw);
+      if (vendaValidationError) return json({ error: vendaValidationError }, 400);
 
       const result = await sql.begin(async (transaction) => {
         const updateProposta = buildUpdateQuery(CRM_SCHEMA, 'propostas', propostaId, { status: 'aceita' });
@@ -2319,9 +2372,8 @@ Deno.serve(async (request) => {
       const leadId = typeof vendaPayloadRaw.lead_id === 'string' && vendaPayloadRaw.lead_id ? vendaPayloadRaw.lead_id : '';
       if (!leadId) return json({ error: 'Lead obrigatorio.' }, 400);
       if (!vendaPayloadRaw.veiculo_estoque_id) return json({ error: 'Selecione o veiculo vendido.' }, 400);
-      if (!vendaPayloadRaw.valor_final) return json({ error: 'Informe o valor final da venda.' }, 400);
-      if (!vendaPayloadRaw.forma_pagamento) return json({ error: 'Informe a forma de pagamento da venda.' }, 400);
-      if (!vendaPayloadRaw.motivo_status_id) return json({ error: 'Selecione o motivo de conversao do lead.' }, 400);
+      const vendaValidationError = validateVendaPayload(vendaPayloadRaw);
+      if (vendaValidationError) return json({ error: vendaValidationError }, 400);
 
       await ensureLeadAccessLight(leadId, access, collaborator);
 
@@ -2609,9 +2661,7 @@ Deno.serve(async (request) => {
       }
       const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'cores_veiculo', 'pipelines', 'etapas_pipeline', 'pipeline_automacoes', 'motivos_status', 'conversas_atendimento', 'mensagens_atendimento'];
       if (collaborator?.id && !entitiesWithoutCriadoPor.includes(entity)) payload.criado_por = collaborator.id;
-      if (entity === 'atendimentos' && payload.lead_id) {
-        await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
-      }
+      await ensureLeadIdScope(entity, payload, access, collaborator);
       if (entity === 'mensagens_atendimento' && payload.conversa_id) {
         // Garante que o usuario tem acesso a conversa antes de deixar gravar uma
         // mensagem nela -- allowedFields nao impede um usuario mandar um conversa_id
@@ -2623,12 +2673,6 @@ Deno.serve(async (request) => {
       }
       if (entity === 'historico_atendimentos' && !payload.lead_id && payload.cliente_id) {
         await ensureEntityAccess('clientes', String(payload.cliente_id), access, collaborator);
-      }
-      if (entity === 'veiculos_interesse' && payload.lead_id) {
-        await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
-      }
-      if (entity === 'propostas' && payload.lead_id) {
-        await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
       }
       if (entity === 'clientes') {
         const { identidade, extensao } = splitClientePayload(payload);
@@ -2656,15 +2700,7 @@ Deno.serve(async (request) => {
       const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator, 'update');
       if (!Object.keys(payload).length) return json({ error: 'Nenhum campo para atualizar.' }, 400);
       validateContactFields(entity, payload);
-      if (entity === 'atendimentos' && payload.lead_id) {
-        await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
-      }
-      if (entity === 'veiculos_interesse' && payload.lead_id) {
-        await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
-      }
-      if (entity === 'propostas' && payload.lead_id) {
-        await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
-      }
+      await ensureLeadIdScope(entity, payload, access, collaborator);
       if (entity === 'clientes') {
         const { identidade, extensao } = splitClientePayload(payload);
         const { identidadeRow, extensaoRow } = await sql.begin(async (transaction) => {
