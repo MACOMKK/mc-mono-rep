@@ -5,15 +5,6 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { useEmpresa } from '@/context/EmpresaContext';
 
 const CORES_STATUS = ['#94a3b8', '#3b82f6', '#16a34a', '#E30613'];
-const STATUS_ATIVIDADES = ['planejada', 'concluida', 'cancelada'];
-
-async function countEntity(repository, filters = {}) {
-  const result = await repository.listPage({
-    limit: 1,
-    filters,
-  });
-  return result.count || 0;
-}
 
 export default function Dashboard() {
   const { empresa } = useEmpresa();
@@ -24,6 +15,9 @@ export default function Dashboard() {
     queryFn: () => crmDataClient.entities.OrigemLead.list('nome'),
   });
 
+  // Nivel 1 da auditoria do CRM (2026-10-20): antes eram 7+N round-trips (1 countEntity por
+  // metrica + 1 por origem de lead cadastrada) a cada abertura/filtro -- dashboard_metricas
+  // aplica o mesmo access-scope uma unica vez no backend e devolve tudo num so roundtrip.
   const { data: metrics = {
     atividadesTotal: 0,
     clientesTotal: 0,
@@ -32,40 +26,8 @@ export default function Dashboard() {
     origemCounts: {},
     statusCounts: {},
   }, isFetching, isError, error } = useQuery({
-    queryKey: ['dashboard-metrics', { empresa }, origensLead],
-    enabled: origensLead.length > 0,
-    queryFn: async () => {
-      const [
-        clientesTotal,
-        leadsTotal,
-        leadsConvertidos,
-        atividadesTotal,
-        statusResults,
-        origemResults,
-      ] = await Promise.all([
-        countEntity(crmDataClient.entities.Cliente, baseFilters),
-        countEntity(crmDataClient.entities.Lead, baseFilters),
-        countEntity(crmDataClient.entities.Lead, { ...baseFilters, etapa_tipo: 'ganho' }),
-        countEntity(crmDataClient.entities.Atividade, baseFilters),
-        Promise.all(STATUS_ATIVIDADES.map((status) => (
-          countEntity(crmDataClient.entities.Atividade, { ...baseFilters, status })
-            .then((count) => [status, count])
-        ))),
-        Promise.all(origensLead.map((origem) => (
-          countEntity(crmDataClient.entities.Lead, { ...baseFilters, origem_id: origem.id })
-            .then((count) => [origem.nome, count])
-        ))),
-      ]);
-
-      return {
-        atividadesTotal,
-        clientesTotal,
-        leadsConvertidos,
-        leadsTotal,
-        origemCounts: Object.fromEntries(origemResults),
-        statusCounts: Object.fromEntries(statusResults),
-      };
-    },
+    queryKey: ['dashboard-metrics', { empresa }],
+    queryFn: () => crmDataClient.dashboard.metricas({ filters: baseFilters }),
   });
 
   const statusData = [
@@ -76,7 +38,7 @@ export default function Dashboard() {
 
   const origemData = origensLead.map((origem) => ({
     name: origem.nome,
-    total: metrics.origemCounts[origem.nome] || 0,
+    total: metrics.origemCounts[origem.id] || 0,
   }));
 
   const taxaConversao = metrics.leadsTotal > 0

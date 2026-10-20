@@ -256,6 +256,7 @@ export function applyCreateScope(
   payload: Record<string, unknown>,
   access: Record<string, unknown> | null,
   collaborator: Record<string, unknown> | null,
+  mode: 'create' | 'update' = 'create',
 ) {
   // Defesa em profundidade: mesmo que allowedFields de index.ts ja bloqueie esses campos
   // para entidades que nao sejam leads, o proprio helper de escopo nunca deve confiar
@@ -277,10 +278,16 @@ export function applyCreateScope(
   const unitId = String(collaborator?.unidade_id || '');
 
   if (entity === 'leads') {
-    if (!unitId) throw Object.assign(new Error('Usuario sem unidade vinculada.'), { status: 403 });
-    payload.unidade_id = unitId;
-    if (level === 'usuario') {
-      payload.responsavel_id = collaboratorId;
+    if (mode === 'create') {
+      if (!unitId) throw Object.assign(new Error('Usuario sem unidade vinculada.'), { status: 403 });
+      payload.unidade_id = unitId;
+      if (level === 'usuario') {
+        payload.responsavel_id = collaboratorId;
+      }
+    } else {
+      // update: nunca reescrever unidade_id como efeito colateral -- so altera o que o
+      // payload explicitamente mandar (ja validado por allowedFields em index.ts).
+      delete payload.unidade_id;
     }
   }
 

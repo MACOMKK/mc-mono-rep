@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Banknote, FileWarning, Paperclip, Plus, RefreshCw, Trash2, Unlock, X } from 'lucide-react';
@@ -108,6 +108,8 @@ export default function Pagamentos() {
   const [unidadeFiltro, setUnidadeFiltro] = useState(UNIDADE_FILTRO_TODAS);
   const [vencimentoFiltro, setVencimentoFiltro] = useState(null);
   const [vencimentoResetToken, setVencimentoResetToken] = useState(0);
+  const [pagamentoFiltro, setPagamentoFiltro] = useState(null);
+  const [pagamentoResetToken, setPagamentoResetToken] = useState(0);
   const [vencimentoStatusFiltro, setVencimentoStatusFiltro] = useState(VENCIMENTO_STATUS_FILTRO_TODOS);
   const [fornecedorFiltro, setFornecedorFiltro] = useState(FORNECEDOR_FILTRO_TODOS);
   const [aprovadorFiltro, setAprovadorFiltro] = useState(APROVADOR_FILTRO_TODOS);
@@ -301,6 +303,14 @@ export default function Pagamentos() {
         return dia && dia >= vencimentoFiltro.from && dia <= vencimentoFiltro.to;
       });
     }
+    if (pagamentoFiltro) {
+      // pago_em e timestamptz (UTC): converte pra Date antes de pegar o dia, senao um pagamento
+      // feito a noite (horario de Brasilia) cairia no dia seguinte.
+      classificadas = classificadas.filter((row) => {
+        const dia = row.pago_em ? toLocalDateOnly(new Date(row.pago_em)) : null;
+        return dia && dia >= pagamentoFiltro.from && dia <= pagamentoFiltro.to;
+      });
+    }
     if (vencimentoStatusFiltro !== VENCIMENTO_STATUS_FILTRO_TODOS) {
       classificadas = classificadas.filter(
         (row) => getVencimentoInfo(row.vencimento_efetivo).key === vencimentoStatusFiltro,
@@ -335,6 +345,7 @@ export default function Pagamentos() {
     empresaFiltro,
     unidadeFiltro,
     vencimentoFiltro,
+    pagamentoFiltro,
     vencimentoStatusFiltro,
     fornecedorFiltro,
     aprovadorFiltro,
@@ -670,11 +681,20 @@ export default function Pagamentos() {
     empresaFiltro !== EMPRESA_FILTRO_TODAS,
     unidadeFiltro !== UNIDADE_FILTRO_TODAS,
     Boolean(vencimentoFiltro),
+    Boolean(pagamentoFiltro),
     fornecedorFiltro !== FORNECEDOR_FILTRO_TODOS,
     aprovadorFiltro !== APROVADOR_FILTRO_TODOS,
     formaPagamentoFiltro !== FORMA_PAGAMENTO_FILTRO_TODAS,
     Boolean(valorFiltro),
   ].filter(Boolean).length;
+
+  // Contas "Pendentes" (status aprovado) nunca tem pago_em: ao filtrar por data de pagamento,
+  // troca pra "Pagas" pra o filtro nao parecer quebrado. useCallback porque o
+  // VencimentoRangeFilter tem o onChange nas dependencias do effect.
+  const handlePagamentoFiltroChange = useCallback((range) => {
+    setPagamentoFiltro(range);
+    if (range) setStatusPagamentoFiltro((atual) => (atual === 'aprovado' ? 'pago' : atual));
+  }, []);
 
   function handleClearFiltros() {
     setCategoriaFiltro(CATEGORIA_FILTRO_TODAS);
@@ -684,6 +704,8 @@ export default function Pagamentos() {
     setUnidadeFiltro(UNIDADE_FILTRO_TODAS);
     setVencimentoFiltro(null);
     setVencimentoResetToken((current) => current + 1);
+    setPagamentoFiltro(null);
+    setPagamentoResetToken((current) => current + 1);
     setFornecedorFiltro(FORNECEDOR_FILTRO_TODOS);
     setAprovadorFiltro(APROVADOR_FILTRO_TODOS);
     setFormaPagamentoFiltro(FORMA_PAGAMENTO_FILTRO_TODAS);
@@ -876,6 +898,12 @@ export default function Pagamentos() {
           </Select>
 
           <VencimentoRangeFilter onChange={setVencimentoFiltro} resetToken={vencimentoResetToken} />
+
+          <VencimentoRangeFilter
+            label="Data de pagamento"
+            onChange={handlePagamentoFiltroChange}
+            resetToken={pagamentoResetToken}
+          />
 
           <ValorRangeFilter onChange={setValorFiltro} resetToken={valorResetToken} />
         </FiltersDrawer>

@@ -171,6 +171,19 @@ export const crmApi = {
       return result.rows || [];
     },
   },
+  dashboard: {
+    async metricas({ filters } = {}) {
+      const result = await invokeCrm({ action: 'dashboard_metricas', filters });
+      return {
+        clientesTotal: result.clientesTotal || 0,
+        leadsTotal: result.leadsTotal || 0,
+        leadsConvertidos: result.leadsConvertidos || 0,
+        atividadesTotal: result.atividadesTotal || 0,
+        statusCounts: result.statusCounts || {},
+        origemCounts: result.origemCounts || {},
+      };
+    },
+  },
   distribuicao: {
     async getConfig() {
       return invokeCrm({ action: 'get_distribution_config' });

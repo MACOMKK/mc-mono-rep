@@ -1,9 +1,16 @@
+import { memo } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { cn } from '@/lib/utils';
 import { Phone, Car, Building2, CalendarClock, UserRound, AlertTriangle } from 'lucide-react';
 import { findEtapaDoLead, isLeadAtivo } from '@/lib/leadStatus';
 
-function LeadCard({ lead, index, onClick, semContatoAgendado }) {
+// Nivel 1 da auditoria do CRM (2026-10-20): sem memo, cada tecla digitada na busca (antes do
+// debounce sequer rodar a query) re-renderizava a arvore inteira do board -- toda coluna, todo
+// card -- porque o pai (Leads.jsx) re-renderiza a cada tecla. So funciona de fato porque
+// leads/etapas/callbacks agora chegam com referencia estavel entre renders sem mudanca real de
+// dados (useMemo/useCallback em Leads.jsx) -- memo() sozinho nao ajudaria se o pai continuasse
+// recriando esses props a cada render.
+const LeadCard = memo(function LeadCard({ lead, index, onClick, semContatoAgendado }) {
   const isSaving = String(lead.id).startsWith('temp-');
   const slaLabel = lead.sla_status === 'concluido'
     ? 'SLA ok'
@@ -96,12 +103,12 @@ function LeadCard({ lead, index, onClick, semContatoAgendado }) {
       )}
     </Draggable>
   );
-}
+});
 
 // Colunas = etapas ativas do pipeline (por ordem); o card vai para a etapa do lead (etapa_id,
 // ou a etapa de sistema do status para lead ainda sem etapa_id carregada). droppableId e o
 // id da etapa. Etapa tipo 'ganho' nao aceita drop: o lead so e convertido por proposta/venda.
-export default function LeadsKanban({ leads, etapas = [], onDragEnd, onCardClick, leadsComAtividadePendente }) {
+function LeadsKanban({ leads, etapas = [], onDragEnd, onCardClick, leadsComAtividadePendente }) {
   const leadsPorEtapa = new Map(etapas.map((etapa) => [etapa.id, []]));
   leads.forEach((lead) => {
     const etapa = findEtapaDoLead(etapas, lead);
@@ -175,3 +182,5 @@ export default function LeadsKanban({ leads, etapas = [], onDragEnd, onCardClick
     </DragDropContext>
   );
 }
+
+export default memo(LeadsKanban);

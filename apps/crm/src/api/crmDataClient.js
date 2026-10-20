@@ -879,10 +879,16 @@ const LeadRepository = {
   },
 
   async update(id, data) {
-    const current = await getLead(id);
     // leads.status nao existe mais (fase 2.6): mudar a etapa e sempre por etapa_id, o banco
     // deriva etapa_tipo (trg_crm_leads_a_sync_etapa).
-    const nextData = { ...current, ...data };
+    // Nivel 1 da auditoria do CRM (2026-10-20): so busca o lead atual (GET) quando o payload
+    // recebido e parcial -- o form completo (autosave/submit do LeadForm, que inicializa o
+    // estado a partir do proprio lead) ja manda nome/telefone/origem_id, tudo que
+    // mapClientePayload/mapLeadPayload exigem; nesse caso buscar de novo so pra mesclar seria
+    // 1 round-trip desperdicado por chamada (autosave dispara a cada 800ms). Updates parciais de
+    // fato (Kanban mandando so etapa_id/pipeline_id) continuam precisando do merge.
+    const isPartialUpdate = !data.nome || !data.telefone || !data.origem_id;
+    const nextData = isPartialUpdate ? { ...(await getLead(id)), ...data } : data;
     const clientePayload = mapClientePayload({
       nome: nextData.nome,
       telefone: nextData.telefone,
@@ -1524,6 +1530,11 @@ const HistoricoAtendimentoRepository = {
 };
 
 export const crmDataClient = {
+  dashboard: {
+    async metricas(options) {
+      return crmApi.dashboard.metricas(options);
+    },
+  },
   entities: {
     Cliente: ClienteRepository,
     Evento: EventoRepository,

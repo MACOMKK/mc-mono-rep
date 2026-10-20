@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -166,7 +166,11 @@ export default function Leads() {
       count: false,
     }).then((result) => result.rows || []),
   });
-  const leadsKanban = leadsKanbanRows.slice(0, KANBAN_LEADS_CAP);
+  // Nivel 1 da auditoria (2026-10-20): .slice() cria array novo a cada render mesmo quando
+  // leadsKanbanRows nao mudou -- sem useMemo, quebra a memoizacao de LeadsKanban/LeadCard
+  // (React.memo compara por referencia) a cada tecla digitada na busca, antes do debounce
+  // sequer disparar a query.
+  const leadsKanban = useMemo(() => leadsKanbanRows.slice(0, KANBAN_LEADS_CAP), [leadsKanbanRows]);
   const leadsKanbanTruncado = leadsKanbanRows.length > KANBAN_LEADS_CAP;
   const { data: atividadesPlanejadas = [] } = useQuery({
     queryKey: ['atividade-planejadas-kanban', { empresa }],
@@ -662,7 +666,10 @@ export default function Leads() {
     setAttachmentParaExcluir(attachment);
   };
 
-  const handleDragEnd = (result) => {
+  // Nivel 1 da auditoria (2026-10-20): useCallback -- sem isso, LeadsKanban recebia uma funcao
+  // nova a cada render de Leads.jsx (ex. a cada tecla da busca), o que por si so ja impedia
+  // qualquer React.memo downstream de segurar o re-render.
+  const handleDragEnd = useCallback((result) => {
     if (!result.destination) return;
     const { draggableId, destination } = result;
     const etapa = etapas.find((item) => item.id === destination.droppableId);
@@ -676,7 +683,9 @@ export default function Leads() {
     }
 
     updateStatusMutation.mutate({ id: draggableId, etapa });
-  };
+  }, [etapas, leads, updateStatusMutation]);
+
+  const handleKanbanCardClick = useCallback((lead) => setViewingLead(lead), []);
 
   const filtrados = leads;
 
@@ -830,7 +839,7 @@ export default function Leads() {
               leads={leadsKanban}
               etapas={etapasAtivas}
               onDragEnd={handleDragEnd}
-              onCardClick={(lead) => setViewingLead(lead)}
+              onCardClick={handleKanbanCardClick}
               leadsComAtividadePendente={leadsComAtividadePendente}
             />
           </div>

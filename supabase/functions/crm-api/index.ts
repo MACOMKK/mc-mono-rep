@@ -540,6 +540,22 @@ function mapDatabaseError(error: unknown) {
     return 'Nao e possivel excluir: existem veiculos cadastrados com esta cor.';
   }
 
+  if (message.includes('violates foreign key constraint') && message.includes('propostas_lead_id_fkey')) {
+    return 'Nao e possivel excluir: existe proposta vinculada a este lead.';
+  }
+
+  if (message.includes('violates foreign key constraint') && message.includes('propostas_cliente_id_fkey')) {
+    return 'Nao e possivel excluir: existe proposta vinculada a este cliente.';
+  }
+
+  if (message.includes('violates foreign key constraint') && message.includes('vendas_lead_id_fkey')) {
+    return 'Nao e possivel excluir: existe venda vinculada a este lead.';
+  }
+
+  if (message.includes('violates foreign key constraint') && message.includes('vendas_cliente_id_fkey')) {
+    return 'Nao e possivel excluir: existe venda vinculada a este cliente.';
+  }
+
   if (message.includes('propostas_veiculo_check')) {
     return 'Selecione um veiculo do estoque ou descreva o veiculo da proposta.';
   }
@@ -1389,6 +1405,94 @@ Deno.serve(async (request) => {
       });
     }
 
+    if (action === 'dashboard_metricas') {
+      // Nivel 1 da auditoria do CRM (2026-10-20): Dashboard.jsx fazia 7+N round-trips
+      // (countEntity por metrica + 1 por origem de lead cadastrada) a cada abertura/filtro --
+      // mesmo padrao do list_atividades_contadores acima, mas combinando 3 entidades (leads,
+      // clientes, atendimentos) num unico SELECT via CTE, cada uma com seu proprio
+      // buildAccessScope/buildCountFromClause (mesmos usados no list generico), devolvendo tudo
+      // num so roundtrip.
+      const rawFilters = typeof body.filters === 'object' && body.filters ? body.filters : {};
+      const empresaFilter = typeof rawFilters.empresa === 'string' && rawFilters.empresa ? rawFilters.empresa : '';
+      const empresaEq = empresaFilter ? { empresa: empresaFilter } : {};
+
+      const leadsFilterParts = buildSqlFilters(empresaEq, 1, 'l');
+      const leadsAccessPart = buildAccessScope('leads', access, collaborator, leadsFilterParts.values.length + 1);
+      const leadsClauses = [...leadsFilterParts.clauses, leadsAccessPart.clause].filter(Boolean);
+      const leadsWhere = leadsClauses.length ? `where ${leadsClauses.join(' and ')}` : '';
+      const leadsValues = [...leadsFilterParts.values, ...leadsAccessPart.values];
+
+      let idx = leadsValues.length + 1;
+      const clientesFilterParts = buildSqlFilters(empresaEq, idx, 'clientes');
+      idx += clientesFilterParts.values.length;
+      const clientesAccessPart = buildAccessScope('clientes', access, collaborator, idx);
+      idx += clientesAccessPart.values.length;
+      const clientesClauses = [...clientesFilterParts.clauses, clientesAccessPart.clause].filter(Boolean);
+      const clientesWhere = clientesClauses.length ? `where ${clientesClauses.join(' and ')}` : '';
+      const clientesValues = [...clientesFilterParts.values, ...clientesAccessPart.values];
+
+      const atendimentosAdvancedParts = buildAdvancedFilters('atendimentos', empresaEq, idx);
+      idx += atendimentosAdvancedParts.values.length;
+      const atendimentosAccessPart = buildAccessScope('atendimentos', access, collaborator, idx);
+      idx += atendimentosAccessPart.values.length;
+      const atendimentosClauses = [...atendimentosAdvancedParts.clauses, atendimentosAccessPart.clause].filter(Boolean);
+      const atendimentosWhere = atendimentosClauses.length ? `where ${atendimentosClauses.join(' and ')}` : '';
+      const atendimentosValues = [...atendimentosAdvancedParts.values, ...atendimentosAccessPart.values];
+
+      const queryValues = [...leadsValues, ...clientesValues, ...atendimentosValues];
+
+      const [row] = await sql.unsafe(
+        `
+          with leads_scope as (
+            select l."id", l."etapa_tipo", l."origem_id"
+            ${buildCountFromClause('leads')}
+            ${leadsWhere}
+          ),
+          clientes_scope as (
+            select clientes."id"
+            ${buildCountFromClause('clientes')}
+            ${clientesWhere}
+          ),
+          atendimentos_scope as (
+            select a."id", a."status"
+            ${buildCountFromClause('atendimentos')}
+            ${atendimentosWhere}
+          )
+          select
+            (select count(*) from clientes_scope) as clientes_total,
+            (select count(*) from leads_scope) as leads_total,
+            (select count(*) from leads_scope where "etapa_tipo" = 'ganho') as leads_convertidos,
+            (select count(*) from atendimentos_scope) as atividades_total,
+            (select count(*) from atendimentos_scope where "status" = 'planejada') as planejada,
+            (select count(*) from atendimentos_scope where "status" = 'concluida') as concluida,
+            (select count(*) from atendimentos_scope where "status" = 'cancelada') as cancelada,
+            (
+              select coalesce(jsonb_object_agg("origem_id"::text, cnt), '{}'::jsonb)
+              from (
+                select "origem_id", count(*) as cnt
+                from leads_scope
+                where "origem_id" is not null
+                group by "origem_id"
+              ) agg
+            ) as origem_counts
+        `,
+        queryValues,
+      );
+
+      return json({
+        clientesTotal: Number(row?.clientes_total) || 0,
+        leadsTotal: Number(row?.leads_total) || 0,
+        leadsConvertidos: Number(row?.leads_convertidos) || 0,
+        atividadesTotal: Number(row?.atividades_total) || 0,
+        statusCounts: {
+          planejada: Number(row?.planejada) || 0,
+          concluida: Number(row?.concluida) || 0,
+          cancelada: Number(row?.cancelada) || 0,
+        },
+        origemCounts: row?.origem_counts || {},
+      });
+    }
+
     if (action === 'list_responsaveis') {
       const level = getAccessLevel(access);
       const scopeUnitId = level === 'admin' ? null : (collaborator?.unidade_id || null);
@@ -1428,15 +1532,18 @@ Deno.serve(async (request) => {
       const busca = String(body.busca || '').trim();
       if (!busca) return json({ rows: [] });
 
+      const scope = buildAccessScope('clientes', access, collaborator, 2);
+      const whereScope = scope.clause ? `and ${scope.clause}` : '';
       const rows = await sql.unsafe(
         `
           select id, nome, telefone, email, cpf_cnpj
           from public.clientes
-          where nome ilike $1 or telefone ilike $1 or cpf_cnpj ilike $1
+          where (nome ilike $1 or telefone ilike $1 or cpf_cnpj ilike $1)
+          ${whereScope}
           order by nome
           limit 20;
         `,
-        [`%${busca}%`],
+        [`%${busca}%`, ...scope.values],
       );
 
       return json({ rows });
@@ -1574,25 +1681,38 @@ Deno.serve(async (request) => {
             sla_alerta_minutos = excluded.sla_alerta_minutos;
         `, [unitId, body.ativa !== false, strategy, defaultLimit, slaFirstContactMinutes, slaAlertMinutes]);
 
+        // Nivel 1 da auditoria do CRM (2026-10-20): antes era 1 insert por vendedor dentro do
+        // loop (N round-trips ao banco por save). Dedup por colaborador_id (ultima ocorrencia
+        // vence, mesmo comportamento do loop anterior via on conflict) e insere tudo de uma vez
+        // via unnest de arrays paralelos, mesmo padrao usado em notificar() (_shared/notificacoes.ts).
+        const sellersById = new Map<string, { ativo: boolean; limite: number | null }>();
         for (const seller of sellers) {
           const collaboratorId = String(seller?.colaborador_id || '');
+          if (!collaboratorId) continue;
           const limit = seller?.limite_leads_ativos === null || seller?.limite_leads_ativos === ''
             ? null
             : Number(seller.limite_leads_ativos);
-          if (!collaboratorId) continue;
           if (limit !== null && (!Number.isInteger(limit) || limit < 1)) {
             throw Object.assign(new Error('O limite individual deve ser maior que zero.'), { status: 400 });
           }
+          sellersById.set(collaboratorId, { ativo: seller.ativo !== false, limite: limit });
+        }
+
+        if (sellersById.size > 0) {
+          const collaboratorIds = [...sellersById.keys()];
+          const ativos = collaboratorIds.map((id) => sellersById.get(id)!.ativo);
+          const limites = collaboratorIds.map((id) => sellersById.get(id)!.limite);
+
           await transaction.unsafe(`
             insert into ${CRM_SCHEMA}.vendedores_distribuicao
               (unidade_id, colaborador_id, ativo, limite_leads_ativos)
-            select $1, c.id, $3, $4
-            from public.colaboradores c
-            where c.id = $2 and c.unidade_id = $1
+            select $1, c.id, v.ativo, v.limite_leads_ativos
+            from unnest($2::uuid[], $3::boolean[], $4::int[]) as v(colaborador_id, ativo, limite_leads_ativos)
+            join public.colaboradores c on c.id = v.colaborador_id and c.unidade_id = $1
             on conflict (unidade_id, colaborador_id) do update set
               ativo = excluded.ativo,
               limite_leads_ativos = excluded.limite_leads_ativos;
-          `, [unitId, collaboratorId, seller.ativo !== false, limit]);
+          `, [unitId, collaboratorIds, ativos, limites]);
         }
       });
 
@@ -1827,7 +1947,7 @@ Deno.serve(async (request) => {
           cliente = { ...rows[0], ...clienteIdentidade };
         }
 
-        const leadPayload = applyCreateScope('leads', { ...leadPayloadRaw, cliente_id: cliente.id }, access, collaborator);
+        const leadPayload = applyCreateScope('leads', { ...leadPayloadRaw, cliente_id: cliente.id }, access, collaborator, leadId ? 'update' : 'create');
         let leadRow;
         if (leadId) {
           const updateQuery = buildUpdateQuery(CRM_SCHEMA, 'leads', leadId, leadPayload);
@@ -2302,6 +2422,7 @@ Deno.serve(async (request) => {
       ensureCanConfigure(access);
       const propostaId = typeof body.id === 'string' && body.id ? body.id : '';
       if (!propostaId) return json({ error: 'id e obrigatorio.' }, 400);
+      await ensureEntityAccess('propostas', propostaId, access, collaborator);
 
       const rows = await sql.unsafe(
         `delete from ${CRM_SCHEMA}.propostas where id = $1 and eh_teste = true returning id;`,
@@ -2317,6 +2438,7 @@ Deno.serve(async (request) => {
       ensureCanConfigure(access);
       const leadIdParaExcluir = typeof body.id === 'string' && body.id ? body.id : '';
       if (!leadIdParaExcluir) return json({ error: 'id e obrigatorio.' }, 400);
+      await ensureEntityAccess('leads', leadIdParaExcluir, access, collaborator);
 
       // atendimentos/veiculos_interesse/propostas/vendas tem "on delete cascade" em lead_id --
       // somem junto. historico_atendimentos/conversas_atendimento tem "on delete set null" --
@@ -2352,6 +2474,13 @@ Deno.serve(async (request) => {
     // pela edge function de expiracao por TTL -- nunca via create/update/delete generico.
     if (entity === 'veiculos_estoque_historico_reserva' && ['create', 'update', 'delete'].includes(action)) {
       return json({ error: 'Historico de reserva e somente leitura.' }, 400);
+    }
+
+    // historico_atendimentos e trilha de auditoria, gravada so pelos triggers do banco --
+    // nunca deve ser editavel/apagavel via update/delete generico (create continua permitido,
+    // ver uso em action 'create' abaixo com ensureLeadAccessLight/ensureEntityAccess).
+    if (entity === 'historico_atendimentos' && ['update', 'delete'].includes(action)) {
+      return json({ error: 'Historico de atendimento e somente leitura.' }, 400);
     }
 
     // gestao_crm.vendas so pode ser criada via accept_proposta/close_venda (efeitos
@@ -2470,7 +2599,7 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'create') {
-      const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator);
+      const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator, 'create');
       if (!Object.keys(payload).length) return json({ error: 'Payload vazio.' }, 400);
       validateContactFields(entity, payload);
       // So admin/gestor pode marcar uma proposta como teste -- mesma regra de
@@ -2524,7 +2653,7 @@ Deno.serve(async (request) => {
     if (action === 'update') {
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
       const existingRow = await ensureEntityAccess(entity, id, access, collaborator);
-      const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator);
+      const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator, 'update');
       if (!Object.keys(payload).length) return json({ error: 'Nenhum campo para atualizar.' }, 400);
       validateContactFields(entity, payload);
       if (entity === 'atendimentos' && payload.lead_id) {
