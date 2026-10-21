@@ -67,6 +67,7 @@ import {
   useToast,
 } from '@macom/ui';
 import FornecedorDetalheDialog from '@/components/FornecedorDetalheDialog';
+import JuntarAnexosDialog, { podeJuntarAnexo } from '@/components/JuntarAnexosDialog';
 import { useAuth } from '@/lib/AuthContext';
 import { isAllowedAnexoMimeType, MAX_ANEXO_SIZE, substituirAnexo, uploadAnexo } from '@/lib/anexoUpload';
 import { getFriendlyErrorMessage } from '@/lib/errorMessage';
@@ -196,7 +197,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const [baixandoAnexoId, setBaixandoAnexoId] = useState(null);
   const [previewAnexo, setPreviewAnexo] = useState(null);
   const [gerandoPdfUnico, setGerandoPdfUnico] = useState(false);
-  const [incluirAssinatura, setIncluirAssinatura] = useState(false);
+  const [juntarAnexosAberto, setJuntarAnexosAberto] = useState(false);
   const [assinaturaPendente, setAssinaturaPendente] = useState(null);
   const [anexoParaAssinar, setAnexoParaAssinar] = useState(null);
   const [abrindoAssinaturaAnexoId, setAbrindoAssinaturaAnexoId] = useState(null);
@@ -555,13 +556,15 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
     }
   }
 
-  async function handleGerarPdfUnico() {
-    const pdfs = anexos.filter((anexo) => anexo.url && getPreviewType(anexo) === 'pdf');
-    if (pdfs.length === 0) return;
+  // selecionados ja vem na ordem escolhida no JuntarAnexosDialog. Em erro a janela fica aberta pra
+  // o usuario desmarcar o arquivo citado na mensagem e tentar de novo.
+  async function handleGerarPdfUnico(selecionados, { incluirAssinatura }) {
+    if (selecionados.length === 0) return;
 
     setGerandoPdfUnico(true);
     try {
-      const pdfFinal = await mergePdfs(pdfs.map((anexo) => anexo.url));
+      const pdfFinal = await mergePdfs(selecionados.map((anexo) => ({ url: anexo.url, nome: anexo.nome_arquivo })));
+      setJuntarAnexosAberto(false);
 
       if (incluirAssinatura && user?.signatureUrl) {
         const pdfBytes = await pdfFinal.save();
@@ -1006,16 +1009,16 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                           {baixandoTodos ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
                           Baixar todos
                         </Button>
-                        {anexos.some((anexo) => anexo.url && getPreviewType(anexo) === 'pdf') && (
+                        {anexos.some((anexo) => anexo.url && podeJuntarAnexo(anexo)) && (
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
                             disabled={gerandoPdfUnico}
-                            onClick={handleGerarPdfUnico}
+                            onClick={() => setJuntarAnexosAberto(true)}
                           >
                             {gerandoPdfUnico ? <Spinner size="sm" /> : <FileStack className="h-4 w-4" />}
-                            Juntar PDFs
+                            Juntar anexos
                           </Button>
                         )}
                       </>
@@ -1032,22 +1035,6 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                         {assinandoLote ? `Assinando ${assinandoLote.atual}/${assinandoLote.total}...` : 'Assinar todos'}
                       </Button>
                     )}
-                    {podeBaixarTodosAnexos &&
-                      anexos.length > 0 &&
-                      anexos.some((anexo) => anexo.url && getPreviewType(anexo) === 'pdf') &&
-                      user?.signatureUrl && (
-                        <label
-                          htmlFor="incluir-assinatura-pdf"
-                          className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
-                        >
-                          <Checkbox
-                            id="incluir-assinatura-pdf"
-                            checked={incluirAssinatura}
-                            onCheckedChange={(checked) => setIncluirAssinatura(checked === true)}
-                          />
-                          Incluir minha assinatura
-                        </label>
-                      )}
                   </div>
                 )}
 
@@ -1350,6 +1337,15 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                     )}
                   </DialogContent>
                 </Dialog>
+
+                <JuntarAnexosDialog
+                  open={juntarAnexosAberto}
+                  onOpenChange={setJuntarAnexosAberto}
+                  anexos={anexos}
+                  podeAssinar={Boolean(user?.signatureUrl)}
+                  gerando={gerandoPdfUnico}
+                  onGerar={handleGerarPdfUnico}
+                />
 
                 <PositionSignatureModal
                   open={Boolean(assinaturaPendente)}

@@ -127,6 +127,8 @@ const ANEXO_TIPOS = [
 const ORDER_BY_COLUMNS: Record<string, string> = {
   criado_em: 'sp.criado_em desc',
   data_vencimento: 'vencimento_efetivo asc nulls last',
+  // aba "Pagas" de Pagamentos: pago mais recente primeiro
+  pago_em: 'sp.pago_em desc nulls last',
 };
 
 const databaseUrl = Deno.env.get('DATABASE_URL');
@@ -1937,9 +1939,12 @@ Deno.serve(async (request) => {
             where solicitacao_id = sp.id
           ) pp on true
           ${whereClause}
-          order by ${orderBy}
-          limit 200;
+          order by ${orderBy};
         `,
+        // Sem limit de proposito: as telas (Pagamentos, Calendario, Minhas Solicitacoes) filtram e
+        // paginam no cliente, entao um corte silencioso escondia registros (ex.: com 'limit 200' e
+        // ordem por vencimento asc, as pagas recentes sumiam de Pagamentos). Se o volume crescer a
+        // ponto de pesar, mover filtro de status/periodo pro servidor em vez de recolocar o limit.
         values,
       );
 

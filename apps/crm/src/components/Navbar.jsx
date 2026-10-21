@@ -7,8 +7,6 @@ import { crmDataClient } from '@/api/crmDataClient';
 import {
   BarChart3,
   Bell,
-  Calendar,
-  CalendarDays,
   Car,
   CheckCheck,
   ChevronDown,
@@ -20,7 +18,6 @@ import {
   LayoutDashboard,
   Lock,
   LogOut,
-  PieChart,
   RefreshCw,
   SlidersHorizontal,
   Tag,
@@ -327,11 +324,6 @@ export default function Navbar({ realtime }) {
               icon: Car,
               path: user?.role === 'admin' || user?.role === 'manager' ? '/configuracoes/cores-veiculo' : undefined,
             },
-          ]} />
-          <NavMenu label="Pós-Vendas" items={[
-            { label: 'Agenda Online', icon: Calendar, comingSoon: true },
-            { label: 'Agenda V2', icon: CalendarDays, comingSoon: true },
-            { label: 'Painel de Retenção', icon: PieChart, comingSoon: true },
           ]} />
           <NavMenu label="Marketing" items={null} />
           <NavMenu label="Gestão" items={[

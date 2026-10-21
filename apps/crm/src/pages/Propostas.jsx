@@ -397,7 +397,7 @@ export default function Propostas() {
         <div className="overflow-x-auto border bg-white">
           <Table>
             <TableHeader className="bg-[#1a1a1a]">
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableHead className="text-white">Veiculo</TableHead>
                 <TableHead className="text-white">Valor final</TableHead>
                 <TableHead className="text-white">Pagamento</TableHead>

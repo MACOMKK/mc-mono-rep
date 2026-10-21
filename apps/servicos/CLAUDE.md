@@ -121,6 +121,10 @@ reais (só adicionar coluna `mod_<novo>` na tabela, seguindo o mesmo padrão).
     filtro), `list_aprovadores` (colaboradores elegíveis a `aprovador_destino_id` — papel
     `aprovador`/`financeiro` no módulo ou `nivel_acesso = 'admin'` na Camada 1; usada pelo select
     de nova solicitação, disponível pra qualquer usuário com acesso ao módulo, não só admin).
+  - `list` **não tem `limit`** de propósito: Pagamentos/Calendário/Minhas Solicitações filtram e
+    paginam no cliente, e o antigo `limit 200` (com ordem por vencimento asc) escondia em silêncio
+    as pagas recentes (caso da nº 543). Se o volume pesar, mover filtro de status/período pro
+    servidor em vez de recolocar o limite.
   - Anexos multi-arquivo: `list_anexos`, `registrar_anexo`, `remover_anexo` (tabela
     `anexos_solicitacao`, categorias `comprovante_solicitacao | nf_boleto | pdf_unificado | rh |
     comprovante_pagamento`; upload é feito direto do client pro Storage, a function só registra

@@ -136,7 +136,9 @@ export default function Pagamentos() {
   const solicitacoesQuery = useQuery({
     queryKey: ['servicos', 'solicitacoes', 'aprovadas', categoriaFiltro, statusPagamentoFiltro],
     queryFn: async () => {
-      const filters = { order_by: 'data_vencimento' };
+      // Pendentes/Todas: vencimento mais antigo primeiro (fila do que pagar). Pagas: pagamento
+      // mais recente primeiro.
+      const filters = { order_by: statusPagamentoFiltro === 'pago' ? 'pago_em' : 'data_vencimento' };
       if (statusPagamentoFiltro !== 'todas') filters.status = statusPagamentoFiltro;
       if (categoriaFiltro !== CATEGORIA_FILTRO_TODAS) filters.categoria_id = categoriaFiltro;
       const result = await financeiroApi.solicitacoes.list(filters);

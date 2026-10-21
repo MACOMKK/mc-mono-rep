@@ -1,13 +1,59 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
-// Baixa cada PDF (em ordem) e concatena todas as paginas num unico PDFDocument.
-export async function mergePdfs(pdfUrls) {
+// A4 em pontos -- teto pra pagina gerada a partir de uma imagem.
+const A4_WIDTH = 595.28;
+const A4_HEIGHT = 841.89;
+
+// Identifica o conteudo real pelos primeiros bytes, sem confiar em nome/mime do upload (ja houve
+// anexo ".pdf" que era foto ou pagina HTML, e o pdf-lib falhava com "No PDF header found").
+// O cabecalho %PDF pode vir depois de alguns bytes de lixo, por isso a busca nos primeiros 1024.
+function detectFileKind(bytes) {
+  const head = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 1024));
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'jpg';
+  if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return 'png';
+  for (let i = 0; i + 3 < head.length; i += 1) {
+    if (head[i] === 0x25 && head[i + 1] === 0x50 && head[i + 2] === 0x44 && head[i + 3] === 0x46) return 'pdf';
+  }
+  return 'unknown';
+}
+
+async function addImagePage(pdfFinal, bytes, kind) {
+  const image = kind === 'jpg' ? await pdfFinal.embedJpg(bytes) : await pdfFinal.embedPng(bytes);
+  const scale = Math.min(1, A4_WIDTH / image.width, A4_HEIGHT / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  const page = pdfFinal.addPage([width, height]);
+  page.drawImage(image, { x: 0, y: 0, width, height });
+}
+
+// Baixa cada arquivo (em ordem) e concatena todas as paginas num unico PDFDocument. Aceita URLs
+// ou itens { url, nome } -- o nome so serve pra mensagem de erro dizer qual anexo falhou.
+// Imagem JPG/PNG (mesmo salva como .pdf) entra como uma pagina.
+export async function mergePdfs(arquivos) {
   const pdfFinal = await PDFDocument.create();
-  for (const url of pdfUrls) {
+  for (const arquivo of arquivos) {
+    const { url, nome } = typeof arquivo === 'string' ? { url: arquivo, nome: arquivo } : arquivo;
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`Falha ao baixar "${url}".`);
+    if (!response.ok) throw new Error(`Falha ao baixar "${nome}".`);
     const bytes = await response.arrayBuffer();
-    const pdfOrigem = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const kind = detectFileKind(bytes);
+
+    if (kind === 'jpg' || kind === 'png') {
+      await addImagePage(pdfFinal, bytes, kind);
+      continue;
+    }
+    if (kind !== 'pdf') {
+      throw new Error(
+        `O anexo "${nome}" não é um PDF nem uma imagem JPG/PNG válida (o arquivo pode estar corrompido ou ter sido salvo com a extensão errada). Desmarque-o para juntar os demais.`,
+      );
+    }
+
+    let pdfOrigem;
+    try {
+      pdfOrigem = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    } catch (error) {
+      throw new Error(`Não foi possível ler o anexo "${nome}": ${error.message}`);
+    }
     const paginas = await pdfFinal.copyPages(pdfOrigem, pdfOrigem.getPageIndices());
     paginas.forEach((pagina) => pdfFinal.addPage(pagina));
   }

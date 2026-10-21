@@ -209,7 +209,7 @@ export default function ConfiguracaoDistribuicao() {
             <div className="overflow-hidden border bg-white">
               <Table>
                 <TableHeader className="bg-[#1a1a1a]">
-                  <TableRow>
+                  <TableRow className="hover:bg-transparent">
                     <TableHead className="text-white">Participa</TableHead>
                     <TableHead className="text-white">Vendedor</TableHead>
                     <TableHead className="text-white">Leads ativos</TableHead>

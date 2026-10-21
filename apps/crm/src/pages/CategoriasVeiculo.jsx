@@ -240,7 +240,7 @@ export default function CategoriasVeiculo() {
         <div className="overflow-hidden border bg-white">
           <Table>
             <TableHeader className="bg-[#1a1a1a]">
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableHead className="text-white">Nome</TableHead>
                 <TableHead className="text-white">Campos extras</TableHead>
                 <TableHead className="text-white">Ativa</TableHead>
