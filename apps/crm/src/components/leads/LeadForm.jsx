@@ -15,6 +15,7 @@ import { etapaMotivoAplicaEm, findEtapaDoLead } from '@/lib/leadStatus';
 import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import MotivoStatusSelect from '@/components/leads/MotivoStatusSelect';
+import { formatTelefone, formatDocumento, isValidEmail, isValidCpfCnpj, normalizeDigits } from '@macom/validation';
 import {
   BriefcaseBusiness,
   Car,
@@ -115,6 +116,8 @@ export default function LeadForm({
   const [unidadeError, setUnidadeError] = useState('');
   const [nomeError, setNomeError] = useState('');
   const [telefoneError, setTelefoneError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [cpfCnpjError, setCpfCnpjError] = useState('');
   const [statusRequirementError, setStatusRequirementError] = useState('');
   const { etapas } = usePipelineEtapas({ pipelineId: lead?.pipeline_id || defaultPipelineId || undefined });
   const etapaAtual = findEtapaDoLead(etapas, data);
@@ -494,6 +497,18 @@ export default function LeadForm({
       return;
     }
     setTelefoneError('');
+    if (data.email && !isValidEmail(data.email)) {
+      setEmailError('E-mail invalido.');
+      setCurrentStep(steps.findIndex((step) => step.key === 'contato'));
+      return;
+    }
+    setEmailError('');
+    if (data.cpf_cnpj && !isValidCpfCnpj(data.cpf_cnpj)) {
+      setCpfCnpjError('CPF/CNPJ invalido.');
+      setCurrentStep(steps.findIndex((step) => step.key === 'contato'));
+      return;
+    }
+    setCpfCnpjError('');
     if (!data.unidade_id) {
       setUnidadeError('Selecione uma unidade antes de salvar.');
       setCurrentStep(steps.findIndex((step) => step.key === 'responsavel'));
@@ -635,20 +650,46 @@ export default function LeadForm({
                       required
                       disabled={Boolean(clienteId)}
                       inputMode="numeric"
-                      placeholder="DDD + numero"
-                      maxLength={11}
-                      value={data.telefone}
-                      onChange={(event) => set('telefone', event.target.value.replace(/\D/g, '').slice(0, 11))}
+                      placeholder="(DDD) 00000-0000"
+                      maxLength={16}
+                      value={formatTelefone(data.telefone)}
+                      onChange={(event) => {
+                        set('telefone', normalizeDigits(event.target.value).slice(0, 11));
+                        if (telefoneError) setTelefoneError('');
+                      }}
                       className="h-9 rounded-none text-sm"
                     />
                     {telefoneError ? <p className="text-xs font-semibold text-red-600">{telefoneError}</p> : null}
                   </Field>
                   <Field label="E-mail">
-                    <Input type="email" disabled={Boolean(clienteId)} value={data.email} onChange={(event) => set('email', event.target.value)} className="h-9 rounded-none text-sm" />
+                    <Input
+                      type="email"
+                      disabled={Boolean(clienteId)}
+                      value={data.email}
+                      onChange={(event) => {
+                        set('email', event.target.value);
+                        if (emailError) setEmailError('');
+                      }}
+                      onBlur={() => setEmailError(data.email && !isValidEmail(data.email) ? 'E-mail invalido.' : '')}
+                      className="h-9 rounded-none text-sm"
+                    />
+                    {emailError ? <p className="text-xs font-semibold text-red-600">{emailError}</p> : null}
                   </Field>
                 </div>
                 <Field label="CPF/CNPJ">
-                  <Input disabled={Boolean(clienteId)} value={data.cpf_cnpj || ''} onChange={(event) => set('cpf_cnpj', event.target.value)} className="h-9 rounded-none text-sm" />
+                  <Input
+                    disabled={Boolean(clienteId)}
+                    inputMode="numeric"
+                    maxLength={18}
+                    value={formatDocumento(data.cpf_cnpj || '')}
+                    onChange={(event) => {
+                      set('cpf_cnpj', normalizeDigits(event.target.value).slice(0, 14));
+                      if (cpfCnpjError) setCpfCnpjError('');
+                    }}
+                    onBlur={() => setCpfCnpjError(data.cpf_cnpj && !isValidCpfCnpj(data.cpf_cnpj) ? 'CPF/CNPJ invalido.' : '')}
+                    className="h-9 rounded-none text-sm"
+                  />
+                  {cpfCnpjError ? <p className="text-xs font-semibold text-red-600">{cpfCnpjError}</p> : null}
                 </Field>
               </div>
             ) : null}

@@ -70,6 +70,7 @@ function createInitialData(evento, leads, initialLeadId) {
     empresa: '',
     modelo_interesse: '',
     proximo_contato: '',
+    horario_proximo_contato: '',
     observacoes: '',
     resultado: '',
     motivo_resultado: '',
@@ -78,6 +79,7 @@ function createInitialData(evento, leads, initialLeadId) {
       titulo: '',
       tipo_evento: 'ligacao',
       proximo_contato: '',
+      horario_proximo_contato: '',
     },
   });
 }
@@ -235,6 +237,16 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
             <Field label={needsScheduledDate ? 'Data da atividade *' : 'Data da atividade'}>
               <Input required={needsScheduledDate} type="date" value={data.proximo_contato} onChange={(event) => set('proximo_contato', event.target.value)} className="h-9 rounded-none text-sm" />
             </Field>
+            {data.tipo_evento === 'ligacao' ? (
+              <Field label="Horario da ligacao">
+                <Input
+                  type="time"
+                  value={data.horario_proximo_contato || ''}
+                  onChange={(event) => set('horario_proximo_contato', event.target.value)}
+                  className="h-9 rounded-none text-sm"
+                />
+              </Field>
+            ) : null}
             {needsResult ? (
               <div className="col-span-2">
                 <Field label="Resultado *">
@@ -321,6 +333,16 @@ export default function EventoForm({ open, onOpenChange, evento, leads = [], ate
                       className="h-9 rounded-none bg-white text-sm"
                     />
                   </Field>
+                  {data.proxima_atividade?.tipo_evento === 'ligacao' ? (
+                    <Field label="Horario da ligacao">
+                      <Input
+                        type="time"
+                        value={data.proxima_atividade?.horario_proximo_contato || ''}
+                        onChange={(event) => setNextActivity('horario_proximo_contato', event.target.value)}
+                        className="h-9 rounded-none bg-white text-sm"
+                      />
+                    </Field>
+                  ) : null}
                 </div>
               </div>
             ) : null}

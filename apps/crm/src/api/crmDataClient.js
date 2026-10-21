@@ -1,5 +1,6 @@
 import { crmApi } from '@macom/api-client/crmApi';
 import { assertSupabaseConfigured, supabase } from '@macom/api-client/supabaseClient';
+import { isValidCpfCnpj } from '@macom/validation';
 import { etapaExigeMotivo } from '@/lib/leadStatus';
 
 const CRM_ATTACHMENTS_BUCKET = 'crm-anexos';
@@ -66,6 +67,16 @@ function requireValidEmail(email, context) {
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
     throw new Error(`E-mail de ${context.toLowerCase()} invalido. Informe um e-mail no formato nome@dominio.com.`);
+  }
+  return trimmed;
+}
+
+function requireValidCpfCnpj(value, context) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+
+  if (!isValidCpfCnpj(trimmed)) {
+    throw new Error(`CPF/CNPJ de ${context.toLowerCase()} invalido.`);
   }
   return trimmed;
 }
@@ -425,6 +436,7 @@ function mapEventoRow(row = {}) {
     responsavel,
     responsavel_nome: responsavel?.nome || '',
     proximo_contato: normalizeDateOnly(row.proximo_contato),
+    horario_proximo_contato: row.horario_proximo_contato ? String(row.horario_proximo_contato).slice(0, 5) : '',
     observacoes: row.observacoes || '',
     resultado: normalizedResult,
     motivo_resultado: row.motivo_resultado || '',
@@ -454,6 +466,7 @@ function mapClientePayload(data = {}) {
   const nome = requireFullName(data.nome || data.cliente_nome, 'Cliente');
   const phone = requireNormalizedPhone(data.telefone, 'Cliente');
   const email = requireValidEmail(data.email, 'Cliente');
+  const cpfCnpj = requireValidCpfCnpj(data.cpf_cnpj, 'Cliente');
 
   return {
     nome,
@@ -461,7 +474,7 @@ function mapClientePayload(data = {}) {
     telefone_normalizado: phone,
     email: email || null,
     email_normalizado: normalizeEmail(email) || null,
-    cpf_cnpj: data.cpf_cnpj?.trim() || null,
+    cpf_cnpj: cpfCnpj || null,
     // empresa nao e mais enviada pelo client -- o banco deriva de unidade_id
     // (gestao_crm.sync_crm_cliente_empresa_from_unidade, migracao 20261020160000), evitando as
     // duas fontes de verdade poderem divergir. So inclui unidade_id quando informado, pra nao
@@ -606,6 +619,7 @@ function mapEventoPayload(data = {}, lead) {
     tipo_atendimento: data.tipo_evento || data.tipo_atendimento || 'ligacao',
     temperatura: data.temperatura || 'morno',
     proximo_contato: data.proximo_contato || null,
+    horario_proximo_contato: data.tipo_evento === 'ligacao' ? (data.horario_proximo_contato || null) : null,
     observacoes: data.observacoes || null,
     resultado: data.status === 'concluida' ? (data.resultado || null) : null,
     motivo_resultado: data.status === 'concluida' && data.resultado === 'lead_perdido'
@@ -851,6 +865,7 @@ const LeadRepository = {
       nome: data.nome,
       telefone: data.telefone,
       email: data.email,
+      cpf_cnpj: data.cpf_cnpj,
       unidade_id: data.unidade_id,
       status_relacionamento: data.etapa_tipo === 'ganho' ? 'cliente' : 'lead',
     });
@@ -898,6 +913,7 @@ const LeadRepository = {
       nome: nextData.nome,
       telefone: nextData.telefone,
       email: nextData.email,
+      cpf_cnpj: nextData.cpf_cnpj,
       unidade_id: nextData.unidade_id,
       status_relacionamento: nextData.etapa_tipo === 'ganho' ? 'cliente' : 'lead',
     });
@@ -1485,6 +1501,7 @@ const EventoRepository = {
         tipo_evento: data.proxima_atividade.tipo_evento || 'ligacao',
         temperatura: data.temperatura || payload.temperatura || 'morno',
         proximo_contato: data.proxima_atividade.proximo_contato,
+        horario_proximo_contato: data.proxima_atividade.horario_proximo_contato || null,
         observacoes: data.proxima_atividade.observacoes || null,
       }, lead);
       proximaAtividade = {

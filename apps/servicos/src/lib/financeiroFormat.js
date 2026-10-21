@@ -1,3 +1,8 @@
+import { normalizeDigits, formatDocumento, formatTelefone, formatCep } from '@macom/validation';
+
+export { formatDocumento, formatTelefone, formatCep };
+export const onlyDigits = normalizeDigits;
+
 // Limita o titulo exibido nas colunas das tabelas de listagem (Minhas Solicitacoes, Aprovacoes,
 // Contas a Pagar) pra nao estourar a largura da coluna com titulos muito longos -- o `truncate`
 // via CSS ja corta visualmente, mas sem limite de caracteres o texto completo ainda fica no DOM
@@ -101,36 +106,7 @@ export function isBloqueadaPorPendencia(row) {
   return Boolean(row.pendencia_bloqueio);
 }
 
-export const onlyDigits = (value) => String(value || '').replace(/\D/g, '');
 export const onlyLetters = (value) => String(value || '').replace(/[^a-zA-Z]/g, '');
-
-export function formatDocumento(value) {
-  const digits = onlyDigits(value).slice(0, 14);
-  if (digits.length <= 11) {
-    return digits
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-  }
-  return digits
-    .replace(/(\d{2})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1/$2')
-    .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
-}
-
-export function formatTelefone(value) {
-  const digits = onlyDigits(value).slice(0, 11);
-  if (digits.length <= 10) {
-    return digits.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d{1,4})$/, '$1-$2');
-  }
-  return digits.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d{1,4})$/, '$1-$2');
-}
-
-export function formatCep(value) {
-  const digits = onlyDigits(value).slice(0, 8);
-  return digits.replace(/(\d{5})(\d{1,3})$/, '$1-$2');
-}
 
 // Campos de cadastro completo do fornecedor -- usado tanto na tela de gestao
 // (Fornecedores.jsx) quanto no cadastro rapido dentro do NovaSolicitacaoDrawer.

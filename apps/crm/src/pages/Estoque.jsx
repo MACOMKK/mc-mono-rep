@@ -38,6 +38,12 @@ const STATUS_OPTIONS = [
   { value: 'vendido', label: 'Vendido' },
 ];
 
+const STATUS_BADGE_CLASS = {
+  disponivel: 'bg-emerald-100 text-emerald-700',
+  reservado: 'bg-amber-100 text-amber-700',
+  vendido: 'bg-slate-200 text-slate-700',
+};
+
 const ABAS_CONDICAO = [
   { value: 'todos', label: 'Todos' },
   { value: 'novo', label: 'Novos' },
@@ -46,12 +52,14 @@ const ABAS_CONDICAO = [
 
 const SITUACAO_OPTIONS = [
   { value: 'estoque', label: 'Estoque' },
+  { value: 'transito', label: 'Transito' },
   { value: 'saida_demonstracao', label: 'Saida demonstracao' },
   { value: 'imobilizado', label: 'Imobilizado' },
 ];
 
 const SITUACAO_BADGE_CLASS = {
   estoque: 'bg-emerald-100 text-emerald-700',
+  transito: 'bg-sky-100 text-sky-700',
   saida_demonstracao: 'bg-amber-100 text-amber-700',
   imobilizado: 'bg-slate-200 text-slate-700',
 };
@@ -71,6 +79,7 @@ function formatDateTime(value) {
 }
 
 const emptyForm = {
+  marca_id: '',
   modelo_id: '',
   versao_id: '',
   chassi: '',
@@ -296,6 +305,13 @@ export default function Estoque() {
     [versoes, form.modelo_id],
   );
 
+  // Marca e so filtro de UI pro Select de Modelo -- nao e persistido (modelo_id ja encerra
+  // marca via FK no catalogo), por isso nao entra no payload de handleCreate.
+  const modelosDaMarca = useMemo(
+    () => modelos.filter((modelo) => modelo.marca_id === form.marca_id),
+    [modelos, form.marca_id],
+  );
+
   const createMutation = useMutation({
     mutationFn: (data) => crmDataClient.entities.VeiculoEstoque.create(data),
     onMutate: () => {
@@ -400,7 +416,7 @@ export default function Estoque() {
     mutationFn: (data) => crmDataClient.entities.ModeloVeiculo.create(data),
     onSuccess: async (modelo) => {
       await queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'] });
-      setForm((prev) => ({ ...prev, modelo_id: modelo.id, versao_id: '' }));
+      setForm((prev) => ({ ...prev, marca_id: modelo.marca_id, modelo_id: modelo.id, versao_id: '' }));
       setModeloDialogOpen(false);
       setNovoModelo(emptyNovoModelo);
       toast({ title: 'Modelo criado', variant: 'success' });
@@ -805,7 +821,7 @@ export default function Estoque() {
                           value={veiculo.status}
                           onValueChange={(status) => updateMutation.mutate({ id: veiculo.id, ...veiculo, status })}
                         >
-                          <SelectTrigger className="h-8 w-28 rounded-none text-xs"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className={`h-8 w-28 rounded-none text-xs ${STATUS_BADGE_CLASS[veiculo.status] || ''}`}><SelectValue /></SelectTrigger>
                           <SelectContent className="rounded-none">
                             {STATUS_OPTIONS.map((option) => (
                               <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
@@ -813,7 +829,9 @@ export default function Estoque() {
                           </SelectContent>
                         </Select>
                       ) : (
-                        <span className="text-sm text-slate-700">{STATUS_OPTIONS.find((option) => option.value === veiculo.status)?.label || '-'}</span>
+                        <span className={`inline-block px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${STATUS_BADGE_CLASS[veiculo.status] || ''}`}>
+                          {STATUS_OPTIONS.find((option) => option.value === veiculo.status)?.label || '-'}
+                        </span>
                       )}
                     </TableCell>
                     {canConfigure ? (
@@ -858,17 +876,32 @@ export default function Estoque() {
           </DialogHeader>
           <form onSubmit={handleCreate} className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider">Marca</Label>
+              <Select
+                value={form.marca_id}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, marca_id: value, modelo_id: '', versao_id: '' }))}
+              >
+                <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione a marca" /></SelectTrigger>
+                <SelectContent className="rounded-none">
+                  {marcas.map((marca) => (
+                    <SelectItem key={marca.id} value={marca.id}>{marca.nome}{!marca.ativo ? ' (inativo)' : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label className="text-xs font-bold uppercase tracking-wider">Modelo</Label>
               <div className="flex gap-1">
                 <Select
                   value={form.modelo_id}
                   onValueChange={(value) => setForm((prev) => ({ ...prev, modelo_id: value, versao_id: '' }))}
+                  disabled={!form.marca_id}
                 >
                   <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione o modelo" /></SelectTrigger>
                   <SelectContent className="rounded-none">
-                    {modelos.map((modelo) => (
+                    {modelosDaMarca.map((modelo) => (
                       <SelectItem key={modelo.id} value={modelo.id}>
-                        {marcaNomePorId[modelo.marca_id] || '-'} {modelo.nome}{!modelo.ativo ? ' (inativo)' : ''}
+                        {modelo.nome}{!modelo.ativo ? ' (inativo)' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -878,7 +911,11 @@ export default function Estoque() {
                   variant="outline"
                   className="h-9 shrink-0 rounded-none px-2"
                   title="Nao encontrei o modelo"
-                  onClick={() => setModeloDialogOpen(true)}
+                  disabled={!form.marca_id}
+                  onClick={() => {
+                    setNovoModelo((prev) => ({ ...prev, marca_id: form.marca_id }));
+                    setModeloDialogOpen(true);
+                  }}
                 >
                   <Plus className="h-4 w-4" />
                 </Button>

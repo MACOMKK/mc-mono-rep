@@ -21,6 +21,7 @@ import { Ban, Building2, Car, Clock3, History, Mail, MapPin, Paperclip, Pencil, 
 import { findEtapaDoLead, getEtapaVisual, getLeadEtapaLabel, isLeadAtivo } from '@/lib/leadStatus';
 import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { formatTelefone, formatDocumento, isValidEmail, isValidCpfCnpj, normalizeDigits } from '@macom/validation';
 
 const STATUS_LABEL = {
   lead: 'Lead',
@@ -131,6 +132,8 @@ export default function Clientes() {
   const [cancelamentoForm, setCancelamentoForm] = useState({ motivo_cancelamento: '' });
   const [novoContatoTelefone, setNovoContatoTelefone] = useState('');
   const [novoContatoTipo, setNovoContatoTipo] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [cpfCnpjError, setCpfCnpjError] = useState('');
   const { empresa } = useEmpresa();
   const { unidades } = useUnidadesEmpresa();
   const { user } = useAuth();
@@ -568,6 +571,16 @@ export default function Clientes() {
 
   function saveCliente(event) {
     event.preventDefault();
+    if (formData?.email && !isValidEmail(formData.email)) {
+      setEmailError('E-mail invalido.');
+      return;
+    }
+    setEmailError('');
+    if (formData?.cpf_cnpj && !isValidCpfCnpj(formData.cpf_cnpj)) {
+      setCpfCnpjError('CPF/CNPJ invalido.');
+      return;
+    }
+    setCpfCnpjError('');
     updateMutation.mutate({
       id: selected.id,
       data: formData,
@@ -837,15 +850,37 @@ export default function Clientes() {
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Telefone *</Label>
-                      <Input required value={formData?.telefone || ''} onChange={(event) => updateField('telefone', event.target.value)} className="h-9 rounded-none text-sm" />
+                      <Input
+                        required
+                        inputMode="numeric"
+                        maxLength={16}
+                        value={formatTelefone(formData?.telefone || '')}
+                        onChange={(event) => updateField('telefone', normalizeDigits(event.target.value).slice(0, 11))}
+                        className="h-9 rounded-none text-sm"
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">E-mail</Label>
-                      <Input type="email" value={formData?.email || ''} onChange={(event) => updateField('email', event.target.value)} className="h-9 rounded-none text-sm" />
+                      <Input
+                        type="email"
+                        value={formData?.email || ''}
+                        onChange={(event) => { updateField('email', event.target.value); if (emailError) setEmailError(''); }}
+                        onBlur={() => setEmailError(formData?.email && !isValidEmail(formData.email) ? 'E-mail invalido.' : '')}
+                        className="h-9 rounded-none text-sm"
+                      />
+                      {emailError ? <p className="text-xs font-semibold text-red-600">{emailError}</p> : null}
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">CPF/CNPJ</Label>
-                      <Input value={formData?.cpf_cnpj || ''} onChange={(event) => updateField('cpf_cnpj', event.target.value)} className="h-9 rounded-none text-sm" />
+                      <Input
+                        inputMode="numeric"
+                        maxLength={18}
+                        value={formatDocumento(formData?.cpf_cnpj || '')}
+                        onChange={(event) => { updateField('cpf_cnpj', normalizeDigits(event.target.value).slice(0, 14)); if (cpfCnpjError) setCpfCnpjError(''); }}
+                        onBlur={() => setCpfCnpjError(formData?.cpf_cnpj && !isValidCpfCnpj(formData.cpf_cnpj) ? 'CPF/CNPJ invalido.' : '')}
+                        className="h-9 rounded-none text-sm"
+                      />
+                      {cpfCnpjError ? <p className="text-xs font-semibold text-red-600">{cpfCnpjError}</p> : null}
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Unidade</Label>

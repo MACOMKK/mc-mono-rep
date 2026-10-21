@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Plus, Printer, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
 import PropostaDocumento from '@/pages/PropostaDocumento';
@@ -74,6 +74,7 @@ export default function Propostas() {
   const leadIdFromUrl = searchParams.get('leadId');
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [leadSearch, setLeadSearch] = useState('');
   const [selectedLead, setSelectedLead] = useState(null);
@@ -96,6 +97,16 @@ export default function Propostas() {
       return next;
     }, { replace: true });
   }, [leadFromUrl, setSearchParams]);
+
+  const { data: leadEmEdicao } = useQuery({
+    queryKey: ['crm-propostas-lead-edicao', editingId, form.lead_id],
+    queryFn: () => crmDataClient.entities.Lead.get(form.lead_id),
+    enabled: Boolean(editingId && form.lead_id),
+  });
+
+  useEffect(() => {
+    if (leadEmEdicao) setSelectedLead(leadEmEdicao);
+  }, [leadEmEdicao]);
 
   const [acceptTarget, setAcceptTarget] = useState(null);
   const [vendaForm, setVendaForm] = useState(emptyVendaForm);
@@ -206,6 +217,26 @@ export default function Propostas() {
     }),
   });
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => crmDataClient.entities.Proposta.update(id, data),
+    onMutate: () => {
+      setCreateOpen(false);
+      setEditingId(null);
+      setForm(emptyForm);
+      setSelectedLead(null);
+      setLeadSearch('');
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-propostas'] });
+      toast({ title: 'Proposta atualizada', variant: 'success' });
+    },
+    onError: (mutationError) => toast({
+      title: 'Nao foi possivel atualizar a proposta',
+      description: mutationError.message,
+      variant: 'destructive',
+    }),
+  });
+
   const recusarMutation = useMutation({
     mutationFn: (id) => crmDataClient.entities.Proposta.recusar(id),
     onSuccess: async () => {
@@ -269,13 +300,37 @@ export default function Propostas() {
     setLeadSearch(lead.nome);
   };
 
-  const handleCreate = (event) => {
+  const handleSubmit = (event) => {
     event.preventDefault();
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, data: form });
+      return;
+    }
     if (!form.lead_id) {
       toast({ title: 'Selecione um lead', variant: 'destructive' });
       return;
     }
     createMutation.mutate(form);
+  };
+
+  const openEditDialog = (proposta) => {
+    setEditingId(proposta.id);
+    setForm({
+      lead_id: proposta.lead_id,
+      status: proposta.status,
+      veiculo_estoque_id: proposta.veiculo_estoque_id || '',
+      veiculo_descricao: proposta.veiculo_descricao || '',
+      valor_veiculo: proposta.valor_veiculo ?? '',
+      desconto_valor: proposta.desconto_valor ?? '',
+      forma_pagamento: proposta.forma_pagamento || 'a_vista',
+      valor_entrada: proposta.valor_entrada ?? '',
+      vendedor_id: proposta.vendedor_id || '',
+      validade_ate: proposta.validade_ate || '',
+      observacoes: proposta.observacoes || '',
+      eh_teste: proposta.eh_teste === true,
+    });
+    setSelectedLead({ id: proposta.lead_id, nome: '' });
+    setCreateOpen(true);
   };
 
   const openAcceptDialog = (proposta) => {
@@ -382,6 +437,16 @@ export default function Propostas() {
                       >
                         <Printer className="mr-1 h-3.5 w-3.5" /> Imprimir
                       </Button>
+                      {['rascunho', 'enviada'].includes(proposta.status) ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 rounded-none text-xs"
+                          onClick={() => openEditDialog(proposta)}
+                        >
+                          <Pencil className="mr-1 h-3.5 w-3.5" /> Editar
+                        </Button>
+                      ) : null}
                       {proposta.status === 'rascunho' ? (
                         <Button
                           type="button"
@@ -437,39 +502,46 @@ export default function Propostas() {
           setForm(emptyForm);
           setSelectedLead(null);
           setLeadSearch('');
+          setEditingId(null);
         }
       }}
       >
         <DialogContent className="rounded-none sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Nova proposta</DialogTitle>
+            <DialogTitle>{editingId ? 'Editar proposta' : 'Nova proposta'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleCreate} className="space-y-3">
+          <form onSubmit={handleSubmit} className="space-y-3">
             <div className="space-y-2">
               <Label className="text-xs font-bold uppercase tracking-wider">Lead</Label>
-              <Input
-                value={leadSearch}
-                onChange={(event) => { setLeadSearch(event.target.value); setSelectedLead(null); setForm((prev) => ({ ...prev, lead_id: '' })); }}
-                placeholder="Buscar por nome ou telefone"
-                className="h-9 rounded-none"
-              />
-              {!selectedLead && leadSearch.trim() && filteredLeadOptions.length > 0 ? (
-                <div className="max-h-40 overflow-y-auto border bg-white">
-                  {filteredLeadOptions.map((lead) => (
-                    <button
-                      type="button"
-                      key={lead.id}
-                      onClick={() => handleSelectLead(lead)}
-                      className="block w-full border-b px-3 py-2 text-left text-sm hover:bg-red-50"
-                    >
-                      {lead.nome} <span className="text-xs text-muted-foreground">{lead.telefone}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              {selectedLead ? (
-                <p className="text-xs text-muted-foreground">Lead selecionado: <span className="font-bold">{selectedLead.nome}</span></p>
-              ) : null}
+              {editingId ? (
+                <p className="text-sm font-bold">{selectedLead?.nome || 'Lead vinculado'}</p>
+              ) : (
+                <>
+                  <Input
+                    value={leadSearch}
+                    onChange={(event) => { setLeadSearch(event.target.value); setSelectedLead(null); setForm((prev) => ({ ...prev, lead_id: '' })); }}
+                    placeholder="Buscar por nome ou telefone"
+                    className="h-9 rounded-none"
+                  />
+                  {!selectedLead && leadSearch.trim() && filteredLeadOptions.length > 0 ? (
+                    <div className="max-h-40 overflow-y-auto border bg-white">
+                      {filteredLeadOptions.map((lead) => (
+                        <button
+                          type="button"
+                          key={lead.id}
+                          onClick={() => handleSelectLead(lead)}
+                          className="block w-full border-b px-3 py-2 text-left text-sm hover:bg-red-50"
+                        >
+                          {lead.nome} <span className="text-xs text-muted-foreground">{lead.telefone}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {selectedLead ? (
+                    <p className="text-xs text-muted-foreground">Lead selecionado: <span className="font-bold">{selectedLead.nome}</span></p>
+                  ) : null}
+                </>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -604,7 +676,7 @@ export default function Propostas() {
               />
             </div>
 
-            {canConfigure ? (
+            {canConfigure && !editingId ? (
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Checkbox
                   checked={form.eh_teste}
@@ -617,10 +689,12 @@ export default function Propostas() {
             <DialogFooter>
               <Button
                 type="submit"
-                disabled={!form.lead_id || !form.valor_veiculo || createMutation.isPending}
+                disabled={!form.lead_id || !form.valor_veiculo || createMutation.isPending || updateMutation.isPending}
                 className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
               >
-                {createMutation.isPending ? 'Salvando...' : 'Salvar proposta'}
+                {(createMutation.isPending || updateMutation.isPending)
+                  ? 'Salvando...'
+                  : (editingId ? 'Salvar alteracoes' : 'Salvar proposta')}
               </Button>
             </DialogFooter>
           </form>

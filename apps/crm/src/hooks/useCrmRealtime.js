@@ -187,6 +187,7 @@ function mapAtendimentoRow(row = {}) {
     tipo_evento: row.tipo_atendimento || row.tipo_evento || 'ligacao',
     temperatura: row.temperatura || 'morno',
     proximo_contato: normalizeDateOnly(row.proximo_contato),
+    horario_proximo_contato: row.horario_proximo_contato ? String(row.horario_proximo_contato).slice(0, 5) : '',
     observacoes: row.observacoes || '',
     resultado: row.resultado || '',
     motivo_resultado: row.motivo_resultado || '',

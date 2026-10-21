@@ -81,6 +81,7 @@ const ENTITY_CONFIG = {
       'tipo_atendimento',
       'temperatura',
       'proximo_contato',
+      'horario_proximo_contato',
       'observacoes',
       'resultado',
       'motivo_resultado',
@@ -559,6 +560,11 @@ function mapDatabaseError(error: unknown) {
 
   if (message.includes('propostas_veiculo_check')) {
     return 'Selecione um veiculo do estoque ou descreva o veiculo da proposta.';
+  }
+
+  if (message.includes('idx_crm_propostas_cliente_veiculo_estoque_ativa_unique')
+    || message.includes('idx_crm_propostas_cliente_veiculo_descricao_ativa_unique')) {
+    return 'Ja existe uma proposta em andamento (rascunho ou enviada) para este cliente e este veiculo.';
   }
 
   if (message.includes('Proposta aceita nao pode ter o status alterado')) {

@@ -105,6 +105,52 @@ describe('PropostaRepository.create (calculo de valor_final)', () => {
   });
 });
 
+describe('PropostaRepository.update (edicao de proposta)', () => {
+  it('recalcula valor_final e nunca envia lead_id/eh_teste no payload', async () => {
+    await crmDataClient.entities.Proposta.update('proposta-1', {
+      lead_id: 'lead-1',
+      status: 'enviada',
+      veiculo_estoque_id: 'veiculo-1',
+      valor_veiculo: 80000,
+      desconto_valor: 10000,
+      eh_teste: true,
+    });
+
+    expect(crmApi.propostas.update).toHaveBeenCalledWith(
+      'proposta-1',
+      expect.objectContaining({ valor_final: 70000, status: 'enviada' }),
+    );
+    const sentPayload = crmApi.propostas.update.mock.calls[0][1];
+    expect(sentPayload).not.toHaveProperty('lead_id');
+    expect(sentPayload).not.toHaveProperty('eh_teste');
+  });
+
+  it('preserva o status atual da proposta quando o form o envia (nao reverte pra rascunho)', async () => {
+    await crmDataClient.entities.Proposta.update('proposta-1', {
+      status: 'enviada',
+      veiculo_estoque_id: 'veiculo-1',
+      valor_veiculo: 50000,
+    });
+
+    expect(crmApi.propostas.update).toHaveBeenCalledWith(
+      'proposta-1',
+      expect.objectContaining({ status: 'enviada' }),
+    );
+  });
+
+  it('propaga a mensagem de duplicidade quando o backend rejeita por indice unico', async () => {
+    crmApi.propostas.update.mockRejectedValueOnce(
+      new Error('Ja existe uma proposta em andamento (rascunho ou enviada) para este cliente e este veiculo.'),
+    );
+
+    await expect(crmDataClient.entities.Proposta.update('proposta-1', {
+      status: 'rascunho',
+      veiculo_estoque_id: 'veiculo-2',
+      valor_veiculo: 50000,
+    })).rejects.toThrow(/proposta em andamento/i);
+  });
+});
+
 describe('PropostaRepository.aceitar (validacao de aceite)', () => {
   const baseVendaData = {
     veiculo_estoque_id: 'veiculo-1',

@@ -1,11 +1,16 @@
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { useNotificacoes } from '@macom/notifications';
 import { crmDataClient } from '@/api/crmDataClient';
 import {
   BarChart3,
+  Bell,
   Calendar,
   CalendarDays,
   Car,
+  CheckCheck,
   ChevronDown,
   Columns3,
   DollarSign,
@@ -26,6 +31,111 @@ import { useEmpresa } from '@/context/EmpresaContext';
 import { useAuth } from '@/lib/AuthContext';
 import { useUnidadesEmpresa } from '@/hooks/useUnidadesEmpresa';
 import { cn } from '@/lib/utils';
+
+function formatNotificationDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function NotificationBell({ user }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  const { items, unreadCount, markRead, markAllRead } = useNotificacoes({
+    sistema: 'crm',
+    colaboradorId: user?.id,
+    enabled: Boolean(user?.id),
+    onNew: (notification) => {
+      if (notification.titulo) {
+        toast.info(notification.titulo, { description: notification.mensagem || undefined });
+      }
+    },
+  });
+
+  function handleOpen(notification) {
+    if (!notification.read) markRead(notification.id);
+    setOpen(false);
+    if (notification.link) navigate(notification.link);
+  }
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleClickOutside = (event) => {
+      if (!ref.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="relative flex h-7 w-7 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+        aria-label="Notificacoes"
+      >
+        <Bell className="h-4 w-4" />
+        {unreadCount > 0 ? (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-white">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        ) : null}
+      </button>
+
+      {open ? (
+        <div className="absolute right-0 top-10 z-50 w-80 rounded-none border border-white/10 bg-white text-slate-800 shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-100 bg-[#1a1a1a] px-4 py-2.5">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-white">Notificacoes</h2>
+            {unreadCount > 0 ? (
+              <button
+                type="button"
+                onClick={markAllRead}
+                className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-white/70 transition-colors hover:text-white"
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+                Marcar todas
+              </button>
+            ) : null}
+          </div>
+          <div className="max-h-[420px] overflow-y-auto p-3">
+            {items.length === 0 ? (
+              <div className="px-2 py-6 text-center text-xs text-muted-foreground">
+                Nenhuma notificacao por enquanto.
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {items.map((notification) => (
+                  <button
+                    key={notification.id}
+                    type="button"
+                    onClick={() => handleOpen(notification)}
+                    className={cn(
+                      'w-full border px-3 py-2 text-left transition-colors',
+                      notification.read
+                        ? 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                        : 'border-primary/40 bg-primary/10 hover:border-primary hover:bg-primary/15',
+                    )}
+                  >
+                    <span className="flex items-start justify-between gap-3">
+                      <span className="min-w-0 text-xs font-bold leading-4 text-slate-700">{notification.title}</span>
+                      <span className="shrink-0 text-[10px] font-medium text-slate-500">{formatNotificationDate(notification.created_date)}</span>
+                    </span>
+                    {notification.message ? (
+                      <span className="mt-1 line-clamp-2 block text-xs leading-4 text-slate-600">{notification.message}</span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 const MACOM_LOGO_URL = 'https://res.cloudinary.com/drevbr5eq/image/upload/q_auto/f_auto/v1777603989/logo_vermelha_e2aob2.png';
 
@@ -267,6 +377,7 @@ export default function Navbar({ realtime }) {
 
         <div className="ml-auto flex items-center gap-3">
           <RealtimeIndicator realtime={realtime} />
+          <NotificationBell user={user} />
           <DropdownMenu>
             <DropdownMenuTrigger className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-white/70 transition-colors hover:text-white">
               <span className="mr-1 h-1.5 w-1.5 rounded-full bg-primary" />
