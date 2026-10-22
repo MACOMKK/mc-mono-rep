@@ -18,32 +18,42 @@ export function usePipelineEtapas({ pipelineId, enabled = true } = {}) {
     return pipelines.find((item) => item.padrao) || pipelines.find((item) => item.ativo) || null;
   }, [pipelineId, pipelines]);
 
-  const { data: etapas = [], isLoading: carregandoEtapas } = useQuery({
-    queryKey: ['crm-etapas-pipeline', pipeline?.id],
-    enabled: enabled && Boolean(pipeline?.id),
+  // Busca todas as etapas/automacoes (sem filtrar por pipeline_id) e filtra no cliente pelo
+  // pipeline resolvido. Antes essas duas queries so disparavam depois que `pipeline.id` chegava
+  // (dependente da query de pipelines acima), virando uma 2a rodada sequencial de rede. Como o
+  // volume de etapas/automacoes de todos os pipelines e pequeno, buscar tudo de uma vez e filtrar
+  // aqui permite que as 3 queries deste hook disparem juntas, em paralelo, eliminando essa rodada.
+  const { data: etapasTodas = [], isLoading: carregandoEtapas } = useQuery({
+    queryKey: ['crm-etapas-pipeline-todas'],
+    enabled,
     staleTime: 5 * 60 * 1000,
     queryFn: () => crmDataClient.entities.EtapaPipeline.listPage({
       orderBy: 'ordem',
-      filters: { pipeline_id: pipeline.id },
-      limit: 100,
+      limit: 500,
     }).then((result) => result.rows),
   });
 
-  const etapasOrdenadas = useMemo(
-    () => [...etapas].sort((a, b) => Number(a.ordem) - Number(b.ordem)),
-    [etapas],
-  );
+  const etapasOrdenadas = useMemo(() => {
+    if (!pipeline?.id) return [];
+    return etapasTodas
+      .filter((etapa) => etapa.pipeline_id === pipeline.id)
+      .sort((a, b) => Number(a.ordem) - Number(b.ordem));
+  }, [etapasTodas, pipeline]);
   const etapasAtivas = useMemo(() => etapasOrdenadas.filter((etapa) => etapa.ativo), [etapasOrdenadas]);
 
-  const { data: automacoes = [], isLoading: carregandoAutomacoes } = useQuery({
-    queryKey: ['crm-pipeline-automacoes', pipeline?.id],
-    enabled: enabled && Boolean(pipeline?.id),
+  const { data: automacoesTodas = [], isLoading: carregandoAutomacoes } = useQuery({
+    queryKey: ['crm-pipeline-automacoes-todas'],
+    enabled,
     staleTime: 5 * 60 * 1000,
     queryFn: () => crmDataClient.entities.PipelineAutomacao.listPage({
-      filters: { pipeline_id: pipeline.id },
-      limit: 100,
+      limit: 500,
     }).then((result) => result.rows),
   });
+
+  const automacoes = useMemo(() => {
+    if (!pipeline?.id) return [];
+    return automacoesTodas.filter((automacao) => automacao.pipeline_id === pipeline.id);
+  }, [automacoesTodas, pipeline]);
 
   return {
     pipeline,
@@ -51,6 +61,6 @@ export function usePipelineEtapas({ pipelineId, enabled = true } = {}) {
     etapas: etapasOrdenadas,
     etapasAtivas,
     automacoes,
-    isLoading: carregandoPipelines || (Boolean(pipeline?.id) && (carregandoEtapas || carregandoAutomacoes)),
+    isLoading: carregandoPipelines || carregandoEtapas || carregandoAutomacoes,
   };
 }

@@ -1,4 +1,3 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
 import {
   CRM_SCHEMA,
@@ -280,7 +279,6 @@ const ORDER_FIELD_MAP: Record<string, string> = {
 
 const databaseUrl = Deno.env.get('DATABASE_URL');
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
-const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
 const sql = databaseUrl
@@ -1213,11 +1211,26 @@ function scopedColumn(entity: EntityName, column: string) {
   return alias ? `${alias}.${quoteIdentifier(column)}` : quoteIdentifier(column);
 }
 
-async function getAuthenticatedUser(request: Request) {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw Object.assign(new Error('Supabase nao configurado.'), { status: 500 });
+// Decodifica o payload do JWT localmente, sem chamar auth.getUser() (round-trip de rede ao
+// GoTrue). A funcao e deployada com verify_jwt=true, entao o gateway do Supabase ja rejeitou
+// qualquer token com assinatura/expiracao invalida antes desta funcao ser invocada -- revalidar
+// via rede aqui era redundante e custava ~1 round-trip extra em toda requisicao.
+function decodeJwtPayload(token: string): { sub?: string; email?: string } {
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw Object.assign(new Error('Sessao expirada. Faca login novamente.'), { status: 401 });
   }
 
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    return JSON.parse(atob(padded));
+  } catch {
+    throw Object.assign(new Error('Sessao expirada. Faca login novamente.'), { status: 401 });
+  }
+}
+
+async function getAuthenticatedUser(request: Request) {
   const authHeader = request.headers.get('Authorization') || '';
   const token = authHeader.replace('Bearer ', '').trim();
 
@@ -1225,52 +1238,50 @@ async function getAuthenticatedUser(request: Request) {
     throw Object.assign(new Error('Sessao expirada. Faca login novamente.'), { status: 401 });
   }
 
-  const authClient = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-  const { data, error } = await authClient.auth.getUser();
-
-  if (error || !data.user) {
+  const payload = decodeJwtPayload(token);
+  if (!payload.sub) {
     throw Object.assign(new Error('Sessao expirada. Faca login novamente.'), { status: 401 });
   }
 
-  return data.user;
+  return { id: payload.sub, email: payload.email };
 }
 
-async function getCurrentCollaborator(user: { id: string; email?: string }) {
+// Une a busca do colaborador e do acesso ao CRM numa unica query (antes eram 2 round-trips
+// sequenciais ao Postgres, o segundo dependendo do id resolvido pelo primeiro).
+async function getCollaboratorWithAccess(user: { id: string; email?: string }) {
   const rows = await sql!.unsafe(
     `
-      select *
-      from public.colaboradores
-      where id = $1
-         or lower(email) = lower($2)
-      order by case when id = $1 then 0 else 1 end
-      limit 1;
-    `,
-    [user.id, user.email || ''],
-  );
-
-  return rows[0] || null;
-}
-
-async function getCrmAccess(collaboratorId: string) {
-  const rows = await sql!.unsafe(
-    `
+      with colaborador as (
+        select *
+        from public.colaboradores
+        where id = $1
+           or lower(email) = lower($2)
+        order by case when id = $1 then 0 else 1 end
+        limit 1
+      )
       select
-        aus.*,
-        row_to_json(s) as sistema
-      from public.acessos_usuario_sistema aus
-      join public.sistemas s on s.id = aus.sistema_id
-      where aus.colaborador_id = $1
+        colaborador.*,
+        row_to_json(aus) as acesso_row,
+        row_to_json(s) as sistema_row
+      from colaborador
+      left join public.acessos_usuario_sistema aus
+        on aus.colaborador_id = colaborador.id
         and aus.ativo = true
-        and s.slug = $2
+      left join public.sistemas s
+        on s.id = aus.sistema_id
+        and s.slug = $3
         and s.ativo = true
       limit 1;
     `,
-    [collaboratorId, CRM_SYSTEM_SLUG],
+    [user.id, user.email || '', CRM_SYSTEM_SLUG],
   );
 
-  return rows[0] || null;
+  const row = rows[0];
+  if (!row) return { collaborator: null, access: null };
+
+  const { acesso_row, sistema_row, ...collaborator } = row;
+  const access = acesso_row ? { ...acesso_row, sistema: sistema_row } : null;
+  return { collaborator, access };
 }
 
 Deno.serve(async (request) => {
@@ -1287,8 +1298,7 @@ Deno.serve(async (request) => {
     }
 
     const user = await getAuthenticatedUser(request);
-    const collaborator = await getCurrentCollaborator(user);
-    const access = collaborator?.id ? await getCrmAccess(String(collaborator.id)) : null;
+    const { collaborator, access } = await getCollaboratorWithAccess(user);
 
     if (!collaborator) {
       console.warn('[crm-api] acesso negado: usuario autenticado sem colaborador vinculado', {

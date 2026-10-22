@@ -137,8 +137,19 @@ export default function Leads() {
     setStatusFiltro('todos');
   }, [pipeline?.id]);
 
+  const kanbanAtivo = viewMode === 'kanban';
+  // pipeline vem de usePipelineEtapas, que por sua vez depende de uma query propria
+  // (crm-pipelines) -- so resolve depois do mount. filters inclui pipeline_id so quando
+  // pipeline.id existe, entao sem esse gate as duas queries de leads abaixo (tabela e kanban,
+  // as mais pesadas da tela) disparavam de imediato com filters={} (sem pipeline_id) e
+  // disparavam de novo, do zero, no instante em que pipeline.id chegava -- dobrando o fetch
+  // mais caro da pagina. Medido via Playwright (2026-10-22): esse ciclo duplicado era a maior
+  // causa da lentidao percebida na abertura da tela de Leads.
+  const pipelineResolvido = Boolean(pipeline?.id);
+
   const { data: leadsPage = { rows: [], count: 0, page: 1, pageSize }, isFetching, isError, error: leadsError } = useQuery({
     queryKey: leadsQueryKey,
+    enabled: !kanbanAtivo && pipelineResolvido,
     queryFn: () => crmDataClient.entities.Lead.listPage({
       orderBy: '-created_date',
       page,
@@ -150,7 +161,6 @@ export default function Leads() {
   const leads = leadsPage.rows;
   const totalPages = Math.max(1, Math.ceil((leadsPage.count || 0) / pageSize));
 
-  const kanbanAtivo = viewMode === 'kanban';
   const KANBAN_LEADS_CAP = 500;
   // Kanban precisa do funil inteiro (nao so a pagina de 50 da tabela), senao leads antigos em
   // etapas avancadas somem sem aviso. count: false evita pagar a contagem num fetch em massa
@@ -159,7 +169,7 @@ export default function Leads() {
   const leadsKanbanQueryKey = ['leads-kanban', { filters, busca: buscaDebounced }];
   const { data: leadsKanbanRows = [] } = useQuery({
     queryKey: leadsKanbanQueryKey,
-    enabled: kanbanAtivo,
+    enabled: kanbanAtivo && pipelineResolvido,
     queryFn: () => crmDataClient.entities.Lead.listPage({
       orderBy: '-created_date',
       limit: KANBAN_LEADS_CAP + 1,
@@ -672,7 +682,10 @@ export default function Leads() {
   // nova a cada render de Leads.jsx (ex. a cada tecla da busca), o que por si so ja impedia
   // qualquer React.memo downstream de segurar o re-render.
   const handleDragEnd = useCallback((result) => {
-    const action = resolveLeadDragAction(result, etapas, leads);
+    // leadsKanban, nao leads (tabela) -- o drag-and-drop acontece na view Kanban, e desde o
+    // gate de pipelineResolvido a query da tabela fica desabilitada enquanto o Kanban esta
+    // ativo, entao 'leads' pode estar vazio nesse momento.
+    const action = resolveLeadDragAction(result, etapas, leadsKanban);
     if (action.type === 'noop') return;
 
     if (action.type === 'require_motivo') {
@@ -682,7 +695,7 @@ export default function Leads() {
     }
 
     updateStatusMutation.mutate({ id: action.lead.id, etapa: action.etapa });
-  }, [etapas, leads, updateStatusMutation]);
+  }, [etapas, leadsKanban, updateStatusMutation]);
 
   const handleKanbanCardClick = useCallback((lead) => setViewingLead(lead), []);
 
