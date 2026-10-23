@@ -1609,11 +1609,6 @@ Deno.serve(async (request) => {
         `
           select clientes.id, clientes.nome, clientes.telefone, clientes.email, clientes.cpf_cnpj
           from public.clientes
-          -- buildAccessScope('clientes', ...) reutiliza a clausula do CRUD generico (FROM
-          -- gestao_crm.clientes_crm as clientes), que referencia "criado_por" sem qualificar --
-          -- coluna que so existe em clientes_crm, nao na tabela de identidade public.clientes.
-          -- O join supre essa coluna para a clausula sem precisar de uma clausula dedicada.
-          join ${CRM_SCHEMA}.clientes_crm on clientes_crm.id = clientes.id
           where (clientes.nome ilike $1 or clientes.telefone ilike $1 or clientes.cpf_cnpj ilike $1)
           ${whereScope}
           order by clientes.nome

@@ -37,17 +37,10 @@ export function buildAccessScope(
       case 'atendimentos':
         return { clause: `l."unidade_id" = $${startIndex}`, values: [unitId] };
       case 'clientes':
-        return {
-          clause: `(
-            "criado_por" = $${startIndex + 1}
-            or exists (
-              select 1 from ${CRM_SCHEMA}.leads scope_lead
-              where scope_lead.cliente_id = clientes.id
-                and scope_lead.unidade_id = $${startIndex}
-            )
-          )`,
-          values: [unitId, collaboratorId],
-        };
+        // Clientes (identidade) nao tem restricao de posse/unidade para nenhum nivel --
+        // qualquer vendedor pode buscar/achar um cliente e abrir um lead novo para ele.
+        // Quem fica isolado por unidade/posse e o lead em si (case 'leads' acima).
+        return { clause: '', values: [] as unknown[] };
       case 'historico_atendimentos':
         return {
           clause: `(
@@ -152,17 +145,8 @@ export function buildAccessScope(
         values: [collaboratorId],
       };
     case 'clientes':
-      return {
-        clause: `(
-          "criado_por" = $${startIndex}
-          or exists (
-            select 1 from ${CRM_SCHEMA}.leads scope_lead
-            where scope_lead.cliente_id = clientes.id
-              and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
-          )
-        )`,
-        values: [collaboratorId],
-      };
+      // Mesma regra do bloco gestor acima: clientes nunca sao restritos por posse/unidade.
+      return { clause: '', values: [] as unknown[] };
     case 'historico_atendimentos':
       return {
         clause: `(

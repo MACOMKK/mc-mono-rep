@@ -39,9 +39,9 @@ describe('buildAccessScope', () => {
     });
   });
 
-  it('gestor scopes clientes, historico_atendimentos and veiculos_interesse by unidade_id', () => {
+  it('gestor scopes historico_atendimentos and veiculos_interesse by unidade_id, but not clientes', () => {
     const access = { nivel_acesso: 'gestor' };
-    expect(buildAccessScope('clientes', access, collaborator, 2).values).toEqual(['unidade-1', 'colab-1']);
+    expect(buildAccessScope('clientes', access, collaborator, 2)).toEqual({ clause: '', values: [] });
     expect(buildAccessScope('historico_atendimentos', access, collaborator, 2).values).toEqual(['unidade-1']);
     expect(buildAccessScope('veiculos_interesse', access, collaborator, 2).values).toEqual(['unidade-1']);
   });
@@ -60,9 +60,9 @@ describe('buildAccessScope', () => {
     });
   });
 
-  it('usuario scopes clientes, historico_atendimentos and veiculos_interesse by responsavel_id/criado_por', () => {
+  it('usuario scopes historico_atendimentos and veiculos_interesse by responsavel_id/criado_por, but not clientes', () => {
     const access = { nivel_acesso: 'usuario' };
-    expect(buildAccessScope('clientes', access, collaborator, 3).values).toEqual(['colab-1']);
+    expect(buildAccessScope('clientes', access, collaborator, 3)).toEqual({ clause: '', values: [] });
     expect(buildAccessScope('historico_atendimentos', access, collaborator, 3).values).toEqual(['colab-1']);
     expect(buildAccessScope('veiculos_interesse', access, collaborator, 3).values).toEqual(['colab-1']);
   });
