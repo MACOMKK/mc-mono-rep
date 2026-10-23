@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { crmDataClient } from '@/api/crmDataClient';
 import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
@@ -25,6 +26,7 @@ import {
   Handshake,
   History,
   Download,
+  Upload,
   Trash2,
   ArrowLeftRight,
 } from 'lucide-react';
@@ -103,6 +105,7 @@ function EmptyState({ children }) {
 const ATIVIDADES_VISIVEIS = 4;
 
 export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity, onCreateProposta, onExcluirTeste, canExcluirTeste, onMudarPipeline }) {
+  const queryClient = useQueryClient();
   const veiculo = lead?.veiculo_interesse || null;
   const { etapas } = usePipelineEtapas({ pipelineId: lead?.pipeline_id || undefined });
   const etapaVisual = getEtapaVisual(findEtapaDoLead(etapas, lead), { etapaTipo: lead?.etapa_tipo });
@@ -136,11 +139,6 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
     () => atividades.filter((atividade) => atividade.status === 'planejada'),
     [atividades],
   );
-  const posVendaAtividades = useMemo(
-    () => atividades.filter((atividade) => atividade.tipo_evento === 'pos_venda'),
-    [atividades],
-  );
-
   const { data: historicoPage = { rows: [] } } = useQuery({
     queryKey: ['lead-historico-viewer', lead?.id],
     queryFn: () => crmDataClient.entities.HistoricoAtendimento.listPage({
@@ -188,6 +186,99 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
     }
   };
 
+  const uploadAttachmentMutation = useMutation({
+    mutationFn: (file) => crmDataClient.entities.HistoricoAtendimento.uploadLeadAttachment({ lead, file }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead-historico-viewer', lead?.id] });
+      toast({
+        title: 'Anexo registrado',
+        description: 'O arquivo foi vinculado ao lead.',
+        variant: 'success',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel anexar o arquivo',
+        description: error.message || 'Tente novamente.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const addAttachment = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) uploadAttachmentMutation.mutate(file);
+  };
+
+  const marcarPropostaEnviadaMutation = useMutation({
+    mutationFn: (id) => crmDataClient.entities.Proposta.marcarEnviada(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead-propostas', lead?.id] });
+      queryClient.invalidateQueries({ queryKey: ['crm-propostas'] });
+      toast({ title: 'Proposta marcada como enviada', variant: 'success' });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel atualizar a proposta',
+        description: error.message || 'Tente novamente.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const recusarPropostaMutation = useMutation({
+    mutationFn: (id) => crmDataClient.entities.Proposta.recusar(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead-propostas', lead?.id] });
+      queryClient.invalidateQueries({ queryKey: ['crm-propostas'] });
+      toast({ title: 'Proposta recusada', variant: 'success' });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel recusar a proposta',
+        description: error.message || 'Tente novamente.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const [noteText, setNoteText] = useState('');
+
+  const addNoteMutation = useMutation({
+    mutationFn: ({ lead, text }) => crmDataClient.entities.HistoricoAtendimento.create({
+      cliente_id: lead.cliente_id,
+      lead_id: lead.id,
+      tipo: 'observacao',
+      descricao: text,
+      entidade: 'Lead',
+      entidade_id: lead.id,
+      metadados: { origem: 'lead_note' },
+    }),
+    onSuccess: () => {
+      setNoteText('');
+      queryClient.invalidateQueries({ queryKey: ['lead-historico-viewer', lead?.id] });
+      toast({
+        title: 'Nota registrada',
+        description: 'A nota foi vinculada ao lead.',
+        variant: 'success',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel registrar a nota',
+        description: error.message || 'Tente novamente.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const saveNote = () => {
+    const text = noteText.trim();
+    if (!text || !lead) return;
+    addNoteMutation.mutate({ lead, text });
+  };
+
   if (!lead) return null;
 
   const NAV_SECTIONS = [
@@ -198,8 +289,8 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
     { key: 'documentos', label: 'Documentos', icon: Paperclip, count: anexos.length },
     { key: 'atividades', label: 'Atividades', icon: AlarmClock, count: atividades.length },
     { key: 'propostas', label: 'Propostas', icon: FileText, count: propostas.length },
-    { key: 'pos_venda', label: 'Pós-Venda', icon: Handshake },
-    { key: 'historico', label: 'Histórico', icon: History, count: notas.length },
+    { key: 'pos_venda', label: 'Venda', icon: Handshake },
+    { key: 'historico', label: 'Notas', icon: History, count: notas.length },
   ];
 
   return (
@@ -340,7 +431,28 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
             ) : null}
 
             {section === 'documentos' ? (
-              <Block icon={Paperclip} title="Documentos">
+              <Block
+                icon={Paperclip}
+                title="Documentos"
+                action={(
+                  <label className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-none border border-dashed border-border px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:bg-slate-50">
+                    {uploadAttachmentMutation.isPending ? (
+                      'Enviando...'
+                    ) : (
+                      <>
+                        <Upload className="h-3 w-3" />
+                        Adicionar anexo
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      className="hidden"
+                      disabled={uploadAttachmentMutation.isPending}
+                      onChange={addAttachment}
+                    />
+                  </label>
+                )}
+              >
                 <div className="space-y-1.5 md:col-span-2">
                   {anexos.length === 0 ? (
                     <EmptyState>Nenhum documento anexado a este lead.</EmptyState>
@@ -435,7 +547,7 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
                     <EmptyState>Nenhuma proposta registrada para este lead.</EmptyState>
                   ) : (
                     propostas.map((proposta) => (
-                      <div key={proposta.id} className="space-y-1 border px-3 py-2">
+                      <div key={proposta.id} className="space-y-1.5 border px-3 py-2">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-sm font-semibold text-slate-800">
                             {proposta.veiculo_descricao || 'Veículo do estoque'}
@@ -447,6 +559,32 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
                         <p className="text-[11px] text-muted-foreground">
                           {formatCurrency(proposta.valor_final)} · {formatDateTime(proposta.created_date)}
                         </p>
+                        {proposta.status === 'rascunho' || proposta.status === 'enviada' ? (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {proposta.status === 'rascunho' ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 rounded-none text-[10px] font-bold uppercase tracking-wider"
+                                disabled={marcarPropostaEnviadaMutation.isPending}
+                                onClick={() => marcarPropostaEnviadaMutation.mutate(proposta.id)}
+                              >
+                                Marcar enviada
+                              </Button>
+                            ) : null}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 rounded-none text-[10px] font-bold uppercase tracking-wider text-red-600"
+                              disabled={recusarPropostaMutation.isPending}
+                              onClick={() => recusarPropostaMutation.mutate(proposta.id)}
+                            >
+                              Recusar
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
                     ))
                   )}
@@ -455,49 +593,52 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
             ) : null}
 
             {section === 'pos_venda' ? (
-              <>
-                <Block icon={Handshake} title="Venda">
-                  <div className="space-y-1.5 md:col-span-2">
-                    {vendas.length === 0 ? (
-                      <EmptyState>
-                        {lead.etapa_tipo === 'ganho' ? 'Nenhuma venda vinculada a este lead.' : 'Este lead ainda não foi convertido em venda.'}
-                      </EmptyState>
-                    ) : (
-                      vendas.map((venda) => (
-                        <div key={venda.id} className="space-y-1 border px-3 py-2">
-                          <p className="text-sm font-semibold text-slate-800">{formatCurrency(venda.valor_final)}</p>
-                          <p className="text-[11px] text-muted-foreground">
-                            Fechada em {formatDate(venda.data_venda)}
-                          </p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </Block>
-                <Block icon={AlarmClock} title="Atendimentos de pós-venda">
-                  <div className="space-y-1.5 md:col-span-2">
-                    {posVendaAtividades.length === 0 ? (
-                      <EmptyState>Nenhum atendimento de pós-venda registrado.</EmptyState>
-                    ) : (
-                      posVendaAtividades.map((atividade) => (
-                        <EventoCard
-                          key={atividade.id}
-                          evento={atividade}
-                          compact
-                          onClick={() => onSelectActivity?.(atividade)}
-                        />
-                      ))
-                    )}
-                  </div>
-                </Block>
-              </>
+              <Block icon={Handshake} title="Venda">
+                <div className="space-y-1.5 md:col-span-2">
+                  {vendas.length === 0 ? (
+                    <EmptyState>
+                      {lead.etapa_tipo === 'ganho' ? 'Nenhuma venda vinculada a este lead.' : 'Este lead ainda não foi convertido em venda.'}
+                    </EmptyState>
+                  ) : (
+                    vendas.map((venda) => (
+                      <div key={venda.id} className="space-y-1 border px-3 py-2">
+                        <p className="text-sm font-semibold text-slate-800">{formatCurrency(venda.valor_final)}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Fechada em {formatDate(venda.data_venda)}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </Block>
             ) : null}
 
             {section === 'historico' ? (
               <Block icon={History} title="Notas">
+                <div className="space-y-2 md:col-span-2">
+                  <Textarea
+                    value={noteText}
+                    onChange={(event) => setNoteText(event.target.value)}
+                    placeholder="Registrar nota comercial..."
+                    className="resize-none rounded-none text-sm"
+                    rows={2}
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 rounded-none text-[10px] font-bold uppercase tracking-wider"
+                      disabled={!noteText.trim() || addNoteMutation.isPending}
+                      onClick={saveNote}
+                    >
+                      {addNoteMutation.isPending ? 'Registrando...' : 'Adicionar nota'}
+                    </Button>
+                  </div>
+                </div>
                 <div className="space-y-1.5 md:col-span-2">
                   {notas.length === 0 ? (
-                    <EmptyState>Nenhuma nota registrada. Use "Editar" para adicionar uma.</EmptyState>
+                    <EmptyState>Nenhuma nota registrada.</EmptyState>
                   ) : (
                     notas.map((nota) => (
                       <div key={nota.id} className="border px-3 py-2">

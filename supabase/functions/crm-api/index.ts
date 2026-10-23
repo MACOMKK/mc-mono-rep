@@ -520,6 +520,10 @@ function mapDatabaseError(error: unknown) {
     return 'Este veiculo esta imobilizado.';
   }
 
+  if (message.includes('Este cliente ja possui um lead ativo em outra negociacao')) {
+    return 'Este cliente ja possui um lead ativo em outra negociacao.';
+  }
+
   if (message.includes('chk_veiculos_estoque_reserva_consistente')) {
     return 'Para marcar como reservado, selecione vendedor e cliente da reserva.';
   }

@@ -199,7 +199,7 @@ export default function LeadForm({
     { key: 'comercial', label: 'Comercial', icon: BriefcaseBusiness },
     { key: 'responsavel', label: 'Responsavel', icon: Store },
     { key: 'observacoes', label: 'Observacoes', icon: FileText },
-    ...(lead ? [{ key: 'historico', label: 'Historico', icon: Paperclip }] : []),
+    ...(lead ? [{ key: 'historico', label: 'Notas', icon: Paperclip }] : []),
   ], [lead]);
 
   const unidades = useMemo(() => deriveUnidadesFromResponsaveis(responsaveis), [responsaveis]);

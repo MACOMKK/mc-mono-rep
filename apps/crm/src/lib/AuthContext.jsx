@@ -11,6 +11,8 @@ import {
   supabase,
 } from '@macom/api-client/supabaseClient';
 
+import { queryClientInstance } from './query-client';
+
 const AuthContext = createContext(null);
 
 function mapAccessLevel(level) {
@@ -220,6 +222,7 @@ export function AuthProvider({ children }) {
       await supabase.auth.signOut({ scope: 'local' });
     }
     clearAuthState();
+    queryClientInstance.clear();
     if (redirectTo && typeof window !== 'undefined') {
       window.history.replaceState({}, '', redirectTo);
       window.dispatchEvent(new PopStateEvent('popstate'));
