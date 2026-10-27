@@ -19,7 +19,12 @@ const baseConfig = createAppConfig(import.meta.url, {
 export default mergeConfig(baseConfig, {
   plugins: [
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' + injectRegister:false: o SW novo so assume controle quando o usuario confirmar
+      // no toast do AppUpdatePrompt.jsx. Com 'autoUpdate' o navegador trocava de versao em segundo
+      // plano a cada deploy, deixando os chunks lazy antigos inacessiveis -- o import() dinamico
+      // falhava (vite:preloadError) e o reload forcado em main.jsx apagava formularios abertos.
+      registerType: 'prompt',
+      injectRegister: false,
       manifestFilename: 'manifest.json',
       includeAssets: ['favicon.svg', 'pwa-icons/*.png'],
       manifest: {

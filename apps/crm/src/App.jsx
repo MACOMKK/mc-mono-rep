@@ -8,6 +8,7 @@ import PageNotFound from './lib/PageNotFound';
 import ScrollToTop from './components/ScrollToTop';
 import Layout from '@/components/Layout';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import AppUpdatePrompt from '@/components/AppUpdatePrompt';
 
 const Clientes = lazy(() => import('@/pages/Clientes'));
 const Eventos = lazy(() => import('@/pages/Eventos'));
@@ -124,6 +125,7 @@ function App() {
           </Routes>
         </Router>
         <Toaster />
+        <AppUpdatePrompt />
       </QueryClientProvider>
     </AuthProvider>
   )
