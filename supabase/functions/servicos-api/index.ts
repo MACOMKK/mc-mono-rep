@@ -407,7 +407,7 @@ async function substituirPlanoParcelas(
   }
 
   const pagas = await sql.unsafe(
-    `select count(*)::int as total from ${SERVICOS_SCHEMA}.parcelas_pagamento where solicitacao_id = $1 and status <> 'pendente';`,
+    `select count(*)::int as total from ${SERVICOS_SCHEMA}.parcelas_pagamento where solicitacao_id = $1 and status = 'pago';`,
     [solicitacaoId],
   );
   if (Number(pagas[0]?.total || 0) > 0) {
@@ -2806,7 +2806,7 @@ Deno.serve(async (request) => {
           // estado inconsistente (dinheiro pago numa solicitacao "nao aprovada"). Nesse caso o
           // caminho correto e o cancelamento de pagamento (financeiro), nao a reprovacao.
           const parcelasPagas = await sql.unsafe(
-            `select count(*)::int as total from ${SERVICOS_SCHEMA}.parcelas_pagamento where solicitacao_id = $1 and status <> 'pendente';`,
+            `select count(*)::int as total from ${SERVICOS_SCHEMA}.parcelas_pagamento where solicitacao_id = $1 and status = 'pago';`,
             [id],
           );
           if (Number(parcelasPagas[0]?.total || 0) > 0) {
@@ -3444,7 +3444,7 @@ Deno.serve(async (request) => {
       }
 
       const pendentes = await sql.unsafe(
-        `select count(*)::int as total from ${SERVICOS_SCHEMA}.parcelas_pagamento where solicitacao_id = $1 and status <> 'pendente';`,
+        `select count(*)::int as total from ${SERVICOS_SCHEMA}.parcelas_pagamento where solicitacao_id = $1 and status = 'pago';`,
         [solicitacaoId],
       );
       if (Number(pendentes[0]?.total || 0) > 0) {

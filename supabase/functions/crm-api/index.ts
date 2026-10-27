@@ -560,6 +560,15 @@ function mapDatabaseError(error: unknown) {
     return 'Nao e possivel excluir: existe venda vinculada a este cliente.';
   }
 
+  if (
+    message.includes('violates foreign key constraint') &&
+    (message.includes('checklist_avaliacoes_cliente_id_fkey') ||
+      message.includes('veiculos_proprietarios_cliente_id_fkey') ||
+      message.includes('veiculos_cliente_atual_id_fkey'))
+  ) {
+    return 'Nao e possivel excluir: este cliente tem registros no modulo Servicos/Oficina (checklist ou historico de veiculo).';
+  }
+
   if (message.includes('propostas_veiculo_check')) {
     return 'Selecione um veiculo do estoque ou descreva o veiculo da proposta.';
   }
@@ -1867,7 +1876,22 @@ Deno.serve(async (request) => {
           ],
         );
 
+        // Sistema ainda em fase de teste: a limpeza e total, inclusive propostas e vendas
+        // (a regra de "venda nunca e apagada" de 20260923120000 vale para o uso normal do
+        // app, nao para esta ferramenta de reset de ambiente de teste). FK
+        // propostas/vendas.lead_id e .cliente_id sao "on delete restrict" desde
+        // 20261020100000, entao propostas/vendas precisam ser apagadas antes dos leads.
         if (scopeUnitId) {
+          await transaction.unsafe(
+            `delete from ${CRM_SCHEMA}.propostas
+             where lead_id in (select id from ${CRM_SCHEMA}.leads where unidade_id = $1);`,
+            [scopeUnitId],
+          );
+          await transaction.unsafe(
+            `delete from ${CRM_SCHEMA}.vendas
+             where lead_id in (select id from ${CRM_SCHEMA}.leads where unidade_id = $1);`,
+            [scopeUnitId],
+          );
           await transaction.unsafe(
             `delete from ${CRM_SCHEMA}.historico_atendimentos
              where lead_id in (select id from ${CRM_SCHEMA}.leads where unidade_id = $1);`,
@@ -1889,16 +1913,40 @@ Deno.serve(async (request) => {
           const clienteIds = (await transaction.unsafe(`select id from ${CRM_SCHEMA}.clientes_crm;`)).map(
             (row: { id: string }) => row.id,
           );
+          await transaction.unsafe(`delete from ${CRM_SCHEMA}.propostas;`);
+          await transaction.unsafe(`delete from ${CRM_SCHEMA}.vendas;`);
           await transaction.unsafe(`delete from ${CRM_SCHEMA}.historico_atendimentos;`);
           await transaction.unsafe(`delete from ${CRM_SCHEMA}.atendimentos;`);
           await transaction.unsafe(`delete from ${CRM_SCHEMA}.leads;`);
-          await transaction.unsafe(`delete from ${CRM_SCHEMA}.clientes_crm;`);
-          // identidade em public.clientes so e removida depois da extensao (FK
-          // clientes_crm_id_fkey) -- se algum dia existir extensao de outro app (ex.:
-          // servicos) para o mesmo id, isso precisa passar a filtrar quem ainda tem
-          // extensao viva antes de apagar a identidade.
           if (clienteIds.length) {
-            await transaction.unsafe(`delete from public.clientes where id = any($1);`, [clienteIds]);
+            await transaction.unsafe(`delete from ${CRM_SCHEMA}.clientes_crm where id = any($1);`, [clienteIds]);
+          }
+          // identidade em public.clientes so e removida se nao houver mais nenhuma
+          // extensao viva de outro app apontando pra ela -- hoje o modulo Servicos/Oficina
+          // referencia public.clientes direto (restrict/no action, ver
+          // 20260917020000_add_gestao_servicos_oficina_checklist.sql e
+          // 20260918160000_add_veiculo_proprietario_atual.sql), entao um cliente de teste do
+          // CRM que tambem apareceu num checklist de oficina precisa ficar de fora, senao o
+          // delete falha e aborta a transacao inteira.
+          const clienteIdsSemVinculoExterno = clienteIds.length
+            ? (
+                await transaction.unsafe(
+                  `select id from unnest($1::uuid[]) as id
+                   where id not in (
+                     select cliente_id from gestao_servicos.checklist_avaliacoes where cliente_id is not null
+                   )
+                   and id not in (select cliente_id from public.veiculos_proprietarios)
+                   and id not in (
+                     select cliente_atual_id from public.veiculos where cliente_atual_id is not null
+                   );`,
+                  [clienteIds],
+                )
+              ).map((row: { id: string }) => row.id)
+            : [];
+          if (clienteIdsSemVinculoExterno.length) {
+            await transaction.unsafe(`delete from public.clientes where id = any($1);`, [
+              clienteIdsSemVinculoExterno,
+            ]);
           }
           await transaction.unsafe(`
             update ${CRM_SCHEMA}.vendedores_distribuicao

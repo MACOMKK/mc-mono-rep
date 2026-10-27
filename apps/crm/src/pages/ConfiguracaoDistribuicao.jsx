@@ -104,7 +104,11 @@ export default function ConfiguracaoDistribuicao() {
         queryClient.invalidateQueries({ queryKey: ['historico-atendimento'] }),
         queryClient.invalidateQueries({ queryKey: ['crm-distribuicao'] }),
       ]);
-      toast({ title: 'Dados do CRM removidos', description: 'O ambiente esta pronto para novos testes.', variant: 'success' });
+      toast({
+        title: 'Dados do CRM removidos',
+        description: 'O ambiente esta pronto para novos testes.',
+        variant: 'success',
+      });
     },
     onError: (mutationError) => toast({
       title: 'Nao foi possivel limpar o CRM',

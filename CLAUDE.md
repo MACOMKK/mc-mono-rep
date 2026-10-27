@@ -162,6 +162,12 @@ Não há CI configurado (`.github/`) — validar localmente antes de subir.
     `gestao_servicos.notificacoes`, `insertNotificacao` próprio e uma cópia local dos handlers em
     `src/sw.js`. Migrar quando for conveniente; ele tem particularidades (registro na timeline da
     solicitação, lembretes por cron).
+- **Cron → Edge Function (`x-invoke-secret`)**: jobs do pg_cron que chamam uma Edge Function leem o
+  segredo do Vault (`select decrypted_secret from vault.decrypted_secrets where name =
+  'internal_invoke_secret'`) e a function compara com `INTERNAL_INVOKE_SECRET`. **Nunca** colar o
+  valor literal em migration (vazou no histórico em 2026-10; ver
+  `20261024120000_move_invoke_secret_to_vault.sql`). Rotacionar = atualizar os dois lados (Vault +
+  `supabase secrets set`).
 - Regras de negócio muito específicas de um app (modelo de permissões, entidades
   de domínio, particularidades de backend) vivem no `CLAUDE.md` próprio do app —
   já existe para `central`, `crm`, `intranet`, `relatorios` e `servicos`. `admin`
