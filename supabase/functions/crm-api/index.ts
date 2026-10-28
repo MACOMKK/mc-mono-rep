@@ -1094,7 +1094,7 @@ function buildListSelect(entity: EntityName) {
     return `
       select conversas_atendimento.*,
         case when cli.id is null then null else json_build_object('id', cli.id, 'nome', cp.nome) end as cliente,
-        case when ld.id is null then null else json_build_object('id', ld.id, 'nome', ld.nome) end as lead
+        case when ld.id is null then null else json_build_object('id', ld.id, 'nome', ld.nome, 'responsavel_id', ld.responsavel_id) end as lead
       from ${CRM_SCHEMA}.conversas_atendimento
       left join ${CRM_SCHEMA}.clientes_crm cli on cli.id = conversas_atendimento.cliente_id
       left join public.clientes cp on cp.id = cli.id

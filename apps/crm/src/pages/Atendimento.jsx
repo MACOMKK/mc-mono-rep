@@ -1,19 +1,55 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, UserCheck, CheckCheck, ArrowDown } from 'lucide-react';
+import { MessageCircle, Phone, UserCheck, CheckCheck, ArrowDown } from 'lucide-react';
 import { atendimentoApi } from '@/api/atendimentoApi';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/components/ui/use-toast';
+import { useAuth } from '@/lib/AuthContext';
 import ConversaListItem from '@/components/atendimento/ConversaListItem';
+import ConversaPainelLateral from '@/components/atendimento/ConversaPainelLateral';
 import MensagemBubble from '@/components/atendimento/MensagemBubble';
 import MensagemComposer from '@/components/atendimento/MensagemComposer';
 
 const SCROLL_BOTTOM_THRESHOLD = 120;
 
+const FILTROS_CONVERSA = [
+  { value: 'todas', label: 'Todas' },
+  { value: 'nao_lidas', label: 'Não lidas' },
+  { value: 'minhas', label: 'Minhas' },
+  { value: 'sem_responsavel', label: 'Sem responsável' },
+];
+
+function iniciais(nome = '') {
+  return nome
+    .trim()
+    .split(/\s+/)
+    .filter((parte) => /^\p{L}/u.test(parte))
+    .map((parte) => parte[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
+function filtrarConversas(conversas, filtro, usuarioId) {
+  switch (filtro) {
+    case 'nao_lidas':
+      return conversas.filter((conversa) => conversa.nao_lida);
+    case 'minhas':
+      return conversas.filter((conversa) => conversa.responsavel_id && conversa.responsavel_id === usuarioId);
+    case 'sem_responsavel':
+      return conversas.filter((conversa) => !conversa.responsavel_id);
+    default:
+      return conversas;
+  }
+}
+
 export default function Atendimento() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [conversaId, setConversaId] = useState(null);
+  const [filtro, setFiltro] = useState('todas');
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const bottomRef = useRef(null);
   const scrollAreaRef = useRef(null);
@@ -27,6 +63,7 @@ export default function Atendimento() {
   });
 
   const conversaAtiva = conversas.find((item) => item.id === conversaId) || null;
+  const conversasFiltradas = filtrarConversas(conversas, filtro, user?.id);
 
   const { data: mensagens = [], isLoading: isLoadingMensagens } = useQuery({
     queryKey: ['mensagens-atendimento', conversaId],
@@ -167,19 +204,31 @@ export default function Atendimento() {
   });
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] px-4 md:px-6 xl:px-10 2xl:px-16">
-      <div className="flex w-72 shrink-0 flex-col border-r border-border">
-        <div className="border-b border-border px-4 py-4">
-          <h1 className="text-xl font-black uppercase tracking-widest">Atendimento</h1>
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">WhatsApp + IA</p>
+    <div className="flex h-full">
+      <div className="flex w-72 shrink-0 flex-col border-r border-border bg-background">
+        <div className="flex flex-wrap gap-1.5 border-b border-border bg-muted/40 px-3 py-2.5">
+          {FILTROS_CONVERSA.map((item) => (
+            <Button
+              key={item.value}
+              type="button"
+              size="sm"
+              variant={filtro === item.value ? 'default' : 'outline'}
+              className="h-7 rounded-full px-3 text-[11px] font-semibold"
+              onClick={() => setFiltro(item.value)}
+            >
+              {item.label}
+            </Button>
+          ))}
         </div>
         <ScrollArea className="min-h-0 flex-1">
           {isLoadingConversas ? (
             <p className="px-4 py-6 text-center text-sm text-muted-foreground">Carregando conversas...</p>
-          ) : conversas.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhuma conversa ainda.</p>
+          ) : conversasFiltradas.length === 0 ? (
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+              {conversas.length === 0 ? 'Nenhuma conversa ainda.' : 'Nenhuma conversa neste filtro.'}
+            </p>
           ) : (
-            conversas.map((conversa) => (
+            conversasFiltradas.map((conversa) => (
               <ConversaListItem
                 key={conversa.id}
                 conversa={conversa}
@@ -199,19 +248,25 @@ export default function Atendimento() {
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <div>
-                <p className="text-sm font-bold uppercase tracking-wide">
-                  {conversaAtiva.cliente_nome || conversaAtiva.telefone_normalizado}
-                </p>
-                <p className="text-xs text-muted-foreground">{conversaAtiva.telefone_normalizado}</p>
+            <div className="flex items-center justify-between gap-2 border-b border-border bg-background px-4 py-4 shadow-sm">
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar className="h-9 w-9 shrink-0">
+                  <AvatarFallback className="bg-primary/10 text-xs font-bold text-primary">
+                    {iniciais(conversaAtiva.cliente_nome) || <Phone className="h-4 w-4" />}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold">
+                    {conversaAtiva.cliente_nome || conversaAtiva.telefone_normalizado}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">{conversaAtiva.telefone_normalizado}</p>
+                </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex shrink-0 gap-2">
                 {conversaAtiva.status !== 'aguardando_humano' ? (
                   <Button
-                    variant="outline"
                     size="sm"
-                    className="rounded-none"
+                    className="rounded-full"
                     onClick={() => assumirMutation.mutate()}
                     disabled={assumirMutation.isPending || conversaAtiva.status === 'encerrada'}
                   >
@@ -223,7 +278,7 @@ export default function Atendimento() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-none"
+                    className="rounded-full"
                     onClick={() => encerrarMutation.mutate()}
                     disabled={encerrarMutation.isPending}
                   >
@@ -234,7 +289,7 @@ export default function Atendimento() {
               </div>
             </div>
 
-            <div className="relative min-h-0 flex-1">
+            <div className="relative min-h-0 flex-1 bg-muted/50">
               <ScrollArea ref={scrollAreaRef} className="h-full px-4 py-3">
                 <div className="flex flex-col gap-3">
                   {isLoadingMensagens ? (
@@ -250,7 +305,7 @@ export default function Atendimento() {
               {showJumpToBottom ? (
                 <Button
                   size="sm"
-                  className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-none shadow-md"
+                  className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full shadow-md"
                   onClick={handleJumpToBottom}
                 >
                   <ArrowDown className="mr-1 h-3.5 w-3.5" />
@@ -266,6 +321,8 @@ export default function Atendimento() {
           </>
         )}
       </div>
+
+      {conversaAtiva ? <ConversaPainelLateral conversa={conversaAtiva} /> : null}
     </div>
   );
 }

@@ -19,6 +19,7 @@ function mapConversaRow(row = {}) {
     ultima_mensagem_preview: row.ultima_mensagem_preview || '',
     nao_lida: Boolean(row.nao_lida),
     cliente_nome: row.cliente?.nome || '',
+    responsavel_id: row.lead?.responsavel_id || '',
     created_date: row.criado_em || null,
     updated_date: row.atualizado_em || null,
   };

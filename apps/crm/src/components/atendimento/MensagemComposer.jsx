@@ -28,17 +28,18 @@ export default function MensagemComposer({ onSend, disabled }) {
   };
 
   return (
-    <div className="flex items-end gap-2 border-t border-border p-3">
+    <div className="flex items-end gap-2 border-t border-border bg-card p-3">
       <Textarea
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Escreva uma resposta..."
-        className="min-h-11 flex-1 resize-none rounded-none"
+        className="min-h-11 flex-1 resize-none rounded-md bg-muted"
         disabled={disabled || sending}
       />
       <Button
-        className="rounded-none"
+        className="rounded-full"
+        size="icon"
         onClick={handleSend}
         disabled={disabled || sending || !value.trim()}
         aria-label="Enviar"

@@ -816,6 +816,11 @@ function createListRepository(entityName, entityApi, mapper) {
 const ClienteRepository = {
   ...createListRepository('Cliente', crmApi.clientes, mapClienteRow),
 
+  async get(id) {
+    const row = await crmApi.clientes.getById(id);
+    return row ? mapClienteRow(row) : null;
+  },
+
   async create(data) {
     return upsertCliente(data);
   },
