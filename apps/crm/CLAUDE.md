@@ -1,4 +1,4 @@
-# CRM (REVVO CRM) — app-specific
+# CRM — app-specific
 
 > Este arquivo complementa o CLAUDE.md raiz do monorepo. Só documenta o que é específico deste app.
 

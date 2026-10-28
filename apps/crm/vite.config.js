@@ -29,9 +29,9 @@ export default mergeConfig(baseConfig, {
       includeAssets: ['favicon.svg', 'pwa-icons/*.png'],
       manifest: {
         id: '/',
-        name: 'REVVO CRM',
-        short_name: 'REVVO CRM',
-        description: 'REVVO CRM — gestao comercial automotiva.',
+        name: 'CRM',
+        short_name: 'CRM',
+        description: 'CRM — gestao comercial automotiva.',
         start_url: '/',
         scope: '/',
         display: 'standalone',

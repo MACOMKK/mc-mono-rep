@@ -20,12 +20,12 @@ export default function Login({ loading = false }) {
     <AuthLoginCard
       logoUrl={LOGO_URL}
       backgroundImageUrl={BG_URL}
-      title="Acessar REVVO CRM"
+      title="Acessar CRM"
       subtitle="Use o mesmo login interno da Macom"
       onSubmit={handleSubmit}
       loading={loading}
       error={authError?.type === "config" ? authError.message : ""}
-      footer="Caso não tenha acesso, solicite a liberação do REVVO CRM ao administrador."
+      footer="Caso não tenha acesso, solicite a liberação do CRM ao administrador."
     />
   );
 }

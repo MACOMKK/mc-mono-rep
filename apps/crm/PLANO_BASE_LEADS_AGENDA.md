@@ -2,7 +2,7 @@
 
 ## Contexto
 
-O REVVO CRM hoje atende concessionárias que vendem carro e/ou moto, mas o schema
+O CRM hoje atende concessionárias que vendem carro e/ou moto, mas o schema
 trata "categoria de veículo" como um detalhe opcional e cosmético: `veiculos_interesse`
 guarda marca/modelo como texto livre, `categoria_veiculo_id` é opcional e nada no
 sistema (distribuição, SLA, formulário, relatórios) realmente diferencia o fluxo

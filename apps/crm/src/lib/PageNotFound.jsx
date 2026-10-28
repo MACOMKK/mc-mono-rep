@@ -11,7 +11,7 @@ export default function PageNotFound() {
         <div className="mx-auto my-5 h-0.5 w-16 bg-primary" />
         <h1 className="text-2xl font-bold text-slate-800">Pagina nao encontrada</h1>
         <p className="mt-3 text-sm leading-relaxed text-slate-600">
-          O endereco <span className="font-semibold text-slate-700">{location.pathname}</span> nao existe no REVVO CRM.
+          O endereco <span className="font-semibold text-slate-700">{location.pathname}</span> nao existe no CRM.
         </p>
         <Link
           to="/leads"
