@@ -394,6 +394,12 @@ deno_version = 2
 [functions.intranet-api]
 verify_jwt = false
 
+# whatsapp-api recebe o webhook da Meta/Evolution API diretamente (sem Authorization JWT
+# do Supabase) -- autentica pela assinatura HMAC (Meta) ou token de querystring (Evolution).
+# Ver supabase/functions/whatsapp-api/README.md.
+[functions.whatsapp-api]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

@@ -195,13 +195,20 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  const WEBHOOK_VERIFY_TOKEN = Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN');
-  const APP_SECRET = Deno.env.get('WHATSAPP_APP_SECRET');
-  const WHATSAPP_TOKEN = Deno.env.get('WHATSAPP_TOKEN');
-  const WHATSAPP_PHONE_NUMBER_ID = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
   const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  // Provedor ativo e' decidido em runtime pelas integracoes cadastradas no Console
+  // (Integracoes), sem secrets fixos: "whatsapp_evolution" tem prioridade se ativa, senao usa
+  // "whatsapp_meta" se ativa, senao nenhum provedor esta configurado. Trocar de conta/BM na
+  // Meta ou migrar pra Evolution e' so editar o registro no Console -- sem CLI, sem redeploy.
+  const integracoesCtx = { supabaseUrl: SUPABASE_URL, serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY };
+  const evolutionCredenciais = await loadIntegracaoCredenciais('whatsapp_evolution', integracoesCtx);
+  const metaCredenciais = evolutionCredenciais
+    ? null
+    : await loadIntegracaoCredenciais('whatsapp_meta', integracoesCtx);
+  const provider: WhatsappProvider | null = evolutionCredenciais ? 'evolution' : metaCredenciais ? 'meta' : null;
 
   // Verificacao do webhook exigida pela Meta Cloud API na configuracao inicial (a Evolution
   // API nao usa esse handshake, entao isso so importa quando o provedor ativo e' a Meta).
@@ -210,8 +217,9 @@ serve(async (req) => {
     const mode = url.searchParams.get('hub.mode');
     const token = url.searchParams.get('hub.verify_token');
     const challenge = url.searchParams.get('hub.challenge');
+    const webhookVerifyToken = typeof metaCredenciais?.verify_token === 'string' ? metaCredenciais.verify_token : null;
 
-    if (mode === 'subscribe' && token && WEBHOOK_VERIFY_TOKEN && token === WEBHOOK_VERIFY_TOKEN) {
+    if (mode === 'subscribe' && token && webhookVerifyToken && token === webhookVerifyToken) {
       return new Response(challenge || '', { status: 200, headers: corsHeaders });
     }
 
@@ -229,23 +237,19 @@ serve(async (req) => {
     if (!sql) {
       throw new Error('DATABASE_URL nao configurada.');
     }
-
-    // Provedor ativo = existencia de uma integracao "whatsapp_evolution" ativa e configurada
-    // no Console (Integracoes). Sem ela, mantem o comportamento de sempre (Meta Cloud API).
-    const evolutionCredenciais = await loadIntegracaoCredenciais('whatsapp_evolution', {
-      supabaseUrl: SUPABASE_URL,
-      serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
-    });
-    const provider: WhatsappProvider = evolutionCredenciais ? 'evolution' : 'meta';
+    if (!provider) {
+      throw new Error('Nenhum provedor de WhatsApp configurado (cadastre "whatsapp_meta" ou "whatsapp_evolution" no Console).');
+    }
 
     const rawBody = await req.text();
 
     if (provider === 'meta') {
-      if (!APP_SECRET) {
-        throw new Error('WHATSAPP_APP_SECRET nao configurado.');
+      const appSecret = typeof metaCredenciais?.app_secret === 'string' ? metaCredenciais.app_secret : null;
+      if (!appSecret) {
+        throw new Error('Campo "app_secret" nao configurado na integracao whatsapp_meta.');
       }
       const signatureHeader = req.headers.get('x-hub-signature-256');
-      const validSignature = await verifyMetaSignature(rawBody, signatureHeader, APP_SECRET);
+      const validSignature = await verifyMetaSignature(rawBody, signatureHeader, appSecret);
       if (!validSignature) {
         return new Response(JSON.stringify({ success: false, error: 'Assinatura invalida.' }), {
           status: 401,
@@ -346,7 +350,9 @@ serve(async (req) => {
         continue;
       }
 
-      const canSendViaMeta = provider === 'meta' && Boolean(WHATSAPP_TOKEN) && Boolean(WHATSAPP_PHONE_NUMBER_ID);
+      const metaToken = typeof metaCredenciais?.access_token === 'string' ? metaCredenciais.access_token : null;
+      const metaPhoneNumberId = typeof metaCredenciais?.phone_number_id === 'string' ? metaCredenciais.phone_number_id : null;
+      const canSendViaMeta = provider === 'meta' && Boolean(metaToken) && Boolean(metaPhoneNumberId);
       const canSendViaEvolution =
         provider === 'evolution' &&
         typeof evolutionCredenciais?.instance_url === 'string' &&
@@ -373,7 +379,7 @@ serve(async (req) => {
       `;
 
       if (provider === 'meta') {
-        await sendWhatsappMessageMeta(WHATSAPP_PHONE_NUMBER_ID!, WHATSAPP_TOKEN!, incoming.fromPhone, respostaIa);
+        await sendWhatsappMessageMeta(metaPhoneNumberId!, metaToken!, incoming.fromPhone, respostaIa);
       } else {
         await sendWhatsappMessageEvolution(
           evolutionCredenciais!.instance_url as string,

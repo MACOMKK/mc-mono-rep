@@ -1367,8 +1367,12 @@ Deno.serve(async (request) => {
         supabaseUrl,
         serviceRoleKey: supabaseServiceRoleKey,
       });
-      const whatsappToken = Deno.env.get('WHATSAPP_TOKEN');
-      const whatsappPhoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+      const metaCredenciais = evolutionCredenciais
+        ? null
+        : await loadIntegracaoCredenciais('whatsapp_meta', { supabaseUrl, serviceRoleKey: supabaseServiceRoleKey });
+      const whatsappToken = typeof metaCredenciais?.access_token === 'string' ? metaCredenciais.access_token : null;
+      const whatsappPhoneNumberId =
+        typeof metaCredenciais?.phone_number_id === 'string' ? metaCredenciais.phone_number_id : null;
 
       try {
         if (evolutionCredenciais) {
