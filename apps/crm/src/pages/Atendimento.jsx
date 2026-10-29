@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Phone, UserCheck, CheckCheck, ArrowDown } from 'lucide-react';
+import { MessageCircle, Phone, Search, UserCheck, CheckCheck, ArrowDown } from 'lucide-react';
 import { atendimentoApi } from '@/api/atendimentoApi';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/components/ui/use-toast';
 import { useAuth } from '@/lib/AuthContext';
@@ -45,11 +46,28 @@ function filtrarConversas(conversas, filtro, usuarioId) {
   }
 }
 
+function buscarConversas(conversas, termo) {
+  const termoNormalizado = termo.trim().toLowerCase();
+  if (!termoNormalizado) return conversas;
+  const digitosTermo = termo.replace(/\D/g, '');
+
+  return conversas.filter((conversa) => {
+    const nome = (conversa.cliente_nome || '').toLowerCase();
+    const telefone = conversa.telefone_normalizado || '';
+    const preview = (conversa.ultima_mensagem_preview || '').toLowerCase();
+
+    if (nome.includes(termoNormalizado) || preview.includes(termoNormalizado)) return true;
+    if (digitosTermo && telefone.includes(digitosTermo)) return true;
+    return false;
+  });
+}
+
 export default function Atendimento() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [conversaId, setConversaId] = useState(null);
   const [filtro, setFiltro] = useState('todas');
+  const [busca, setBusca] = useState('');
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const bottomRef = useRef(null);
   const scrollAreaRef = useRef(null);
@@ -63,7 +81,7 @@ export default function Atendimento() {
   });
 
   const conversaAtiva = conversas.find((item) => item.id === conversaId) || null;
-  const conversasFiltradas = filtrarConversas(conversas, filtro, user?.id);
+  const conversasFiltradas = buscarConversas(filtrarConversas(conversas, filtro, user?.id), busca);
 
   const { data: mensagens = [], isLoading: isLoadingMensagens } = useQuery({
     queryKey: ['mensagens-atendimento', conversaId],
@@ -206,6 +224,15 @@ export default function Atendimento() {
   return (
     <div className="flex h-full">
       <div className="flex w-72 shrink-0 flex-col border-r border-border bg-background">
+        <div className="relative border-b border-border px-3 py-2.5">
+          <Search className="pointer-events-none absolute left-6 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={busca}
+            onChange={(event) => setBusca(event.target.value)}
+            placeholder="Buscar nome, telefone ou mensagem..."
+            className="h-9 pl-8 text-sm"
+          />
+        </div>
         <div className="flex flex-wrap gap-1.5 border-b border-border bg-muted/40 px-3 py-2.5">
           {FILTROS_CONVERSA.map((item) => (
             <Button
@@ -225,7 +252,11 @@ export default function Atendimento() {
             <p className="px-4 py-6 text-center text-sm text-muted-foreground">Carregando conversas...</p>
           ) : conversasFiltradas.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-              {conversas.length === 0 ? 'Nenhuma conversa ainda.' : 'Nenhuma conversa neste filtro.'}
+              {conversas.length === 0
+                ? 'Nenhuma conversa ainda.'
+                : busca.trim()
+                  ? 'Nenhuma conversa encontrada para essa busca.'
+                  : 'Nenhuma conversa neste filtro.'}
             </p>
           ) : (
             conversasFiltradas.map((conversa) => (

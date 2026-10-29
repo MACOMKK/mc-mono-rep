@@ -228,6 +228,15 @@ reais (só adicionar coluna `mod_<novo>` na tabela, seguindo o mesmo padrão).
   modelo atual) está registrado em `20260805150000_add_servicos_financeiro_parcelamento_anexos.sql`
   e no histórico do plano que originou essa migration — importação de dados históricos do
   AppSheet continua fora de escopo.
+- **Rascunho local da Nova Solicitação** (`src/lib/rascunhoSolicitacao.js` +
+  `NovaSolicitacaoDrawer.jsx`): só em solicitação nova (não em edição/reenvio), os campos são
+  gravados no `localStorage` do navegador (chave por colaborador, debounce de 500 ms, validade
+  7 dias) para sobreviver a um reload acidental. Ao abrir "Nova solicitação", um banner oferece
+  Restaurar/Descartar (nunca restaura sozinho). Apagado no envio com sucesso e no descarte.
+  Anexos não entram (File não cabe no storage). Ao restaurar, ids que saíram dos catálogos
+  (fornecedor/categoria/aprovador inativado) são descartados. Também há `beforeunload` enquanto o
+  drawer tem alterações não enviadas. Sem backend: o rascunho não acompanha o usuário em outro
+  dispositivo.
 - **Solicitações recorrentes (planejado, não implementado):** ao pagar uma solicitação marcada
   como recorrente, gera a do mês seguinte (status `rascunho`, valor vazio, vencimento = vencimento
   da conta + 1 mês). Desenho completo em [PLANO_RECORRENCIA_FINANCEIRO.md](PLANO_RECORRENCIA_FINANCEIRO.md).

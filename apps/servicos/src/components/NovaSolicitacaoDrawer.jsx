@@ -11,6 +11,11 @@ import { getFriendlyErrorMessage } from '@/lib/errorMessage';
 import { proximaDataUtil } from '@/lib/diasUteis';
 import { gerarParcelasAutomaticas } from '@/lib/parcelamento';
 import {
+  lerRascunhoSolicitacao,
+  limparRascunhoSolicitacao,
+  salvarRascunhoSolicitacao,
+} from '@/lib/rascunhoSolicitacao';
+import {
   TIPOS_ANEXO,
   FORMA_PAGAMENTO_LABEL,
   FORNECEDOR_FORM_VAZIO,
@@ -94,10 +99,18 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
   const [novoFornecedorForm, setNovoFornecedorForm] = useState(FORNECEDOR_FORM_VAZIO);
   const [buscaFornecedor, setBuscaFornecedor] = useState('');
   const [buscaCategoria, setBuscaCategoria] = useState('');
+  // Rascunho local (so em solicitacao nova): oferecido num banner ao abrir, nunca restaurado sozinho.
+  const isNova = !isEdicao && !isReenvio;
+  const colaboradorId = user?.collaborator?.id;
+  const [rascunhoPendente, setRascunhoPendente] = useState(null);
 
   useEffect(() => {
     setVisible(open);
   }, [open]);
+
+  useEffect(() => {
+    setRascunhoPendente(visible && isNova ? lerRascunhoSolicitacao(colaboradorId) : null);
+  }, [visible, isNova, colaboradorId]);
 
   async function uploadAnexosSincrono(solicitacaoId, anexosParaEnviar) {
     if (anexosParaEnviar.length === 0) return [];
@@ -182,6 +195,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
               : { title: 'Solicitação enviada', description: 'Sua solicitação de pagamento foi registrada.' },
         );
       }
+      if (isNova) limparRascunhoSolicitacao(colaboradorId);
       setVisible(false);
       onOpenChange(false);
     },
@@ -197,16 +211,6 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
       setVisible(true);
     },
   });
-
-  useEffect(() => {
-    if (!submitMutation.isPending) return;
-    const handleBeforeUnload = (event) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [submitMutation.isPending]);
 
   const {
     data: catalogos,
@@ -447,6 +451,63 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
   const hasUnsavedChanges = () =>
     anexos.length > 0 || JSON.stringify(form) !== JSON.stringify(initialFormRef.current);
 
+  const formAlterado = (isNova && parcelado) || JSON.stringify(form) !== JSON.stringify(initialFormRef.current);
+  const temAlteracoes = visible && (anexos.length > 0 || formAlterado);
+
+  // Aviso nativo do navegador no F5/fechar aba: durante o envio e enquanto houver preenchimento
+  // nao enviado. Reloads automaticos (PWA/chunk) nao passam por aqui -- dai o rascunho abaixo.
+  useEffect(() => {
+    if (!submitMutation.isPending && !temAlteracoes) return;
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [submitMutation.isPending, temAlteracoes]);
+
+  // Enquanto o banner de restaurar esta aberto nao grava, pra nao sobrescrever o rascunho antigo
+  // antes da pessoa decidir.
+  useEffect(() => {
+    if (!visible || !isNova || rascunhoPendente || !formAlterado) return;
+    const timer = window.setTimeout(() => {
+      salvarRascunhoSolicitacao(colaboradorId, { form, parcelado, quantidadeParcelas, draftParcelas });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [visible, isNova, rascunhoPendente, formAlterado, form, parcelado, quantidadeParcelas, draftParcelas, colaboradorId]);
+
+  function handleRestaurarRascunho() {
+    const rascunho = rascunhoPendente;
+    if (!rascunho) return;
+    // Descarta referencias que sairam dos catalogos (fornecedor/categoria inativados etc.) desde
+    // que o rascunho foi salvo -- senao o Select fica vazio mas o id antigo iria no envio.
+    const existe = (lista, id) => !id || lista.some((item) => item.id === id);
+    const salvo = { ...EMPTY_FORM, ...rascunho.form };
+    setForm((current) => ({
+      ...current,
+      ...salvo,
+      fornecedorId: existe(fornecedores, salvo.fornecedorId) ? salvo.fornecedorId : '',
+      categoriaId: existe(categorias, salvo.categoriaId) ? salvo.categoriaId : '',
+      aprovadorDestinoId: existe(aprovadores, salvo.aprovadorDestinoId) ? salvo.aprovadorDestinoId : '',
+      colaboradorBeneficiarioId: existe(colaboradores, salvo.colaboradorBeneficiarioId)
+        ? salvo.colaboradorBeneficiarioId
+        : '',
+    }));
+    if (rascunho.parcelado) {
+      skipNextParcelasAutoGenRef.current = true;
+      setParcelado(true);
+      setQuantidadeParcelas(rascunho.quantidadeParcelas || 2);
+      setDraftParcelas(Array.isArray(rascunho.draftParcelas) ? rascunho.draftParcelas : []);
+    }
+    setRascunhoPendente(null);
+    toast({ title: 'Rascunho restaurado', description: 'Anexos não ficam no rascunho: anexe os arquivos novamente.' });
+  }
+
+  function handleDescartarRascunho() {
+    limparRascunhoSolicitacao(colaboradorId);
+    setRascunhoPendente(null);
+  }
+
   const handleOpenChange = (nextOpen) => {
     if (!nextOpen && hasUnsavedChanges()) {
       setDescartarOpen(true);
@@ -457,6 +518,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
   };
 
   const handleConfirmarDescartar = () => {
+    if (isNova) limparRascunhoSolicitacao(colaboradorId);
     setDescartarOpen(false);
     setVisible(false);
     onOpenChange(false);
@@ -601,6 +663,29 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
             {isReenvio ? 'Corrigir e reenviar solicitação' : isEdicao ? 'Editar solicitação' : 'Nova solicitação de pagamento'}
           </SheetTitle>
         </SheetHeader>
+
+        {rascunhoPendente && (
+          <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+            <p>
+              Você tem um rascunho não enviado de{' '}
+              {new Date(rascunhoPendente.salvoEm).toLocaleString('pt-BR', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+              {rascunhoPendente.form?.titulo ? ` ("${rascunhoPendente.form.titulo}")` : ''}.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <Button type="button" size="sm" disabled={catalogosLoading} onClick={handleRestaurarRascunho}>
+                {catalogosLoading ? 'Carregando...' : 'Restaurar'}
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={handleDescartarRascunho}>
+                Descartar
+              </Button>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div className="space-y-2">
