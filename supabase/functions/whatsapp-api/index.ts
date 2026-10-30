@@ -40,8 +40,24 @@ function getErrorMessage(error: unknown) {
   }
 }
 
+// O WhatsApp (Meta e Baileys/Evolution) por vezes entrega numeros de celular brasileiros sem o
+// 9o digito (formato anterior a' resolucao Anatel 2016), mesmo quando o numero real do cliente
+// ja tem o 9 -- resultado: o mesmo contato gera telefone_normalizado diferente dependendo de
+// qual mensagem chegou primeiro. Reconstroi o 9o digito quando: DDI 55 + DDD (2) + local (8)
+// comecando em 6-9 (faixa de celular; fixo comeca em 2-5 e nao tem 9o digito, nao mexe).
+function normalizeBrazilianMobile(digits: string) {
+  if (digits.length === 12 && digits.startsWith('55')) {
+    const ddd = digits.slice(2, 4);
+    const local = digits.slice(4);
+    if (/^[6-9]/.test(local)) {
+      return `55${ddd}9${local}`;
+    }
+  }
+  return digits;
+}
+
 function normalizePhone(phone: string) {
-  return phone.replace(/\D/g, '');
+  return normalizeBrazilianMobile(phone.replace(/\D/g, ''));
 }
 
 function truncatePreview(text: string, maxLength = 140) {
@@ -301,11 +317,22 @@ serve(async (req) => {
       const [conversaExistente] = await sql`
         select id, status from gestao_crm.conversas_atendimento
         where telefone_normalizado = ${telefoneNormalizado}
-          and status <> 'encerrada'
         order by criado_em desc
         limit 1
       `;
       let conversa = conversaExistente ?? null;
+
+      // Conversa encerrada do mesmo telefone e' reaberta (mesma linha/mesma thread de
+      // mensagens) em vez de criar uma conversa nova -- evita duplicar o contato na lista
+      // de Atendimento (uma linha por telefone, nao uma por "sessao" de atendimento).
+      if (conversa && conversa.status === 'encerrada') {
+        await sql`
+          update gestao_crm.conversas_atendimento
+          set status = 'aberta'
+          where id = ${conversa.id}
+        `;
+        conversa = { ...conversa, status: 'aberta' };
+      }
 
       if (!conversa) {
         // Identidade (nome/telefone) mora em public.clientes desde a migration

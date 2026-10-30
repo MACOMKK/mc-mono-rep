@@ -35,8 +35,8 @@ function Campo({ label, children }) {
 
 function SecaoMock({ titulo, children }) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-dashed border-border px-3 py-3">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{titulo}</span>
+    <div className="flex flex-col gap-3 rounded-lg border border-dashed border-violet-200 bg-violet-50/40 px-3 py-3">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700">{titulo}</span>
       {children}
     </div>
   );
@@ -47,7 +47,7 @@ function MaisInformacoesMock({ veiculoAtual, ultimaCompra }) {
     <SecaoMock titulo="Mais informações (exemplo)">
       <div className="flex flex-wrap gap-1.5">
         {MOCK_TAGS.map((tag) => (
-          <Badge key={tag} variant="outline" className="rounded-full text-[10px]">
+          <Badge key={tag} variant="outline" className="rounded-full border-violet-200 bg-violet-50 text-[10px] text-violet-700">
             {tag}
           </Badge>
         ))}

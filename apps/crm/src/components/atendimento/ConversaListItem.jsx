@@ -56,7 +56,7 @@ function iniciais(nome = '') {
 export default function ConversaListItem({ conversa, isActive, onClick }) {
   const titulo = conversa.cliente_nome || formatTelefone(conversa.telefone_normalizado);
   const naoLida = Boolean(conversa.nao_lida);
-  const sigla = iniciais(conversa.cliente_nome) || formatTelefone(conversa.telefone_normalizado).slice(0, 2);
+  const sigla = iniciais(conversa.cliente_nome);
   const tags = mockTagsFor(conversa.id);
 
   return (
@@ -89,7 +89,7 @@ export default function ConversaListItem({ conversa, isActive, onClick }) {
             {STATUS_LABEL[conversa.status] || conversa.status}
           </Badge>
           {tags.map((tag) => (
-            <Badge key={tag} variant="outline" className="rounded-full border-border px-2 py-0 text-[10px] font-semibold text-muted-foreground">
+            <Badge key={tag} variant="outline" className="rounded-full border-violet-200 bg-violet-50 px-2 py-0 text-[10px] font-semibold text-violet-700">
               {tag}
             </Badge>
           ))}
