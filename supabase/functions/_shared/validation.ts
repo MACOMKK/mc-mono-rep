@@ -349,6 +349,7 @@ export const atualizarConfiguracaoModuloBodySchema = z.object({
   suprimento_caixa_sem_aprovador: z.boolean().nullish(),
   suprimento_caixa_auto_aprovar: z.boolean().nullish(),
   suprimento_caixa_departamentos_permitidos: z.array(z.string().uuid()).nullish(),
+  pessoal_departamentos_permitidos: z.array(z.string().uuid()).nullish(),
   restringir_reprovacao_contas_a_pagar: z.boolean().nullish(),
 });
 

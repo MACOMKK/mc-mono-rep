@@ -332,6 +332,26 @@ async function getSuprimentoCaixaDepartamentosPermitidos(): Promise<string[]> {
   return value;
 }
 
+// Mesma regra de getSuprimentoCaixaDepartamentosPermitidos, pra solicitacao pessoal -- so
+// controla a criacao. Vazio/null = sem restricao.
+let pessoalDepartamentosPermitidosCache: { expiresAt: number; value: string[] } | null = null;
+
+async function getPessoalDepartamentosPermitidos(): Promise<string[]> {
+  if (pessoalDepartamentosPermitidosCache && pessoalDepartamentosPermitidosCache.expiresAt > Date.now()) {
+    return pessoalDepartamentosPermitidosCache.value;
+  }
+  if (!sql) return [];
+  const rows = await sql.unsafe(
+    `select pessoal_departamentos_permitidos from ${SERVICOS_SCHEMA}.configuracoes_modulo where modulo = $1 limit 1;`,
+    ['financeiro'],
+  );
+  const value = Array.isArray(rows[0]?.pessoal_departamentos_permitidos)
+    ? (rows[0].pessoal_departamentos_permitidos as string[])
+    : [];
+  pessoalDepartamentosPermitidosCache = { expiresAt: Date.now() + CONFIG_MODULO_TTL_MS, value };
+  return value;
+}
+
 // Flag configuravel que restringe reprovar uma solicitacao JA APROVADA (fluxo de /pagamentos)
 // ao papel financeiro. Quando desativada, contas_a_pagar tambem pode reprovar esse caso
 // especifico -- reprovar uma solicitacao ainda pendente nao e afetado por esta flag (ver
@@ -1257,7 +1277,7 @@ Deno.serve(async (request) => {
 
     if (action === 'get_configuracao_modulo') {
       const rows = await sql.unsafe(
-        `select modulo, restringir_visibilidade_pagamento_dinheiro, suprimento_caixa_sem_aprovador, suprimento_caixa_auto_aprovar, suprimento_caixa_departamentos_permitidos, restringir_reprovacao_contas_a_pagar, atualizado_em from ${SERVICOS_SCHEMA}.configuracoes_modulo where modulo = $1 limit 1;`,
+        `select modulo, restringir_visibilidade_pagamento_dinheiro, suprimento_caixa_sem_aprovador, suprimento_caixa_auto_aprovar, suprimento_caixa_departamentos_permitidos, pessoal_departamentos_permitidos, restringir_reprovacao_contas_a_pagar, atualizado_em from ${SERVICOS_SCHEMA}.configuracoes_modulo where modulo = $1 limit 1;`,
         ['financeiro'],
       );
       return json({
@@ -1267,6 +1287,7 @@ Deno.serve(async (request) => {
           suprimento_caixa_sem_aprovador: false,
           suprimento_caixa_auto_aprovar: false,
           suprimento_caixa_departamentos_permitidos: [],
+          pessoal_departamentos_permitidos: [],
           restringir_reprovacao_contas_a_pagar: true,
         },
       });
@@ -1286,7 +1307,7 @@ Deno.serve(async (request) => {
       // Atualizacao parcial: so mexe nas colunas cujo campo veio no body, preserva o resto da
       // linha (evita que atualizar um flag reset o outro pro default).
       const existingRows = await sql.unsafe(
-        `select restringir_visibilidade_pagamento_dinheiro, suprimento_caixa_sem_aprovador, suprimento_caixa_auto_aprovar, suprimento_caixa_departamentos_permitidos, restringir_reprovacao_contas_a_pagar from ${SERVICOS_SCHEMA}.configuracoes_modulo where modulo = $1 limit 1;`,
+        `select restringir_visibilidade_pagamento_dinheiro, suprimento_caixa_sem_aprovador, suprimento_caixa_auto_aprovar, suprimento_caixa_departamentos_permitidos, pessoal_departamentos_permitidos, restringir_reprovacao_contas_a_pagar from ${SERVICOS_SCHEMA}.configuracoes_modulo where modulo = $1 limit 1;`,
         ['financeiro'],
       );
       const existing = existingRows[0] || {
@@ -1294,6 +1315,7 @@ Deno.serve(async (request) => {
         suprimento_caixa_sem_aprovador: false,
         suprimento_caixa_auto_aprovar: false,
         suprimento_caixa_departamentos_permitidos: [],
+        pessoal_departamentos_permitidos: [],
         restringir_reprovacao_contas_a_pagar: true,
       };
       const restringir =
@@ -1306,22 +1328,27 @@ Deno.serve(async (request) => {
         parsedConfig.data.suprimento_caixa_departamentos_permitidos ??
         (existing.suprimento_caixa_departamentos_permitidos as string[] | null) ??
         [];
+      const pessoalDepartamentosPermitidos =
+        parsedConfig.data.pessoal_departamentos_permitidos ??
+        (existing.pessoal_departamentos_permitidos as string[] | null) ??
+        [];
       const restringirReprovacaoContasAPagar =
         parsedConfig.data.restringir_reprovacao_contas_a_pagar ?? Boolean(existing.restringir_reprovacao_contas_a_pagar);
 
       const rows = await sql.unsafe(
         `
-          insert into ${SERVICOS_SCHEMA}.configuracoes_modulo (modulo, restringir_visibilidade_pagamento_dinheiro, suprimento_caixa_sem_aprovador, suprimento_caixa_auto_aprovar, suprimento_caixa_departamentos_permitidos, restringir_reprovacao_contas_a_pagar, atualizado_por, atualizado_em)
-          values ($1, $2, $3, $4, $5::uuid[], $6, $7, now())
+          insert into ${SERVICOS_SCHEMA}.configuracoes_modulo (modulo, restringir_visibilidade_pagamento_dinheiro, suprimento_caixa_sem_aprovador, suprimento_caixa_auto_aprovar, suprimento_caixa_departamentos_permitidos, pessoal_departamentos_permitidos, restringir_reprovacao_contas_a_pagar, atualizado_por, atualizado_em)
+          values ($1, $2, $3, $4, $5::uuid[], $6::uuid[], $7, $8, now())
           on conflict (modulo) do update
             set restringir_visibilidade_pagamento_dinheiro = excluded.restringir_visibilidade_pagamento_dinheiro,
               suprimento_caixa_sem_aprovador = excluded.suprimento_caixa_sem_aprovador,
               suprimento_caixa_auto_aprovar = excluded.suprimento_caixa_auto_aprovar,
               suprimento_caixa_departamentos_permitidos = excluded.suprimento_caixa_departamentos_permitidos,
+              pessoal_departamentos_permitidos = excluded.pessoal_departamentos_permitidos,
               restringir_reprovacao_contas_a_pagar = excluded.restringir_reprovacao_contas_a_pagar,
               atualizado_por = excluded.atualizado_por,
               atualizado_em = now()
-          returning modulo, restringir_visibilidade_pagamento_dinheiro, suprimento_caixa_sem_aprovador, suprimento_caixa_auto_aprovar, suprimento_caixa_departamentos_permitidos, restringir_reprovacao_contas_a_pagar, atualizado_em;
+          returning modulo, restringir_visibilidade_pagamento_dinheiro, suprimento_caixa_sem_aprovador, suprimento_caixa_auto_aprovar, suprimento_caixa_departamentos_permitidos, pessoal_departamentos_permitidos, restringir_reprovacao_contas_a_pagar, atualizado_em;
         `,
         [
           'financeiro',
@@ -1329,6 +1356,7 @@ Deno.serve(async (request) => {
           suprimentoCaixaSemAprovador,
           suprimentoCaixaAutoAprovar,
           suprimentoCaixaDepartamentosPermitidos,
+          pessoalDepartamentosPermitidos,
           restringirReprovacaoContasAPagar,
           collaborator!.id,
         ],
@@ -1338,6 +1366,7 @@ Deno.serve(async (request) => {
       suprimentoCaixaSemAprovadorCache = null;
       suprimentoCaixaAutoAprovarCache = null;
       suprimentoCaixaDepartamentosPermitidosCache = null;
+      pessoalDepartamentosPermitidosCache = null;
       restringeReprovacaoContasAPagarCache = null;
       return json({ row: rows[0] });
     }
@@ -2304,6 +2333,20 @@ Deno.serve(async (request) => {
         ) {
           throw Object.assign(
             new Error('Seu departamento nao tem permissao para abrir suprimento de caixa.'),
+            { status: 403 },
+          );
+        }
+      }
+
+      // Mesma regra pra solicitacao pessoal (lista pessoal_departamentos_permitidos, vazia = livre).
+      if (pessoal) {
+        const departamentosPermitidos = await getPessoalDepartamentosPermitidos();
+        if (
+          departamentosPermitidos.length > 0 &&
+          !departamentosPermitidos.includes(String(collaborator!.departamento_id || ''))
+        ) {
+          throw Object.assign(
+            new Error('Seu departamento nao tem permissao para abrir solicitacao pessoal.'),
             { status: 403 },
           );
         }

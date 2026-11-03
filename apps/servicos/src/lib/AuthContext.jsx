@@ -12,6 +12,8 @@ import {
   supabase,
 } from '@macom/api-client/supabaseClient';
 
+import { queryClientInstance } from './query-client';
+
 const AuthContext = createContext(null);
 
 function normalizeServicosUser(authUser, authPayload = {}, oficinaRole = null) {
@@ -240,6 +242,9 @@ export function AuthProvider({ children }) {
       await supabase.auth.signOut({ scope: 'local' });
     }
     clearAuthState();
+    // Query keys nao incluem o usuario e o staleTime e de 90s -- sem limpar, quem entra em
+    // seguida ve por um tempo as listas (inclusive solicitacoes pessoais) do usuario anterior.
+    queryClientInstance.clear();
     if (redirectTo && typeof window !== 'undefined') {
       window.history.replaceState({}, '', redirectTo);
       window.dispatchEvent(new PopStateEvent('popstate'));
@@ -260,8 +265,16 @@ export function AuthProvider({ children }) {
       if (!mounted) return;
 
       if (event === 'SIGNED_OUT' || !nextSession) {
+        // Logout feito em outra aba tambem nao pode deixar o cache do usuario anterior.
         clearAuthState();
+        queryClientInstance.clear();
         return;
+      }
+
+      // Troca de conta sem passar pelo logout (ex.: login de outro usuario em outra aba).
+      const previousAuthId = userRef.current?.auth_id;
+      if (previousAuthId && previousAuthId !== nextSession.user?.id) {
+        queryClientInstance.clear();
       }
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {

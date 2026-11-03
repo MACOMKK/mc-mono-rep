@@ -278,12 +278,20 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
     isEdicao ||
     departamentosPermitidosSuprimentoCaixa.length === 0 ||
     departamentosPermitidosSuprimentoCaixa.includes(user?.collaborator?.departamento_id);
+  // Mesma regra pra solicitacao pessoal (so vale na criacao -- o botao ja so aparece em isNova).
+  const departamentosPermitidosPessoal = configuracaoModulo?.pessoal_departamentos_permitidos || [];
+  const podeAbrirPessoal =
+    departamentosPermitidosPessoal.length === 0 ||
+    departamentosPermitidosPessoal.includes(user?.collaborator?.departamento_id);
 
   useEffect(() => {
     if (!podeAbrirSuprimentoCaixa && form.tipoBeneficiario === 'colaborador') {
       handleTipoBeneficiarioChange('fornecedor');
     }
-  }, [podeAbrirSuprimentoCaixa, form.tipoBeneficiario]);
+    if (isNova && !podeAbrirPessoal && form.tipoBeneficiario === 'pessoal') {
+      handleTipoBeneficiarioChange('fornecedor');
+    }
+  }, [podeAbrirSuprimentoCaixa, podeAbrirPessoal, isNova, form.tipoBeneficiario]);
 
   useEffect(() => {
     if (skipNextResetRef.current) {
@@ -739,7 +747,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
             />
           </div>
 
-          {!editandoPessoal && (podeAbrirSuprimentoCaixa || isNova) && (
+          {!editandoPessoal && (podeAbrirSuprimentoCaixa || (isNova && podeAbrirPessoal)) && (
             <div className="space-y-2">
               <Label>Tipo de solicitação</Label>
               <div className="flex flex-wrap gap-2">
@@ -761,7 +769,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
                     Suprimento de caixa
                   </Button>
                 )}
-                {isNova && (
+                {isNova && podeAbrirPessoal && (
                   <Button
                     type="button"
                     variant={isPessoal ? 'default' : 'outline'}

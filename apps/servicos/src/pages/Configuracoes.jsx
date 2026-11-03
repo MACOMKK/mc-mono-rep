@@ -171,6 +171,7 @@ function configParaRascunho(config) {
     suprimento_caixa_sem_aprovador: config?.suprimento_caixa_sem_aprovador ?? false,
     suprimento_caixa_auto_aprovar: config?.suprimento_caixa_auto_aprovar ?? false,
     suprimento_caixa_departamentos_permitidos: config?.suprimento_caixa_departamentos_permitidos || [],
+    pessoal_departamentos_permitidos: config?.pessoal_departamentos_permitidos || [],
     restringir_reprovacao_contas_a_pagar: config?.restringir_reprovacao_contas_a_pagar ?? true,
   };
 }
@@ -220,13 +221,15 @@ function FinanceiroTab() {
   const suprimentoCaixaSemAprovador = rascunho?.suprimento_caixa_sem_aprovador ?? false;
   const suprimentoCaixaAutoAprovar = rascunho?.suprimento_caixa_auto_aprovar ?? false;
   const suprimentoCaixaDepartamentosPermitidos = rascunho?.suprimento_caixa_departamentos_permitidos || [];
+  const pessoalDepartamentosPermitidos = rascunho?.pessoal_departamentos_permitidos || [];
   const restringirReprovacaoContasAPagar = rascunho?.restringir_reprovacao_contas_a_pagar ?? true;
 
-  function toggleDepartamentoPermitido(departamentoId, checked) {
+  function toggleDepartamentoPermitido(campo, departamentoId, checked) {
+    const listaAtual = rascunho?.[campo] || [];
     const proximaLista = checked
-      ? [...suprimentoCaixaDepartamentosPermitidos, departamentoId]
-      : suprimentoCaixaDepartamentosPermitidos.filter((id) => id !== departamentoId);
-    setCampo('suprimento_caixa_departamentos_permitidos', proximaLista);
+      ? [...listaAtual, departamentoId]
+      : listaAtual.filter((id) => id !== departamentoId);
+    setCampo(campo, proximaLista);
   }
 
   return (
@@ -333,7 +336,41 @@ function FinanceiroTab() {
                 <label key={departamento.id} className="flex items-center gap-2 text-sm">
                   <Checkbox
                     checked={suprimentoCaixaDepartamentosPermitidos.includes(departamento.id)}
-                    onCheckedChange={(checked) => toggleDepartamentoPermitido(departamento.id, checked === true)}
+                    onCheckedChange={(checked) =>
+                      toggleDepartamentoPermitido('suprimento_caixa_departamentos_permitidos', departamento.id, checked === true)
+                    }
+                    disabled={salvarMutation.isPending}
+                  />
+                  {departamento.nome}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!configQuery.isLoading && (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="font-medium">Departamentos autorizados a abrir solicitação pessoal</p>
+          <p className="text-sm text-muted-foreground">
+            Quando um ou mais departamentos forem selecionados, só colaboradores desses setores
+            podem criar uma solicitação pessoal. Vazio = qualquer colaborador com acesso ao
+            Financeiro pode abrir. Não afeta quem pode ver solicitações já existentes.
+          </p>
+          {departamentosQuery.isLoading ? (
+            <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner size="sm" />
+              Carregando...
+            </div>
+          ) : (
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {departamentos.map((departamento) => (
+                <label key={departamento.id} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={pessoalDepartamentosPermitidos.includes(departamento.id)}
+                    onCheckedChange={(checked) =>
+                      toggleDepartamentoPermitido('pessoal_departamentos_permitidos', departamento.id, checked === true)
+                    }
                     disabled={salvarMutation.isPending}
                   />
                   {departamento.nome}
