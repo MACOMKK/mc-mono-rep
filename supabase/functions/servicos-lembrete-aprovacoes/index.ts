@@ -52,7 +52,7 @@ Deno.serve(async (request) => {
     // unico toque que pode se perder.
     const rows = await sql.unsafe(
       `
-        select sp.id, sp.fornecedor, sp.valor, sp.aprovador_destino_id, c.nome as aprovador_nome
+        select sp.id, sp.fornecedor, sp.titulo, sp.valor, sp.pessoal, sp.aprovador_destino_id, c.nome as aprovador_nome
         from ${SERVICOS_SCHEMA}.solicitacoes_pagamento sp
         join public.colaboradores c on c.id = sp.aprovador_destino_id
         where sp.status = 'pendente'
@@ -65,19 +65,24 @@ Deno.serve(async (request) => {
     const results = [];
     for (const row of rows) {
       const valorFormatado = Number(row.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      // Solicitacao pessoal nao tem aprovacao: o lembrete e so de que o pagamento ainda nao foi feito.
+      const titulo = row.pessoal ? 'Lembrete pessoal de pagamento' : 'Solicitação aguardando sua aprovação';
+      const mensagem = row.pessoal
+        ? `${row.titulo} — ${valorFormatado} — ainda não marcado como pago`
+        : `${row.fornecedor} — ${valorFormatado} — ainda sem decisão`;
 
       await sql.unsafe(
         `
           insert into ${SERVICOS_SCHEMA}.notificacoes
             (colaborador_id, tipo, titulo, mensagem, link, referencia_tipo, referencia_id)
-          values ($1, 'solicitacao_pendente_lembrete', 'Solicitação aguardando sua aprovação', $2, $3, 'solicitacao_pagamento', $4);
+          values ($1, 'solicitacao_pendente_lembrete', $5, $2, $3, 'solicitacao_pagamento', $4);
         `,
-        [row.aprovador_destino_id, `${row.fornecedor} — ${valorFormatado} — ainda sem decisão`, `/aprovacoes?sol=${row.id}`, String(row.id)],
+        [row.aprovador_destino_id, mensagem, `/aprovacoes?sol=${row.id}`, String(row.id), titulo],
       );
 
       await sendPushToColaborador(sql, SERVICOS_SYSTEM_SLUG, String(row.aprovador_destino_id), {
-        title: 'Solicitação aguardando sua aprovação',
-        body: `${row.fornecedor} — ${valorFormatado} — ainda sem decisão`,
+        title: titulo,
+        body: mensagem,
         url: `/aprovacoes?sol=${row.id}`,
       }).catch((error) => console.error('sendPushToColaborador failed:', error));
 

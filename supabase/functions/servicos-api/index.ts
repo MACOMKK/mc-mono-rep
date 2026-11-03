@@ -424,6 +424,28 @@ async function substituirPlanoParcelas(
   }
 }
 
+// Solicitacao pessoal (lembrete de pagamento que nao e da empresa): so o solicitante e o
+// aprovador destino enxergam/agem, independente de papel -- nem financeiro, contas_a_pagar,
+// setor/unidade ou admin. Espelha a policy restrictive servicos_solicitacoes_pessoal_restrita.
+function isParticipantePessoal(
+  row: { solicitante_id: unknown; aprovador_destino_id?: unknown },
+  collaboradorId: string | null | undefined,
+) {
+  const id = String(collaboradorId || '');
+  return Boolean(id) && (String(row.solicitante_id) === id || String(row.aprovador_destino_id || '') === id);
+}
+
+// Acoes de anexo que buscam a linha pelo id do anexo (sem passar por ensureRowAccess) chamam isso
+// pra nao deixar o financeiro mexer em anexo de solicitacao pessoal de terceiros.
+function ensureNaoPessoalDeTerceiro(
+  row: { pessoal?: unknown; solicitante_id: unknown; aprovador_destino_id?: unknown },
+  collaboradorId: string | null | undefined,
+) {
+  if (row.pessoal === true && !isParticipantePessoal(row, collaboradorId)) {
+    throw Object.assign(new Error('Voce nao tem permissao para acessar esta solicitacao.'), { status: 403 });
+  }
+}
+
 // Acesso a uma solicitacao especifica: financeiro/contas_a_pagar ve/mexe em qualquer uma; o
 // proprio solicitante sempre ve a sua; um aprovador so acessa a solicitacao endereçada
 // a ele (aprovador_destino_id), nao qualquer solicitacao pendente; e qualquer papel ve as
@@ -443,10 +465,13 @@ async function canAccessSolicitacao(
     unidade_id?: unknown;
     aprovador_destino_unidade_id?: unknown;
     forma_pagamento?: unknown;
+    pessoal?: unknown;
   },
   departamentoId?: string | null,
   unidadeId?: string | null,
 ) {
+  if (row.pessoal === true) return isParticipantePessoal(row, collaboradorId);
+
   // Dinheiro: visibilidade restrita a solicitante/aprovador-destino/financeiro, ignorando
   // isPagador (exclui contas_a_pagar) e a ampliacao por setor/unidade -- espelha
   // public.servicos_can_access_solicitacao() no banco. Configuravel via
@@ -498,10 +523,12 @@ async function canViewAnexoSigiloso(
     departamento_id?: unknown;
     unidade_id?: unknown;
     forma_pagamento?: unknown;
+    pessoal?: unknown;
   },
   departamentoId?: string | null,
   unidadeId?: string | null,
 ) {
+  if (row.pessoal === true) return isParticipantePessoal(row, collaboradorId);
   if (isFinanceiro(moduleRole)) return true;
   if (String(row.solicitante_id) === String(collaboradorId || '')) return true;
   if (moduleRole === 'aprovador' && String(row.aprovador_destino_id || '') === String(collaboradorId || '')) {
@@ -683,6 +710,42 @@ function validateCreatePayload(payload: Record<string, unknown>) {
     }
     payload.data_vencimento = proximaDataUtil(String(payload.data_vencimento));
   }
+}
+
+// Solicitacao pessoal: sem fornecedor/categoria/NF (constraints chk_servicos_solicitacoes_* da
+// migration 20261103120000) -- o favorecido e texto livre no snapshot `fornecedor`. `parcial` =
+// update, so valida o que veio no payload.
+function normalizarPayloadPessoal(payload: Record<string, unknown>, favorecido: unknown, parcial = false) {
+  const veio = (campo: string) => !parcial || campo in payload;
+  const titulo = String(payload.titulo || '').trim();
+  if (veio('titulo') && !titulo) throw Object.assign(new Error('Informe o titulo.'), { status: 400 });
+  if (veio('valor')) {
+    const valor = Number(payload.valor);
+    if (!Number.isFinite(valor) || valor <= 0) {
+      throw Object.assign(new Error('Informe um valor valido.'), { status: 400 });
+    }
+  }
+  if (veio('descricao') && !String(payload.descricao || '').trim()) {
+    payload.descricao = titulo || 'Solicitação pessoal';
+  }
+  if (veio('forma_pagamento') && !FORMAS_PAGAMENTO.includes(String(payload.forma_pagamento || ''))) {
+    payload.forma_pagamento = 'outros';
+  }
+  if (payload.data_vencimento) {
+    if (Number.isNaN(Date.parse(String(payload.data_vencimento)))) {
+      throw Object.assign(new Error('Data de vencimento invalida.'), { status: 400 });
+    }
+    payload.data_vencimento = proximaDataUtil(String(payload.data_vencimento));
+  }
+  if (!parcial || favorecido !== undefined) {
+    payload.fornecedor = String(favorecido || '').trim() || 'Pessoal';
+  }
+  payload.tipo_beneficiario = 'fornecedor';
+  payload.fornecedor_id = null;
+  payload.colaborador_beneficiario_id = null;
+  payload.categoria_id = null;
+  payload.categoria = 'Pessoal';
+  payload.possui_nota_fiscal = false;
 }
 
 async function validateAprovadorDestino(aprovadorDestinoId: string) {
@@ -1038,7 +1101,7 @@ async function ensureParcelaAccess(id: string, moduleRole: string | null, collab
   const rows = await sql!.unsafe(
     `
       select pp.*, sp.solicitante_id, sp.aprovador_destino_id, sp.departamento_id, sp.unidade_id,
-        sp.status as solicitacao_status, sp.pendencia_bloqueio,
+        sp.pessoal, sp.status as solicitacao_status, sp.pendencia_bloqueio,
         ac.departamento_id as aprovador_destino_departamento_id,
         ac.unidade_id as aprovador_destino_unidade_id
       from ${SERVICOS_SCHEMA}.parcelas_pagamento pp
@@ -1826,13 +1889,18 @@ Deno.serve(async (request) => {
       // canAccessSolicitacao/RLS.
       const restringeDinheiro = await getRestringeVisibilidadeDinheiro();
 
+      // Pessoal (ver isParticipantePessoal): so solicitante/aprovador destino, pra qualquer papel.
+      values.push(collaborator!.id);
+      const participanteParam = values.length;
+      const pessoalClause = `(sp.solicitante_id = $${participanteParam} or sp.aprovador_destino_id = $${participanteParam})`;
+      let acessoNaoPessoal = 'true';
+
       if (isPagador(moduleRole)) {
         if (!isFinanceiro(moduleRole) && restringeDinheiro) {
-          clauses.push(`sp.forma_pagamento <> 'dinheiro'`);
+          acessoNaoPessoal = `sp.forma_pagamento <> 'dinheiro'`;
         }
       } else {
-        values.push(collaborator!.id);
-        const collaboradorIdParam = values.length;
+        const collaboradorIdParam = participanteParam;
         const pessoaisClause =
           moduleRole === 'aprovador'
             ? `(sp.solicitante_id = $${collaboradorIdParam} or sp.aprovador_destino_id = $${collaboradorIdParam})`
@@ -1868,12 +1936,12 @@ Deno.serve(async (request) => {
           acessoClause = `(${pessoaisClause} or ${departamentoClause})`;
         }
 
-        clauses.push(
-          restringeDinheiro
-            ? `((sp.forma_pagamento <> 'dinheiro' and ${acessoClause}) or (sp.forma_pagamento = 'dinheiro' and ${pessoaisClause}))`
-            : acessoClause,
-        );
+        acessoNaoPessoal = restringeDinheiro
+          ? `((sp.forma_pagamento <> 'dinheiro' and ${acessoClause}) or (sp.forma_pagamento = 'dinheiro' and ${pessoaisClause}))`
+          : acessoClause;
       }
+
+      clauses.push(`((not sp.pessoal and ${acessoNaoPessoal}) or (sp.pessoal and ${pessoalClause}))`);
 
       if (status) {
         values.push(status);
@@ -2012,6 +2080,7 @@ Deno.serve(async (request) => {
             where solicitacao_id = sp.id
           ) pp on true
           where sp.criado_em >= $1 and sp.criado_em <= $2
+            and not sp.pessoal
             and ($3::uuid is null or sp.empresa_id = $3)
             and ($4::bigint is null or sp.numero = $4)
             and ($5::uuid is null or sp.solicitante_id = $5)
@@ -2196,13 +2265,19 @@ Deno.serve(async (request) => {
       const createBody = parsedCreate.data;
 
       const payload = sanitizePayload(CREATE_FIELDS, createBody.payload || {});
-      validateCreatePayload(payload);
+      // pessoal nao faz parte de CREATE_FIELDS: so definido na criacao, nunca alterado depois.
+      const pessoal = createBody.payload?.pessoal === true;
+      if (pessoal) normalizarPayloadPessoal(payload, createBody.payload?.favorecido);
+      else validateCreatePayload(payload);
       validateComprovanteSize(createBody.payload?.comprovante_file_size);
 
       // Parcelamento e opcional: o solicitante pode propor um plano de pagamento ja na
       // criacao (fica sujeito a revisao do financeiro/contas a pagar depois de aprovado,
       // via criar_parcelas). Sem esse campo, a solicitacao nasce a vista, igual antes.
       const parcelasPropostas = Array.isArray(createBody.payload?.parcelas) ? createBody.payload.parcelas : [];
+      if (pessoal && parcelasPropostas.length) {
+        throw Object.assign(new Error('Solicitacao pessoal nao pode ser parcelada.'), { status: 400 });
+      }
       if (parcelasPropostas.length) {
         validateParcelasSum(parcelasPropostas, Number(payload.valor));
       }
@@ -2242,27 +2317,33 @@ Deno.serve(async (request) => {
       // sistema (cards, listas, notificacoes) agnostico ao tipo.
       // Suprimento de caixa pode nao mencionar um colaborador especifico (ex.: reforco de caixa
       // geral do setor) -- so resolve/exige o nome quando um id foi de fato informado.
-      const beneficiarioColaboradorId = String(payload.colaborador_beneficiario_id || '').trim();
-      const beneficiarioQuery =
-        payload.tipo_beneficiario === 'colaborador' && beneficiarioColaboradorId
-          ? sql.unsafe(`select nome from public.colaboradores where id = $1 limit 1;`, [beneficiarioColaboradorId])
-          : payload.tipo_beneficiario === 'colaborador'
-            ? Promise.resolve([{ nome: 'Suprimento de caixa' }])
-            : sql.unsafe(`select nome from ${SERVICOS_SCHEMA}.fornecedores where id = $1 limit 1;`, [payload.fornecedor_id]);
-      const [beneficiarioRows, categoriaRows] = await Promise.all([
-        beneficiarioQuery,
-        sql.unsafe(`select nome from ${SERVICOS_SCHEMA}.categorias where id = $1 limit 1;`, [payload.categoria_id]),
-        aprovadorDestinoId ? validateAprovadorDestino(aprovadorDestinoId) : Promise.resolve(),
-      ]);
-      if (!beneficiarioRows[0]) {
-        throw Object.assign(
-          new Error(payload.tipo_beneficiario === 'colaborador' ? 'Colaborador beneficiario invalido.' : 'Fornecedor invalido.'),
-          { status: 400 },
-        );
+      // Pessoal ja tem fornecedor (favorecido) e categoria resolvidos em normalizarPayloadPessoal.
+      if (pessoal) {
+        await validateAprovadorDestino(aprovadorDestinoId);
+        payload.pessoal = true;
+      } else {
+        const beneficiarioColaboradorId = String(payload.colaborador_beneficiario_id || '').trim();
+        const beneficiarioQuery =
+          payload.tipo_beneficiario === 'colaborador' && beneficiarioColaboradorId
+            ? sql.unsafe(`select nome from public.colaboradores where id = $1 limit 1;`, [beneficiarioColaboradorId])
+            : payload.tipo_beneficiario === 'colaborador'
+              ? Promise.resolve([{ nome: 'Suprimento de caixa' }])
+              : sql.unsafe(`select nome from ${SERVICOS_SCHEMA}.fornecedores where id = $1 limit 1;`, [payload.fornecedor_id]);
+        const [beneficiarioRows, categoriaRows] = await Promise.all([
+          beneficiarioQuery,
+          sql.unsafe(`select nome from ${SERVICOS_SCHEMA}.categorias where id = $1 limit 1;`, [payload.categoria_id]),
+          aprovadorDestinoId ? validateAprovadorDestino(aprovadorDestinoId) : Promise.resolve(),
+        ]);
+        if (!beneficiarioRows[0]) {
+          throw Object.assign(
+            new Error(payload.tipo_beneficiario === 'colaborador' ? 'Colaborador beneficiario invalido.' : 'Fornecedor invalido.'),
+            { status: 400 },
+          );
+        }
+        payload.fornecedor = beneficiarioRows[0].nome;
+        if (!categoriaRows[0]) throw Object.assign(new Error('Categoria invalida.'), { status: 400 });
+        payload.categoria = categoriaRows[0].nome;
       }
-      payload.fornecedor = beneficiarioRows[0].nome;
-      if (!categoriaRows[0]) throw Object.assign(new Error('Categoria invalida.'), { status: 400 });
-      payload.categoria = categoriaRows[0].nome;
       payload.aprovador_destino_id = aprovadorDestinoId || null;
 
       // empresa_id/unidade_id/departamento_id sao snapshot do colaborador no momento da criacao
@@ -2318,7 +2399,11 @@ Deno.serve(async (request) => {
           await notifySolicitanteStatusChange(row, 'aprovado', collaborator!.id as string);
           await notifyFinanceirosSolicitacaoAprovada(row, collaborator!.id as string);
         } else {
-          await notifyAprovadorNovaSolicitacao(row, 'Nova solicitação para aprovar', collaborator!.id as string);
+          await notifyAprovadorNovaSolicitacao(
+            row,
+            pessoal ? 'Novo lembrete pessoal de pagamento' : 'Nova solicitação para aprovar',
+            collaborator!.id as string,
+          );
         }
       }
       return json({ row });
@@ -2350,6 +2435,12 @@ Deno.serve(async (request) => {
       const payload = sanitizePayload(UPDATE_FIELDS, updateBody.payload || {});
       if (!Object.keys(payload).length && parcelasPropostas === null) {
         return json({ error: 'Nenhum campo para atualizar.' }, 400);
+      }
+      if (existing.pessoal === true) {
+        if (parcelasPropostas?.length) {
+          throw Object.assign(new Error('Solicitacao pessoal nao pode ser parcelada.'), { status: 400 });
+        }
+        normalizarPayloadPessoal(payload, updateBody.payload?.favorecido, true);
       }
       if ('comprovante_path' in (updateBody.payload || {})) {
         validateComprovanteSize(updateBody.payload?.comprovante_file_size);
@@ -2784,6 +2875,12 @@ Deno.serve(async (request) => {
       }
 
       const existing = await ensureRowAccess(id, moduleRole, collaborator);
+      if (existing.pessoal === true) {
+        throw Object.assign(
+          new Error('Solicitacao pessoal nao passa por aprovacao nem pelo financeiro; use "Marcar como pago".'),
+          { status: 400 },
+        );
+      }
 
       if (status === 'aprovado' || status === 'reprovado') {
         const reprovandoAprovada = status === 'reprovado' && existing.status === 'aprovado';
@@ -2890,6 +2987,59 @@ Deno.serve(async (request) => {
         await notifySolicitanteStatusChange(row, status, collaborator!.id as string);
         return json({ row });
       }
+    }
+
+    if (action === 'marcar_pago_pessoal') {
+      const id = String(body.id || '');
+      if (!id) return json({ error: 'ID obrigatorio.' }, 400);
+
+      // ensureRowAccess ja restringe pessoal a solicitante/aprovador destino (isParticipantePessoal).
+      const existing = await ensureRowAccess(id, moduleRole, collaborator);
+      if (existing.pessoal !== true) {
+        throw Object.assign(new Error('Somente solicitacoes pessoais podem ser baixadas por aqui.'), { status: 400 });
+      }
+      if (existing.status !== 'pendente') {
+        throw Object.assign(new Error('Somente solicitacoes pessoais pendentes podem ser marcadas como pagas.'), { status: 400 });
+      }
+
+      const rows = await sql.unsafe(
+        `
+          update ${SERVICOS_SCHEMA}.solicitacoes_pagamento
+          set status = 'pago', pago_por = $2, pago_em = now()
+          where id = $1 and status = 'pendente'
+          returning *;
+        `,
+        [id, collaborator!.id],
+      );
+      const row = rows[0];
+      if (!row) {
+        throw Object.assign(new Error('A solicitacao mudou de status; atualize a tela.'), { status: 409 });
+      }
+
+      const souSolicitante = String(existing.solicitante_id) === String(collaborator!.id);
+      await insertHistorico(
+        id,
+        'pago',
+        collaborator!.id as string,
+        `Solicitação pessoal marcada como paga pelo ${souSolicitante ? 'solicitante' : 'aprovador'}.`,
+      );
+      // Avisa o outro participante (quem marcou ja sabe).
+      const valorFormatado = Number(row.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const destinatarioId = souSolicitante ? row.aprovador_destino_id : row.solicitante_id;
+      if (destinatarioId && String(destinatarioId) !== String(collaborator!.id)) {
+        await insertNotificacao(
+          String(destinatarioId),
+          'status_solicitacao',
+          'Lembrete pessoal marcado como pago',
+          `${row.titulo} — ${valorFormatado}`,
+          `/solicitacoes?sol=${row.id}`,
+          'solicitacao_pagamento',
+          String(row.id),
+          collaborator!.id as string,
+          souSolicitante ? 'aprovador' : 'solicitante',
+        );
+      }
+      return json({ row });
     }
 
     if (action === 'marcar_pendencia') {
@@ -3133,7 +3283,7 @@ Deno.serve(async (request) => {
 
       const rows = await sql.unsafe(
         `
-          select an.*, sp.solicitante_id, sp.status as solicitacao_status, sp.pendencia_bloqueio
+          select an.*, sp.solicitante_id, sp.aprovador_destino_id, sp.pessoal, sp.status as solicitacao_status, sp.pendencia_bloqueio
           from ${SERVICOS_SCHEMA}.anexos_solicitacao an
           join ${SERVICOS_SCHEMA}.solicitacoes_pagamento sp on sp.id = an.solicitacao_id
           where an.id = $1
@@ -3143,6 +3293,7 @@ Deno.serve(async (request) => {
       );
       const anexo = rows[0];
       if (!anexo) return json({ error: 'Anexo nao encontrado.' }, 404);
+      ensureNaoPessoalDeTerceiro(anexo, collaborator?.id as string | undefined);
       const dentroDaJanela = anexo.solicitacao_status === 'pendente' || anexo.pendencia_bloqueio === true;
       const podeComoFinanceiro = isFinanceiro(moduleRole) && dentroDaJanela;
       const podeComoDono = String(anexo.solicitante_id) === String(collaborator!.id) && dentroDaJanela;
@@ -3187,7 +3338,7 @@ Deno.serve(async (request) => {
 
       const rows = await sql.unsafe(
         `
-          select an.*, sp.solicitante_id
+          select an.*, sp.solicitante_id, sp.aprovador_destino_id, sp.pessoal
           from ${SERVICOS_SCHEMA}.anexos_solicitacao an
           join ${SERVICOS_SCHEMA}.solicitacoes_pagamento sp on sp.id = an.solicitacao_id
           where an.id = $1
@@ -3197,6 +3348,7 @@ Deno.serve(async (request) => {
       );
       const anexo = rows[0];
       if (!anexo) return json({ error: 'Anexo nao encontrado.' }, 404);
+      ensureNaoPessoalDeTerceiro(anexo, collaborator?.id as string | undefined);
       // Diferente de remover_anexo, essa acao nao trava por status da solicitacao: assinar_anexo
       // tambem nao tem essa trava (da pra assinar mesmo depois de aprovada/paga), entao corrigir o
       // esquecimento de marcar "exigir 2 assinaturas" precisa funcionar em qualquer fase.
@@ -3248,7 +3400,7 @@ Deno.serve(async (request) => {
 
       const rows = await sql.unsafe(
         `
-          select an.*, sp.solicitante_id, sp.aprovador_destino_id
+          select an.*, sp.solicitante_id, sp.aprovador_destino_id, sp.pessoal
           from ${SERVICOS_SCHEMA}.anexos_solicitacao an
           join ${SERVICOS_SCHEMA}.solicitacoes_pagamento sp on sp.id = an.solicitacao_id
           where an.id = $1
@@ -3258,6 +3410,7 @@ Deno.serve(async (request) => {
       );
       const anexo = rows[0];
       if (!anexo) return json({ error: 'Anexo nao encontrado.' }, 404);
+      ensureNaoPessoalDeTerceiro(anexo, collaborator?.id as string | undefined);
 
       const colaboradorId = collaborator!.id as string;
       const papel =
@@ -3368,7 +3521,7 @@ Deno.serve(async (request) => {
 
       const rows = await sql.unsafe(
         `
-          select an.*, sp.status as solicitacao_status
+          select an.*, sp.solicitante_id, sp.aprovador_destino_id, sp.pessoal, sp.status as solicitacao_status
           from ${SERVICOS_SCHEMA}.anexos_solicitacao an
           join ${SERVICOS_SCHEMA}.solicitacoes_pagamento sp on sp.id = an.solicitacao_id
           where an.id = $1
@@ -3378,6 +3531,7 @@ Deno.serve(async (request) => {
       );
       const anexo = rows[0];
       if (!anexo) return json({ error: 'Anexo nao encontrado.' }, 404);
+      ensureNaoPessoalDeTerceiro(anexo, collaborator?.id as string | undefined);
       if (anexo.solicitacao_status !== 'pago') {
         throw Object.assign(
           new Error(

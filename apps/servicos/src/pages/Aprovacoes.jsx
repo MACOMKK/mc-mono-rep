@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, X } from 'lucide-react';
+import { Check, CheckCheck, X } from 'lucide-react';
 
 import { financeiroApi } from '@macom/api-client/financeiroApi';
 import { supabase } from '@macom/api-client/supabaseClient';
@@ -34,6 +34,8 @@ import {
   Textarea,
   useToast,
 } from '@macom/ui';
+import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
+import PessoalBadge from '@/components/PessoalBadge';
 import SolicitacaoDrawer from '@/components/SolicitacaoDrawer';
 import SolicitacaoCard from '@/components/SolicitacaoCard';
 import FiltersDrawer from '@/components/FiltersDrawer';
@@ -42,6 +44,7 @@ import SearchInput from '@/components/SearchInput';
 import ValorRangeFilter from '@/components/ValorRangeFilter';
 import VencimentoRangeFilter from '@/components/VencimentoRangeFilter';
 import { useCategorias, useEmpresas } from '@/hooks/useCatalogos';
+import { useMarcarPagoPessoal } from '@/hooks/useMarcarPagoPessoal';
 import { usePagination } from '@/hooks/usePagination';
 import { normalize } from '@/lib/normalize';
 import {
@@ -73,6 +76,7 @@ export default function Aprovacoes() {
   const [observacoes, setObservacoes] = useState({});
   const [selectedId, setSelectedId] = useState(null);
   const [confirmarSemAnexo, setConfirmarSemAnexo] = useState(null);
+  const [pagoPessoalTarget, setPagoPessoalTarget] = useState(null);
   const [busca, setBusca] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState(CATEGORIA_FILTRO_TODAS);
   const [solicitanteFiltro, setSolicitanteFiltro] = useState(SOLICITANTE_FILTRO_TODOS);
@@ -256,6 +260,14 @@ export default function Aprovacoes() {
         title: 'Não foi possível processar a solicitação',
         description: `${error.message} Revise e tente novamente.`,
       });
+    },
+  });
+
+  // Solicitacao pessoal nao tem Aprovar/Reprovar: o aprovador so da baixa quando pagar.
+  const marcarPagoPessoalMutation = useMarcarPagoPessoal({
+    onSuccess: () => {
+      setPagoPessoalTarget(null);
+      setSelectedId(null);
     },
   });
 
@@ -468,8 +480,11 @@ export default function Aprovacoes() {
               <TableBody>
                 {pageItems.map((row) => (
                   <TableRow key={row.id} className="cursor-pointer" onClick={() => setSelectedId(row.id)}>
-                    <TableCell className="max-w-xs truncate font-medium" title={row.titulo || '-'}>
-                      {truncarTitulo(row.titulo)}
+                    <TableCell className="max-w-xs font-medium" title={row.titulo || '-'}>
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate">{truncarTitulo(row.titulo)}</span>
+                        {row.pessoal && <PessoalBadge />}
+                      </div>
                     </TableCell>
                     <TableCell>{row.solicitante_nome}</TableCell>
                     <TableCell>{formatDataVencimento(row.vencimento_efetivo)}</TableCell>
@@ -480,6 +495,19 @@ export default function Aprovacoes() {
                     <TableCell>{formatValor(row.valor)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2" onClick={(event) => event.stopPropagation()}>
+                        {row.pessoal ? (
+                          <Button
+                            size="icon"
+                            title="Marcar como pago"
+                            aria-label="Marcar como pago"
+                            disabled={marcarPagoPessoalMutation.isPending}
+                            onClick={() => setPagoPessoalTarget(row)}
+                            className="bg-emerald-600 text-white hover:bg-emerald-600/90"
+                          >
+                            <CheckCheck className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                        <>
                         <Button
                           size="icon"
                           title="Reprovar"
@@ -500,6 +528,8 @@ export default function Aprovacoes() {
                         >
                           <Check className="h-4 w-4" />
                         </Button>
+                        </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -517,6 +547,18 @@ export default function Aprovacoes() {
                 showSolicitante
                 showAprovador
                 actions={
+                  row.pessoal ? (
+                    <Button
+                      size="icon"
+                      title="Marcar como pago"
+                      aria-label="Marcar como pago"
+                      disabled={marcarPagoPessoalMutation.isPending}
+                      onClick={() => setPagoPessoalTarget(row)}
+                      className="bg-emerald-600 text-white hover:bg-emerald-600/90"
+                    >
+                      <CheckCheck className="h-4 w-4" />
+                    </Button>
+                  ) : (
                   <>
                     <Button
                       size="icon"
@@ -539,6 +581,7 @@ export default function Aprovacoes() {
                       <Check className="h-4 w-4" />
                     </Button>
                   </>
+                  )
                 }
               />
             ))}
@@ -552,7 +595,16 @@ export default function Aprovacoes() {
         solicitacao={selected}
         onOpenChange={(open) => !open && setSelectedId(null)}
         footer={
-          selected && (
+          selected?.pessoal ? (
+            <Button
+              className="w-full bg-emerald-600 text-white hover:bg-emerald-600/90"
+              disabled={marcarPagoPessoalMutation.isPending}
+              onClick={() => setPagoPessoalTarget(selected)}
+            >
+              <CheckCheck className="mr-2 h-4 w-4" />
+              Marcar como pago
+            </Button>
+          ) : selected && (
             <div className="space-y-3">
               <div className="space-y-1">
                 <Label htmlFor="observacao-analise">Observação (opcional)</Label>
@@ -587,6 +639,18 @@ export default function Aprovacoes() {
             </div>
           )
         }
+      />
+
+      <ConfirmDeleteDialog
+        open={Boolean(pagoPessoalTarget)}
+        onOpenChange={(open) => !open && setPagoPessoalTarget(null)}
+        onConfirm={() => pagoPessoalTarget && marcarPagoPessoalMutation.mutate(pagoPessoalTarget.id)}
+        isLoading={marcarPagoPessoalMutation.isPending}
+        title="Marcar como pago?"
+        description="Confirma que este lembrete pessoal já foi pago? Ele será encerrado para você e para o solicitante."
+        confirmLabel="Marcar como pago"
+        loadingLabel="Salvando..."
+        confirmClassName="bg-emerald-600 text-white hover:bg-emerald-600/90"
       />
 
       <AlertDialog open={Boolean(confirmarSemAnexo)} onOpenChange={(open) => !open && setConfirmarSemAnexo(null)}>

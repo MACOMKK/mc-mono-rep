@@ -446,6 +446,10 @@ export const solicitacaoPagamentoPayloadFieldsSchema = z.object({
   // parte de CREATE_FIELDS/sanitizePayload, por isso precisa entrar aqui explicitamente, mesmo
   // padrão de comprovante_file_size/parcelas acima.
   eh_teste: z.boolean().nullish(),
+  // Solicitacao pessoal (fora de CREATE_FIELDS, mesmo motivo): `pessoal` so e lido no `create`;
+  // `favorecido` (texto livre, vira o snapshot `fornecedor`) no create/update da pessoal.
+  pessoal: z.boolean().nullish(),
+  favorecido: z.string().nullish(),
 });
 
 export const criarSolicitacaoBodySchema = z.object({

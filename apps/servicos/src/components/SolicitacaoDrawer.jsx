@@ -68,6 +68,7 @@ import {
 } from '@macom/ui';
 import FornecedorDetalheDialog from '@/components/FornecedorDetalheDialog';
 import JuntarAnexosDialog, { podeJuntarAnexo } from '@/components/JuntarAnexosDialog';
+import PessoalBadge from '@/components/PessoalBadge';
 import { useAuth } from '@/lib/AuthContext';
 import { isAllowedAnexoMimeType, MAX_ANEXO_SIZE, substituirAnexo, uploadAnexo } from '@/lib/anexoUpload';
 import { getFriendlyErrorMessage } from '@/lib/errorMessage';
@@ -762,6 +763,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                   Suprimento de caixa
                 </Badge>
               )}
+              {solicitacao?.pessoal && <PessoalBadge />}
               {solicitacao?.eh_teste && (
                 <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-600">
                   Teste
@@ -785,7 +787,17 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
         </SheetHeader>
 
         <div className="-mx-6 flex-1 space-y-4 overflow-y-auto px-6">
+        {solicitacao?.pessoal && (
+          <div className="mt-4 flex items-start gap-2 rounded-md border border-violet-500/40 bg-violet-500/10 p-3 text-sm text-violet-800 dark:text-violet-300">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              Lembrete pessoal: não será pago pela empresa e só o solicitante e o aprovador veem. Qualquer
+              um dos dois pode marcar como pago.
+            </span>
+          </div>
+        )}
         {solicitacao &&
+          !solicitacao.pessoal &&
           !anexosLoading &&
           anexos.length === 0 &&
           (solicitacao.status === 'pendente' || solicitacao.status === 'aprovado') && (
@@ -879,7 +891,9 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                       }
                     />
                     <CampoDetalhe icon={User} label="Solicitante" value={solicitacao.solicitante_nome} />
-                    {solicitacao.tipo_beneficiario === 'colaborador' ? (
+                    {solicitacao.pessoal ? (
+                      <CampoDetalhe icon={User} label="Favorecido" value={solicitacao.fornecedor} />
+                    ) : solicitacao.tipo_beneficiario === 'colaborador' ? (
                       <CampoDetalhe icon={User} label="Colaborador (suprimento de caixa)" value={solicitacao.fornecedor} />
                     ) : (
                       <>

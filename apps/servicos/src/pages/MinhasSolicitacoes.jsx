@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, FileWarning, Pencil, Plus, RefreshCw, X } from 'lucide-react';
+import { AlertTriangle, CheckCheck, FileWarning, Pencil, Plus, RefreshCw, X } from 'lucide-react';
 
 import { financeiroApi } from '@macom/api-client/financeiroApi';
 import {
@@ -51,12 +51,14 @@ import SolicitacaoDrawer from '@/components/SolicitacaoDrawer';
 import SolicitacaoCard from '@/components/SolicitacaoCard';
 import NovaSolicitacaoDrawer from '@/components/NovaSolicitacaoDrawer';
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
+import PessoalBadge from '@/components/PessoalBadge';
 import FiltersDrawer from '@/components/FiltersDrawer';
 import Pagination from '@/components/Pagination';
 import SearchInput from '@/components/SearchInput';
 import ValorRangeFilter from '@/components/ValorRangeFilter';
 import VencimentoRangeFilter from '@/components/VencimentoRangeFilter';
 import { useCategorias, useEmpresas } from '@/hooks/useCatalogos';
+import { useMarcarPagoPessoal } from '@/hooks/useMarcarPagoPessoal';
 import { usePagination } from '@/hooks/usePagination';
 import { normalize } from '@/lib/normalize';
 
@@ -83,6 +85,7 @@ export default function MinhasSolicitacoes() {
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelMotivo, setCancelMotivo] = useState('');
   const [reprovarTarget, setReprovarTarget] = useState(null);
+  const [pagoPessoalTarget, setPagoPessoalTarget] = useState(null);
   const [reprovarMotivo, setReprovarMotivo] = useState('');
   const [busca, setBusca] = useState('');
   const [statusFiltro, setStatusFiltro] = useState([]);
@@ -287,6 +290,13 @@ export default function MinhasSolicitacoes() {
     },
   });
 
+  const marcarPagoPessoalMutation = useMarcarPagoPessoal({
+    onSuccess: () => {
+      setPagoPessoalTarget(null);
+      setSelectedId(null);
+    },
+  });
+
   const title = 'Solicitações';
 
   function handleCancelar() {
@@ -302,6 +312,9 @@ export default function MinhasSolicitacoes() {
   const isDono = (row) => String(row.solicitante_id) === String(user?.collaborator?.id);
   const isAprovadorDestino = (row) =>
     user?.isAprovador && String(row.aprovador_destino_id) === String(user?.collaborator?.id);
+  // Na pessoal o aprovador destino pode ter qualquer papel (financeiro/admin tambem sao elegiveis).
+  const isParticipantePessoal = (row) =>
+    isDono(row) || String(row.aprovador_destino_id) === String(user?.collaborator?.id);
 
   const activeFilterCount = [
     statusFiltro.length > 0,
@@ -336,6 +349,33 @@ export default function MinhasSolicitacoes() {
 
   function renderFooter() {
     if (!selected) return null;
+    if (selected.pessoal) {
+      if (selected.status !== 'pendente' || !isParticipantePessoal(selected)) return null;
+      const marcarPago = (
+        <Button
+          className="flex-1 bg-emerald-600 text-white hover:bg-emerald-600/90"
+          disabled={marcarPagoPessoalMutation.isPending}
+          onClick={() => setPagoPessoalTarget(selected)}
+        >
+          <CheckCheck className="mr-2 h-4 w-4" />
+          Marcar como pago
+        </Button>
+      );
+      if (!isDono(selected)) return <div className="flex w-full">{marcarPago}</div>;
+      return (
+        <div className="flex w-full flex-wrap gap-2">
+          <Button variant="outline" className="flex-1" onClick={() => setFormTarget(selected)}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Editar
+          </Button>
+          <Button variant="outline" className="flex-1" onClick={() => setCancelTarget(selected)}>
+            <X className="mr-2 h-4 w-4" />
+            Cancelar
+          </Button>
+          {marcarPago}
+        </div>
+      );
+    }
     if (selected.status === 'pendente' && isDono(selected)) {
       return (
         <div className="flex w-full gap-2">
@@ -630,6 +670,7 @@ export default function MinhasSolicitacoes() {
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1">
                         <Badge variant={STATUS_VARIANT[row.status]}>{STATUS_LABEL[row.status] || row.status}</Badge>
+                        {row.pessoal && <PessoalBadge />}
                         {row.status === 'aprovado' && isParcialmentePago(row) && (
                           <Badge variant="outline">
                             Pago parcial ({row.parcelas_pagas}/{row.parcelas_total})
@@ -759,6 +800,19 @@ export default function MinhasSolicitacoes() {
           />
         )}
       </ConfirmDeleteDialog>
+
+      <ConfirmDeleteDialog
+        open={Boolean(pagoPessoalTarget)}
+        onOpenChange={(open) => !open && setPagoPessoalTarget(null)}
+        onConfirm={() => pagoPessoalTarget && marcarPagoPessoalMutation.mutate(pagoPessoalTarget.id)}
+        isLoading={marcarPagoPessoalMutation.isPending}
+        title="Marcar como pago?"
+        description="Confirma que este lembrete pessoal já foi pago? Ele será encerrado para você e para a outra pessoa envolvida."
+        confirmLabel="Marcar como pago"
+        loadingLabel="Salvando..."
+        cancelLabel="Voltar"
+        confirmClassName="bg-emerald-600 text-white hover:bg-emerald-600/90"
+      />
 
       <ConfirmDeleteDialog
         open={Boolean(reprovarTarget)}

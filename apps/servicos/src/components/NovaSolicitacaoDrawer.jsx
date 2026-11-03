@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileWarning, Paperclip, Plus, Trash2, X } from 'lucide-react';
+import { FileWarning, Lock, Paperclip, Plus, Trash2, X } from 'lucide-react';
 
 import { financeiroApi } from '@macom/api-client/financeiroApi';
 import { useAuth } from '@/lib/AuthContext';
@@ -62,6 +62,8 @@ const EMPTY_FORM = {
   tipoBeneficiario: 'fornecedor',
   fornecedorId: '',
   colaboradorBeneficiarioId: '',
+  // Texto livre do favorecido na solicitacao pessoal (tipoBeneficiario 'pessoal').
+  favorecido: '',
   descricao: '',
   valor: '',
   categoriaId: '',
@@ -149,8 +151,9 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
       const previous = queryClient.getQueryData(minhasSolicitacoesKey);
       const anexosSnapshot = anexos;
       const formSnapshot = form;
-      const fornecedorNome =
-        payload.tipo_beneficiario === 'colaborador'
+      const fornecedorNome = isPessoal
+        ? payload.favorecido || 'Pessoal'
+        : payload.tipo_beneficiario === 'colaborador'
           ? colaboradores.find((item) => item.id === payload.colaborador_beneficiario_id)?.nome || ''
           : fornecedores.find((item) => item.id === payload.fornecedor_id)?.nome || '';
       const isExistente = isReenvio || isEdicao;
@@ -162,6 +165,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
         descricao: payload.descricao,
         valor: payload.valor,
         status: 'pendente',
+        pessoal: isPessoal,
         criado_em: isExistente ? solicitacao.criado_em : new Date().toISOString(),
         solicitante_id: user?.collaborator?.id,
       };
@@ -192,7 +196,9 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
             ? { title: 'Solicitação reenviada', description: 'Sua solicitação voltou para a fila de aprovação.' }
             : isEdicao
               ? { title: 'Solicitação atualizada' }
-              : { title: 'Solicitação enviada', description: 'Sua solicitação de pagamento foi registrada.' },
+              : isPessoal
+                ? { title: 'Lembrete enviado', description: 'Só você e o aprovador veem este lembrete pessoal.' }
+                : { title: 'Solicitação enviada', description: 'Sua solicitação de pagamento foi registrada.' },
         );
       }
       if (isNova) limparRascunhoSolicitacao(colaboradorId);
@@ -257,6 +263,10 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
   });
   const aprovadorDispensado =
     form.tipoBeneficiario === 'colaborador' && Boolean(configuracaoModulo?.suprimento_caixa_sem_aprovador);
+  // Pessoal (lembrete que a empresa nao paga): sem fornecedor/categoria/NF/parcelamento/empresa e
+  // invisivel pro financeiro. So escolhida na criacao -- na edicao o tipo fica travado.
+  const isPessoal = form.tipoBeneficiario === 'pessoal';
+  const editandoPessoal = (isEdicao || isReenvio) && solicitacao?.pessoal === true;
 
   // Lista configuravel de departamentos autorizados a abrir suprimento de caixa (ver
   // Configuracoes.jsx) -- vazia = sem restricao. So barra a criacao de solicitacao nova; se o
@@ -287,9 +297,10 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
     if (visible && (isReenvio || isEdicao)) {
       const loadedForm = {
         titulo: solicitacao.titulo || '',
-        tipoBeneficiario: solicitacao.tipo_beneficiario || 'fornecedor',
+        tipoBeneficiario: solicitacao.pessoal ? 'pessoal' : solicitacao.tipo_beneficiario || 'fornecedor',
         fornecedorId: solicitacao.fornecedor_id || '',
         colaboradorBeneficiarioId: solicitacao.colaborador_beneficiario_id || '',
+        favorecido: solicitacao.pessoal ? solicitacao.fornecedor || '' : '',
         descricao: solicitacao.descricao || '',
         valor: solicitacao.valor != null ? String(solicitacao.valor) : '',
         categoriaId: solicitacao.categoria_id || '',
@@ -431,6 +442,10 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
   const setField = (field) => (value) => setForm((current) => ({ ...current, [field]: value }));
 
   function handleTipoBeneficiarioChange(value) {
+    if (value === 'pessoal') {
+      setParcelado(false);
+      setDraftParcelas([]);
+    }
     setForm((current) => ({
       ...current,
       tipoBeneficiario: value,
@@ -574,13 +589,36 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
 
     const beneficiarioFaltando = form.tipoBeneficiario === 'fornecedor' && !form.fornecedorId;
 
-    if (!isEdicao && !isReenvio && anexos.length === 0) {
+    if (!isEdicao && !isReenvio && !isPessoal && anexos.length === 0) {
       toast({ title: 'Anexo obrigatório', description: 'Selecione ao menos um arquivo antes de enviar a solicitação.' });
       return;
     }
 
     if (anexos.some((item) => !item.tipoAnexo)) {
       toast({ title: 'Classifique os anexos', description: 'Selecione o tipo de cada anexo antes de enviar.' });
+      return;
+    }
+
+    if (isPessoal) {
+      if (!form.aprovadorDestinoId) {
+        toast({ title: 'Campos obrigatórios faltando', description: 'Selecione o aprovador que vai receber o lembrete.' });
+        return;
+      }
+      submitMutation.mutate({
+        tempId: `optimistic-${crypto.randomUUID()}`,
+        anexosParaEnviar: anexos,
+        payload: {
+          titulo: form.titulo,
+          favorecido: form.favorecido.trim() || null,
+          descricao: form.descricao,
+          valor: Number(form.valor),
+          data_vencimento: form.dataVencimento || null,
+          forma_pagamento: form.formaPagamento || null,
+          observacao: form.observacao || null,
+          aprovador_destino_id: form.aprovadorDestinoId,
+          ...(isNova ? { pessoal: true } : {}),
+        },
+      });
       return;
     }
 
@@ -701,10 +739,10 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
             />
           </div>
 
-          {podeAbrirSuprimentoCaixa && (
+          {!editandoPessoal && (podeAbrirSuprimentoCaixa || isNova) && (
             <div className="space-y-2">
               <Label>Tipo de solicitação</Label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   variant={form.tipoBeneficiario === 'fornecedor' ? 'default' : 'outline'}
@@ -713,19 +751,52 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
                 >
                   Fornecedor
                 </Button>
-                <Button
-                  type="button"
-                  variant={form.tipoBeneficiario === 'colaborador' ? 'default' : 'outline'}
-                  className="flex-1"
-                  onClick={() => handleTipoBeneficiarioChange('colaborador')}
-                >
-                  Suprimento de caixa
-                </Button>
+                {podeAbrirSuprimentoCaixa && (
+                  <Button
+                    type="button"
+                    variant={form.tipoBeneficiario === 'colaborador' ? 'default' : 'outline'}
+                    className="flex-1"
+                    onClick={() => handleTipoBeneficiarioChange('colaborador')}
+                  >
+                    Suprimento de caixa
+                  </Button>
+                )}
+                {isNova && (
+                  <Button
+                    type="button"
+                    variant={isPessoal ? 'default' : 'outline'}
+                    className="flex-1"
+                    onClick={() => handleTipoBeneficiarioChange('pessoal')}
+                  >
+                    <Lock className="mr-2 h-4 w-4" />
+                    Pessoal
+                  </Button>
+                )}
               </div>
             </div>
           )}
 
-          {form.tipoBeneficiario === 'colaborador' ? (
+          {isPessoal && (
+            <div className="flex items-start gap-2 rounded-md border border-violet-500/40 bg-violet-500/10 p-3 text-sm text-violet-800 dark:text-violet-300">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Lembrete de um pagamento que <strong>não será pago pela empresa</strong>. Só você e o aprovador
+                veem — o financeiro não. Quando for pago, você ou o aprovador marcam como pago.
+              </span>
+            </div>
+          )}
+
+          {isPessoal ? (
+            <div className="space-y-2">
+              <Label htmlFor="favorecido">Favorecido (opcional)</Label>
+              <Input
+                id="favorecido"
+                value={form.favorecido}
+                onChange={(event) => setField('favorecido')(event.target.value)}
+                placeholder="Quem vai receber o pagamento"
+              />
+            </div>
+          ) : form.tipoBeneficiario === 'colaborador' ? (
             <div className="space-y-2">
               <Label htmlFor="colaboradorBeneficiario">Colaborador</Label>
               <Select
@@ -824,18 +895,18 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
 
           <div className="space-y-2">
             <Label htmlFor="descricao">
-              Descrição <span className="text-destructive">*</span>
+              Descrição {isPessoal ? '(opcional)' : <span className="text-destructive">*</span>}
             </Label>
             <Textarea
               id="descricao"
               value={form.descricao}
               onChange={(event) => setField('descricao')(event.target.value)}
               placeholder="O que está sendo pago"
-              required
+              required={!isPessoal}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className={isPessoal ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-2 gap-4'}>
             <div className="space-y-2">
               <Label htmlFor="valor">
                 Valor (R$) <span className="text-destructive">*</span>
@@ -851,6 +922,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
               />
             </div>
 
+            {!isPessoal && (
             <div className="space-y-2">
               <Label htmlFor="categoria">
                 Categoria <span className="text-destructive">*</span>
@@ -889,8 +961,11 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
                 </SelectContent>
               </Select>
             </div>
+            )}
           </div>
 
+          {!isPessoal && (
+          <>
           <div
             className={`rounded-md border p-3 ${
               form.possuiNotaFiscal
@@ -975,6 +1050,8 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
               </div>
             )}
           </div>
+          </>
+          )}
 
           <div className={parcelado ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-2 gap-4'}>
             {!parcelado && (
@@ -991,7 +1068,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
 
             <div className="space-y-2">
               <Label htmlFor="formaPagamento">
-                Forma de pagamento <span className="text-destructive">*</span>
+                Forma de pagamento {isPessoal ? '(opcional)' : <span className="text-destructive">*</span>}
               </Label>
               <Select value={form.formaPagamento} onValueChange={setField('formaPagamento')}>
                 <SelectTrigger id="formaPagamento">
@@ -1008,7 +1085,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
             </div>
           </div>
 
-          {empresas.length > 0 && (
+          {!isPessoal && empresas.length > 0 && (
             <div className="space-y-2">
               <Label htmlFor="empresa">
                 Empresa <span className="text-destructive">*</span>
@@ -1028,7 +1105,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
             </div>
           )}
 
-          {unidades.length > 0 && (
+          {!isPessoal && unidades.length > 0 && (
             <div className="space-y-2">
               <Label htmlFor="unidade">Unidade</Label>
               <Select value={form.unidadeId} onValueChange={setField('unidadeId')}>
@@ -1046,7 +1123,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
             </div>
           )}
 
-          {departamentos.length > 0 && (
+          {!isPessoal && departamentos.length > 0 && (
             <div className="space-y-2">
               <Label htmlFor="departamento">Setor</Label>
               <Select value={form.departamentoId} onValueChange={setField('departamentoId')}>
@@ -1076,7 +1153,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
 
           <div className="space-y-2">
             <Label htmlFor="anexos">
-              Anexos {!isEdicao && !isReenvio ? '(obrigatório, máx 5 MB cada)' : '(máx 5 MB cada)'}
+              Anexos {!isEdicao && !isReenvio && !isPessoal ? '(obrigatório, máx 5 MB cada)' : '(máx 5 MB cada)'}
             </Label>
             <label
               htmlFor="anexos"

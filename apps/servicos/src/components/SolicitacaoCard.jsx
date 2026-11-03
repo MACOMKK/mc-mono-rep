@@ -1,5 +1,6 @@
 import { AlertTriangle, ArrowRight, RefreshCw } from 'lucide-react';
 import { Badge } from '@macom/ui';
+import PessoalBadge from '@/components/PessoalBadge';
 import { formatDataVencimento, formatValor, truncarTitulo } from '@/lib/financeiroFormat';
 
 // Card usado como fallback de <Table> em telas estreitas (md:hidden) nas listagens de
@@ -65,6 +66,7 @@ export default function SolicitacaoCard({
       )}
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+        {row.pessoal && <PessoalBadge />}
         <Badge variant="outline" className="shrink-0">
           {formatDataVencimento(row.vencimento_efetivo)}
         </Badge>

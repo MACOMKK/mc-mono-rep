@@ -87,6 +87,27 @@ em profundidade). As ações `marcar_pendencia`/`criar_parcelas`/`registrar_paga
 continuam usando `isPagador` sem checagem extra — ficam protegidas automaticamente porque chamam
 `ensureRowAccess`/`ensureParcelaAccess` internamente.
 
+**Solicitação pessoal** (migration `20261103120000_add_servicos_solicitacao_pessoal.sql`, coluna
+`pessoal`): lembrete entre solicitante e aprovador de um pagamento que **não é da empresa** (ex.:
+conta particular do aprovador). Escolhida só na criação (botão "Pessoal" em "Tipo de solicitação"
+no `NovaSolicitacaoDrawer`; o flag fica fora de `CREATE_FIELDS` e nunca muda depois). Regras:
+- Visível **só** pro `solicitante_id` e o `aprovador_destino_id`, qualquer que seja o papel. Ficam de
+  fora `financeiro`, `contas_a_pagar`, a regra de setor/unidade e o admin. Aplicado em
+  `isParticipantePessoal` (chamado por `canAccessSolicitacao`/`canViewAnexoSigiloso`), no `WHERE` de
+  `list`, em `ensureNaoPessoalDeTerceiro` (ações de anexo que buscam pelo id do anexo) e na policy
+  RLS **restrictive** `servicos_solicitacoes_pessoal_restrita`. As tabelas filhas e o Realtime ficam
+  cobertos porque checam a solicitação via `exists`. `relatorio_financeiro` ignora pessoais, e
+  Pagamentos filtra no client.
+- Sem fornecedor, categoria, NF, parcelamento e empresa no form. O favorecido é texto livre e vai
+  pro snapshot `fornecedor`, com `categoria = 'Pessoal'`, ver `normalizarPayloadPessoal`. As
+  constraints `chk_servicos_solicitacoes_beneficiario`/`_categoria` têm a exceção `pessoal`. Anexo
+  é opcional.
+- Fluxo: nasce `pendente` → `pago` direto pela action `marcar_pago_pessoal` (só os dois
+  participantes), ou `cancelado` pelo solicitante. Não passa por aprovação: `set_status` recusa
+  pessoal, então ela nunca fica `aprovado` nem cai em pendência/parcelas. Em Aprovações o aprovador
+  vê "Marcar como pago" no lugar de Aprovar/Reprovar. O cron `servicos-lembrete-aprovacoes`
+  continua lembrando o aprovador, com texto de lembrete pessoal.
+
 **Aprovador é por solicitação, não por papel** (migration
 `20260806110000_scope_servicos_aprovador_destino.sql`): toda solicitação tem um
 `aprovador_destino_id` obrigatório, escolhido pelo solicitante na criação (select "Aprovador

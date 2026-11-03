@@ -141,9 +141,11 @@ export default function Pagamentos() {
       const filters = { order_by: statusPagamentoFiltro === 'pago' ? 'pago_em' : 'data_vencimento' };
       if (statusPagamentoFiltro !== 'todas') filters.status = statusPagamentoFiltro;
       if (categoriaFiltro !== CATEGORIA_FILTRO_TODAS) filters.categoria_id = categoriaFiltro;
-      const result = await financeiroApi.solicitacoes.list(filters);
+      // Pessoal nunca e paga pela empresa -- so aparece aqui se o aprovador dela tiver papel
+      // financeiro, entao filtra pra nao entrar na fila nem nos totais.
+      const result = (await financeiroApi.solicitacoes.list(filters) || []).filter((row) => !row.pessoal);
       if (statusPagamentoFiltro !== 'todas') return result;
-      return (result || []).filter((row) => row.status === 'aprovado' || row.status === 'pago');
+      return result.filter((row) => row.status === 'aprovado' || row.status === 'pago');
     },
   });
   const rows = solicitacoesQuery.data || [];

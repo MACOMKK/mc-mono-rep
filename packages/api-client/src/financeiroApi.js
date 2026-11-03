@@ -288,6 +288,11 @@ export const financeiroApi = {
       });
       return result.row || null;
     },
+    // Solicitacao pessoal: baixa feita pelo proprio solicitante ou pelo aprovador destino.
+    async marcarPagoPessoal(id) {
+      const result = await invokeServicos({ action: 'marcar_pago_pessoal', id });
+      return result.row || null;
+    },
     async marcarPendencia(id, motivo) {
       const result = await invokeServicos({ action: 'marcar_pendencia', id, motivo });
       return result.row || null;

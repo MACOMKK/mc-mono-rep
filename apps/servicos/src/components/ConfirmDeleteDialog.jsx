@@ -20,6 +20,7 @@ export default function ConfirmDeleteDialog({
   cancelLabel = 'Cancelar',
   isLoading = false,
   confirmDisabled = false,
+  confirmClassName = 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
   children,
 }) {
   return (
@@ -35,7 +36,7 @@ export default function ConfirmDeleteDialog({
           <AlertDialogAction
             onClick={onConfirm}
             disabled={isLoading || confirmDisabled}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className={confirmClassName}
           >
             {isLoading ? loadingLabel : confirmLabel}
           </AlertDialogAction>
