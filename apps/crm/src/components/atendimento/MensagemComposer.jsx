@@ -20,7 +20,6 @@ const TEMPLATES_RESPOSTA_RAPIDA = [
 
 export default function MensagemComposer({ onSend, disabled }) {
   const [value, setValue] = useState('');
-  const [sending, setSending] = useState(false);
   const textareaRef = useRef(null);
 
   const handleTemplateSelect = (texto) => {
@@ -28,17 +27,15 @@ export default function MensagemComposer({ onSend, disabled }) {
     textareaRef.current?.focus();
   };
 
-  const handleSend = async () => {
+  const handleSend = () => {
     const trimmed = value.trim();
-    if (!trimmed || sending || disabled) return;
+    if (!trimmed || disabled) return;
 
-    setSending(true);
-    try {
-      await onSend(trimmed);
-      setValue('');
-    } finally {
-      setSending(false);
-    }
+    // onSend (enviarMutation) ja atualiza a lista de mensagens otimisticamente em onMutate --
+    // nao esperar a confirmacao do servidor aqui, senao o campo trava entre mensagens em
+    // sequencia. Erro de envio e tratado no onError da mutation (toast + rollback do cache).
+    setValue('');
+    onSend(trimmed).catch(() => {});
   };
 
   const handleKeyDown = (event) => {
@@ -92,7 +89,7 @@ export default function MensagemComposer({ onSend, disabled }) {
           placeholder="Digite uma mensagem..."
           rows={1}
           className="min-h-0 flex-1 resize-none border-none bg-transparent py-1.5 shadow-none focus-visible:ring-0"
-          disabled={disabled || sending}
+          disabled={disabled}
         />
       </div>
       {/* Sugestao de resposta por IA: visual, sem funcionalidade ainda. */}
@@ -103,7 +100,7 @@ export default function MensagemComposer({ onSend, disabled }) {
         className="h-9 w-9 shrink-0 rounded-full bg-foreground text-background hover:bg-foreground/90"
         size="icon"
         onClick={handleSend}
-        disabled={disabled || sending || !value.trim()}
+        disabled={disabled || !value.trim()}
         aria-label="Enviar"
       >
         {value.trim() ? <SendHorizontal className="h-4 w-4" /> : <Mic className="h-4 w-4" />}

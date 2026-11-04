@@ -1382,6 +1382,12 @@ Deno.serve(async (request) => {
       const whatsappPhoneNumberId =
         typeof metaCredenciais?.phone_number_id === 'string' ? metaCredenciais.phone_number_id : null;
 
+      // Log de tempo decorrido por envio -- pensado pra diagnosticar hangs da Evolution API local
+      // (ver GUIA_TESTE_WHATSAPP_EVOLUTION_LOCAL.md): se o tempo aqui for alto mas o fetch em
+      // _shared/whatsapp.ts nao deu timeout, o atraso e' anterior ao envio (fila do frontend); se
+      // bater perto de WHATSAPP_SEND_TIMEOUT_MS, o provedor (ngrok/Evolution local) e' o gargalo.
+      const provedor = evolutionCredenciais ? 'evolution' : 'meta';
+      const inicioEnvio = Date.now();
       try {
         if (evolutionCredenciais) {
           await sendWhatsappMessageEvolution(
@@ -1396,8 +1402,13 @@ Deno.serve(async (request) => {
         } else {
           return json({ error: 'Nenhum provedor de WhatsApp configurado (Meta ou Evolution API).' }, 400);
         }
+        console.log(`crm-api: envio WhatsApp ok (${provedor}, conversa ${conversaId}, ${Date.now() - inicioEnvio}ms)`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        console.error(
+          `crm-api: falha no envio WhatsApp (${provedor}, conversa ${conversaId}, ${Date.now() - inicioEnvio}ms):`,
+          message,
+        );
         return json({ error: `Falha ao enviar mensagem pelo WhatsApp: ${message}` }, 502);
       }
 

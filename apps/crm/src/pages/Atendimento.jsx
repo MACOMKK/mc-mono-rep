@@ -15,6 +15,34 @@ import MensagemComposer from '@/components/atendimento/MensagemComposer';
 
 const SCROLL_BOTTOM_THRESHOLD = 120;
 
+// A Evolution API local (ver GUIA_TESTE_WHATSAPP_EVOLUTION_LOCAL.md) trava sob rajada de envios
+// rapidos (ex.: 4-5 mensagens em sequencia) -- retry automatico evita que o atendente precise
+// clicar manualmente em "tentar novamente" pra cada falha transitoria (timeout/rede), e o
+// intervalo minimo entre envios da fila evita bombardear a sessao Baileys/Evolution tao rapido
+// quanto o atendente digita.
+const RETRY_MAX_TENTATIVAS = 2;
+const RETRY_DELAY_MS = 1500;
+const INTERVALO_MINIMO_FILA_MS = 1200;
+
+function aguardar(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function enviarComRetry(payload) {
+  let ultimoErro;
+  for (let tentativa = 0; tentativa <= RETRY_MAX_TENTATIVAS; tentativa += 1) {
+    try {
+      return await atendimentoApi.enviarMensagemManual(payload);
+    } catch (error) {
+      ultimoErro = error;
+      if (tentativa < RETRY_MAX_TENTATIVAS) {
+        await aguardar(RETRY_DELAY_MS * (tentativa + 1));
+      }
+    }
+  }
+  throw ultimoErro;
+}
+
 const FILTROS_CONVERSA = [
   { value: 'todas', label: 'Todas' },
   { value: 'nao_lidas', label: 'Não lidas' },
@@ -74,6 +102,7 @@ export default function Atendimento() {
   const stickToBottomRef = useRef(true);
   const previousNaoLidaRef = useRef(new Map());
   const hasSeenConversasRef = useRef(false);
+  const envioEmFilaRef = useRef(Promise.resolve());
 
   const { data: conversas = [], isLoading: isLoadingConversas } = useQuery({
     queryKey: ['conversas-atendimento'],
@@ -158,6 +187,13 @@ export default function Atendimento() {
     }
   }, [mensagens.length]);
 
+  const handleRetryMensagem = (mensagemComErro) => {
+    queryClient.setQueryData(['mensagens-atendimento', conversaId], (old = []) =>
+      old.filter((item) => item.id !== mensagemComErro.id),
+    );
+    enviarMutation.mutate(mensagemComErro.conteudo);
+  };
+
   const handleJumpToBottom = () => {
     stickToBottomRef.current = true;
     bottomRef.current?.scrollIntoView({ block: 'end' });
@@ -165,12 +201,32 @@ export default function Atendimento() {
   };
 
   const enviarMutation = useMutation({
-    mutationFn: (texto) => atendimentoApi.enviarMensagemManual({ conversaId, texto }),
-    onMutate: async (texto) => {
-      await queryClient.cancelQueries({ queryKey: ['mensagens-atendimento', conversaId] });
-      const previousMensagens = queryClient.getQueryData(['mensagens-atendimento', conversaId]);
-      const tempId = `temp-${Date.now()}`;
+    // onMutate roda sincrono na ordem de chamada de mutate(), mas o envio real (mutationFn) e
+    // assincrono -- sem encadear aqui, 2+ envios em sequencia disparam requests em paralelo que
+    // podem chegar ao servidor fora de ordem, embaralhando as mensagens no WhatsApp do cliente.
+    // Encadear via envioEmFilaRef garante que o envio N+1 so sai depois do N terminar, preservando
+    // a ordem, enquanto a UI continua liberando o campo na hora (otimista, em onMutate).
+    // enviarComRetry tenta de novo (com backoff) falhas transitorias antes de desistir, e o
+    // .then(() => aguardar(...)) so' libera o proximo item da fila depois do intervalo minimo --
+    // as duas coisas juntas absorvem a instabilidade da Evolution API local sob rajada.
+    mutationFn: (texto) => {
+      const envio = envioEmFilaRef.current.then(
+        () => enviarComRetry({ conversaId, texto }),
+        () => enviarComRetry({ conversaId, texto }),
+      );
+      envioEmFilaRef.current = envio.catch(() => {}).then(() => aguardar(INTERVALO_MINIMO_FILA_MS));
+      return envio;
+    },
+    onMutate: (texto) => {
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+      // Insere a bolha otimista sincronamente, antes de qualquer coisa assincrona: um onMutate
+      // async que faz "await cancelQueries(...)" primeiro arrisca nunca chegar ao setQueryData se
+      // esse await falhar/for interrompido (ex.: varios envios em sequencia cancelando a mesma
+      // query quase ao mesmo tempo) -- nesse caso o React Query vai direto pro onError sem nunca
+      // chamar mutationFn, e a mensagem desaparece sem jamais ter aparecido. cancelQueries so
+      // existe para evitar que um refetch em voo pise na bolha otimista; disparar sem bloquear
+      // o onMutate (e sem poder derruba-lo) preserva essa proteção sem esse risco.
       stickToBottomRef.current = true;
       queryClient.setQueryData(['mensagens-atendimento', conversaId], (old = []) => [
         ...old,
@@ -184,17 +240,31 @@ export default function Atendimento() {
           pending: true,
         },
       ]);
+      queryClient.cancelQueries({ queryKey: ['mensagens-atendimento', conversaId] }).catch(() => {});
 
-      return { previousMensagens };
+      return { tempId };
     },
     onError: (error, _texto, context) => {
-      if (context?.previousMensagens) {
-        queryClient.setQueryData(['mensagens-atendimento', conversaId], context.previousMensagens);
+      // Nao faz rollback completo (remover a bolha) -- ela fica visivel marcada como erro, com
+      // botao de reenvio, senao a mensagem que falhou desaparece sem deixar rastro pro atendente.
+      if (context?.tempId) {
+        queryClient.setQueryData(['mensagens-atendimento', conversaId], (old = []) =>
+          old.map((item) => (item.id === context.tempId ? { ...item, pending: false, erro: true } : item)),
+        );
       }
       toast({ title: 'Erro ao enviar mensagem', description: error?.message, variant: 'destructive' });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['mensagens-atendimento', conversaId] });
+    onSuccess: (mensagemEnviada, _texto, context) => {
+      // Nao usar invalidateQueries aqui: o refetch e assincrono e pode chegar do servidor antes
+      // de envios seguintes (ainda em voo) terem sido persistidos, substituindo o array inteiro
+      // do cache e apagando as bolhas otimistas (pending/erro) deles por baixo dos pes. Como o
+      // mutationFn ja devolve a mensagem confirmada, so troca a entrada tempId por ela -- sem
+      // tocar no resto do array, preservando qualquer envio ainda pendente.
+      if (context?.tempId) {
+        queryClient.setQueryData(['mensagens-atendimento', conversaId], (old = []) =>
+          old.map((item) => (item.id === context.tempId ? { ...mensagemEnviada, pending: false } : item)),
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ['conversas-atendimento'] });
     },
   });
@@ -328,7 +398,9 @@ export default function Atendimento() {
                   ) : mensagens.length === 0 ? (
                     <p className="py-6 text-center text-sm text-muted-foreground">Nenhuma mensagem nesta conversa ainda.</p>
                   ) : (
-                    mensagens.map((mensagem) => <MensagemBubble key={mensagem.id} mensagem={mensagem} />)
+                    mensagens.map((mensagem) => (
+                      <MensagemBubble key={mensagem.id} mensagem={mensagem} onRetry={handleRetryMensagem} />
+                    ))
                   )}
                   <div ref={bottomRef} />
                 </div>

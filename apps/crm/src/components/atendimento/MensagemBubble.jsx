@@ -12,11 +12,12 @@ function formatHora(value) {
   return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
 
-export default function MensagemBubble({ mensagem }) {
+export default function MensagemBubble({ mensagem, onRetry }) {
   const isSaida = mensagem.direcao === 'saida';
   const isIa = mensagem.autor === 'ia';
   const label = AUTOR_LABEL[mensagem.autor];
   const isPending = Boolean(mensagem.pending);
+  const isErro = Boolean(mensagem.erro);
 
   return (
     <div className={cn('flex w-full items-end gap-2', isSaida ? 'justify-end' : 'justify-start')}>
@@ -31,6 +32,7 @@ export default function MensagemBubble({ mensagem }) {
             'rounded-2xl px-3.5 py-2 text-sm shadow-sm',
             isSaida ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm border border-border bg-white text-foreground',
             isPending && 'opacity-60',
+            isErro && 'border border-destructive bg-destructive/10 text-destructive-foreground',
           )}
         >
           {label ? (
@@ -40,9 +42,19 @@ export default function MensagemBubble({ mensagem }) {
           ) : null}
           <p className="whitespace-pre-wrap break-words">{mensagem.conteudo}</p>
         </div>
-        <span className="mt-0.5 text-[10px] text-muted-foreground">
-          {isPending ? 'Enviando...' : formatHora(mensagem.created_date)}
-        </span>
+        {isErro ? (
+          <button
+            type="button"
+            onClick={() => onRetry?.(mensagem)}
+            className="mt-0.5 text-[10px] font-semibold text-destructive underline-offset-2 hover:underline"
+          >
+            Falha ao enviar · tentar novamente
+          </button>
+        ) : (
+          <span className="mt-0.5 text-[10px] text-muted-foreground">
+            {isPending ? 'Enviando...' : formatHora(mensagem.created_date)}
+          </span>
+        )}
       </div>
     </div>
   );

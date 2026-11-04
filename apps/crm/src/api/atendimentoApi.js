@@ -104,4 +104,5 @@ export const atendimentoApi = {
   enviarMensagemManual,
   marcarConversaLida,
   vincularLead,
+  mapMensagemRow,
 };

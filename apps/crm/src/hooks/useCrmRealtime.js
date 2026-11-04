@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { isSupabaseConfigured, supabase } from '@macom/api-client/supabaseClient';
+import { atendimentoApi } from '@/api/atendimentoApi';
 
 const REALTIME_TABLES = [
   { schema: 'gestao_crm', table: 'leads' },
@@ -87,11 +88,10 @@ const TABLE_CACHE_CONFIG = {
   conversas_atendimento: {
     queryKeys: [['conversas-atendimento'], ['dashboard-metrics']],
   },
-  mensagens_atendimento: {
-    // sem `exact: true` no invalidateQueries: casa qualquer chave iniciada por
-    // 'mensagens-atendimento', incluindo ['mensagens-atendimento', conversaId].
-    queryKeys: [['mensagens-atendimento'], ['conversas-atendimento']],
-  },
+  // Sem queryKeys/mapRow aqui de proposito: mensagens_atendimento tem tratamento totalmente
+  // proprio dentro de handleRealtimeChange (merge por linha via setQueryData, nao invalidate),
+  // que ja retorna antes de qualquer codigo generico deste arquivo ler esta entrada.
+  mensagens_atendimento: {},
   pipelines: {
     queryKeys: [['crm-pipelines']],
   },
@@ -331,13 +331,46 @@ function handleRealtimeChange(queryClient, payload) {
     invalidateQueries(queryClient, config.countKeys);
   }
 
-  // mensagens_atendimento: invalidacao exata por conversa_id (so a conversa afetada revalida,
-  // nao qualquer conversa aberta no momento) -- ['conversas-atendimento'] (lista de conversas,
-  // dataset pequeno) continua invalidando em geral.
+  // mensagens_atendimento: merge direto no cache da conversa afetada em vez de invalidar/
+  // refetch. Um invalidateQueries aqui dispara um refetch assincrono que substitui o array
+  // inteiro -- se a conversa estiver aberta e tiver um envio otimista ainda pendente (bolha
+  // "Enviando...") quando esse refetch chegar, a bolha some do cache sem nunca ter sido
+  // confirmada nem marcada como erro (o INSERT de QUALQUER mensagem da conversa, nao so a
+  // pendente, disparava isso). ['conversas-atendimento'] (lista de conversas, dataset pequeno,
+  // sem bolha otimista pra perder) continua invalidando em geral.
   if (payload.table === 'mensagens_atendimento') {
     const conversaId = payload.new?.conversa_id ?? payload.old?.conversa_id;
     if (conversaId) {
-      queryClient.invalidateQueries({ queryKey: ['mensagens-atendimento', conversaId], exact: true });
+      queryClient.setQueryData(['mensagens-atendimento', conversaId], (old) => {
+        if (!old) return old;
+        if (payload.eventType === 'DELETE') {
+          return old.filter((item) => item.id !== oldId);
+        }
+        const row = atendimentoApi.mapMensagemRow(payload.new || {});
+        if (!row.id) return old;
+
+        const existingIndex = old.findIndex((item) => item.id === row.id);
+        if (existingIndex !== -1) {
+          const next = [...old];
+          next[existingIndex] = { ...old[existingIndex], ...row };
+          return next;
+        }
+
+        // Pode ser o INSERT de uma mensagem que esta mesma aba acabou de enviar, ainda
+        // representada pela bolha otimista (id temp-*): casa por conteudo+direcao pendente em
+        // vez de duplicar a bolha. Quem chegar primeiro -- este evento de realtime ou o
+        // onSuccess da mutation -- resolve; o outro vira no-op (o id ja nao e mais temp-*).
+        const pendingIndex = old.findIndex(
+          (item) => item.pending && item.direcao === row.direcao && item.conteudo === row.conteudo,
+        );
+        if (pendingIndex !== -1) {
+          const next = [...old];
+          next[pendingIndex] = { ...row, pending: false };
+          return next;
+        }
+
+        return [...old, row];
+      });
     } else {
       queryClient.invalidateQueries({ queryKey: ['mensagens-atendimento'] });
     }
