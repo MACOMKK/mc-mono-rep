@@ -198,6 +198,18 @@ function VincularLeadPanel({ conversa }) {
     queryFn: () => crmDataClient.entities.Responsavel.list(),
   });
 
+  // Mesma query/cache key do LeadForm -- reaproveita o fetch já feito lá. Lead criado a partir de
+  // uma conversa de Atendimento sempre veio por WhatsApp, nunca Site (default do LeadForm quando
+  // aberto sem origem pré-definida).
+  const { data: origensLead = [] } = useQuery({
+    queryKey: ['crm-origens-lead'],
+    queryFn: () => crmDataClient.entities.OrigemLead.list('nome'),
+  });
+  const origemWhatsappId = useMemo(
+    () => origensLead.find((item) => item.nome.toLowerCase() === 'whatsapp')?.id || '',
+    [origensLead],
+  );
+
   const leadsFiltrados = useMemo(() => {
     const termo = buscaDebounced.trim().toLowerCase();
     const digitos = buscaDebounced.replace(/\D/g, '');
@@ -278,7 +290,7 @@ function VincularLeadPanel({ conversa }) {
             telefone: toLeadPhoneFormat(conversa.telefone_normalizado),
             email: '',
             cpf_cnpj: '',
-            origem_id: '',
+            origem_id: origemWhatsappId,
             modelo_interesse: '',
             veiculo_interesse: {
               marca: '',
