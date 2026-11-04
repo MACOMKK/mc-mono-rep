@@ -132,6 +132,8 @@ export default function Clientes() {
   const [cancelamentoForm, setCancelamentoForm] = useState({ motivo_cancelamento: '' });
   const [novoContatoTelefone, setNovoContatoTelefone] = useState('');
   const [novoContatoTipo, setNovoContatoTipo] = useState('');
+  const [novaTag, setNovaTag] = useState('');
+  const [novaAvaliacao, setNovaAvaliacao] = useState({ nota: '5', comentario: '' });
   const [emailError, setEmailError] = useState('');
   const [cpfCnpjError, setCpfCnpjError] = useState('');
   const { empresa } = useEmpresa();
@@ -249,6 +251,18 @@ export default function Clientes() {
     }),
   });
   const selectedVendas = selectedVendasPage.rows || [];
+
+  const { data: resumoVendas } = useQuery({
+    queryKey: ['cliente-resumo-vendas', selectedId],
+    enabled: Boolean(selectedId),
+    queryFn: () => crmDataClient.entities.Cliente.getResumoVendas(selectedId),
+  });
+
+  const { data: avaliacoesCliente = [] } = useQuery({
+    queryKey: ['cliente-avaliacoes', selectedId],
+    enabled: Boolean(selectedId),
+    queryFn: () => crmDataClient.entities.AvaliacaoCliente.listByCliente(selectedId),
+  });
 
   const { data: veiculosEstoque = [] } = useQuery({
     queryKey: ['clientes-veiculos-estoque'],
@@ -517,6 +531,65 @@ export default function Clientes() {
       });
     },
   });
+
+  const tagsMutation = useMutation({
+    mutationFn: ({ id, tags }) => crmDataClient.entities.Cliente.updateTags(id, tags),
+    onSuccess: (updated) => {
+      setSelected((current) => current ? { ...current, tags: updated.tags } : current);
+      queryClient.setQueryData(clientesQueryKey, (currentPage = clientesPage) => ({
+        ...currentPage,
+        rows: (currentPage.rows || []).map((cliente) => cliente.id === updated.id ? { ...cliente, tags: updated.tags } : cliente),
+      }));
+      setNovaTag('');
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel atualizar as tags',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  function adicionarTag(event) {
+    event.preventDefault();
+    const tag = novaTag.trim();
+    if (!tag || !selected) return;
+    const tagsAtuais = selected.tags || [];
+    if (tagsAtuais.includes(tag)) {
+      setNovaTag('');
+      return;
+    }
+    tagsMutation.mutate({ id: selected.id, tags: [...tagsAtuais, tag] });
+  }
+
+  function removerTag(tag) {
+    if (!selected) return;
+    tagsMutation.mutate({ id: selected.id, tags: (selected.tags || []).filter((item) => item !== tag) });
+  }
+
+  const avaliacaoMutation = useMutation({
+    mutationFn: ({ clienteId, nota, comentario }) => crmDataClient.entities.AvaliacaoCliente.create({ cliente_id: clienteId, nota, comentario }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cliente-avaliacoes', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['cliente-resumo-vendas', selectedId] });
+      setNovaAvaliacao({ nota: '5', comentario: '' });
+      toast({ title: 'Avaliação registrada.' });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Nao foi possivel registrar a avaliação',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  function registrarAvaliacao(event) {
+    event.preventDefault();
+    if (!selectedId) return;
+    avaliacaoMutation.mutate({ clienteId: selectedId, nota: novaAvaliacao.nota, comentario: novaAvaliacao.comentario });
+  }
 
   const cancelVendaMutation = useMutation({
     mutationFn: ({ vendaId, data }) => crmDataClient.entities.Venda.cancelar(vendaId, data),
@@ -981,6 +1054,97 @@ export default function Clientes() {
                       <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Timeline</p>
                       <p className="mt-1 text-2xl font-black">{selectedTimeline.length}</p>
                     </div>
+                  </div>
+
+                  <div className="bg-white p-4 shadow-sm">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Tags</p>
+                    <div className="mb-2 flex flex-wrap gap-1.5">
+                      {resumoVendas?.cliente_recorrente && (
+                        <Badge variant="outline" className="rounded-full border-violet-200 bg-violet-50 text-[10px] text-violet-700">
+                          Cliente recorrente
+                        </Badge>
+                      )}
+                      {(selected?.tags || []).map((tag) => (
+                        <Badge key={tag} variant="outline" className="flex items-center gap-1 rounded-full border-violet-200 bg-violet-50 text-[10px] text-violet-700">
+                          {tag}
+                          <button type="button" onClick={() => removerTag(tag)} aria-label={`Remover tag ${tag}`}>
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                    <form onSubmit={adicionarTag} className="flex gap-2">
+                      <Input
+                        value={novaTag}
+                        onChange={(event) => setNovaTag(event.target.value)}
+                        placeholder="Adicionar tag..."
+                        className="h-8 text-sm"
+                      />
+                      <Button type="submit" variant="outline" size="sm" disabled={tagsMutation.isPending || !novaTag.trim()}>
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                    </form>
+                  </div>
+
+                  <div className="bg-white p-4 shadow-sm">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Resumo de vendas</p>
+                    {resumoVendas?.veiculo_atual ? (
+                      <p className="text-xs text-muted-foreground">
+                        Veículo atual: <span className="text-foreground">{[resumoVendas.veiculo_atual.modelo, resumoVendas.veiculo_atual.placa].filter(Boolean).join(' · ')}</span>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Sem veículo vendido registrado.</p>
+                    )}
+                    {resumoVendas?.ticket_medio != null && (
+                      <p className="text-xs text-muted-foreground">
+                        Ticket médio: <span className="text-foreground">{Number(resumoVendas.ticket_medio).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Satisfação (CSAT): <span className="text-foreground">
+                        {resumoVendas?.avaliacoes?.total > 0
+                          ? `${resumoVendas.avaliacoes.media}/5 (${resumoVendas.avaliacoes.total} avaliaç${resumoVendas.avaliacoes.total === 1 ? 'ão' : 'ões'})`
+                          : 'Sem avaliação registrada'}
+                      </span>
+                    </p>
+
+                    <form onSubmit={registrarAvaliacao} className="mt-3 flex flex-col gap-2 border-t pt-3">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs">Registrar avaliação:</Label>
+                        <Select value={novaAvaliacao.nota} onValueChange={(value) => setNovaAvaliacao((current) => ({ ...current, nota: value }))}>
+                          <SelectTrigger className="h-8 w-20 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {[5, 4, 3, 2, 1].map((nota) => (
+                              <SelectItem key={nota} value={String(nota)}>{nota}/5</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Textarea
+                        value={novaAvaliacao.comentario}
+                        onChange={(event) => setNovaAvaliacao((current) => ({ ...current, comentario: event.target.value }))}
+                        placeholder="Comentário (opcional)"
+                        rows={2}
+                        className="text-sm"
+                      />
+                      <Button type="submit" variant="outline" size="sm" className="self-start" disabled={avaliacaoMutation.isPending}>
+                        Salvar avaliação
+                      </Button>
+                    </form>
+
+                    {avaliacoesCliente.length > 0 && (
+                      <div className="mt-3 space-y-2 border-t pt-3">
+                        {avaliacoesCliente.map((avaliacao) => (
+                          <div key={avaliacao.id} className="text-xs text-muted-foreground">
+                            <span className="font-semibold text-foreground">{avaliacao.nota}/5</span>
+                            {avaliacao.comentario ? ` — ${avaliacao.comentario}` : ''}
+                            <span className="ml-1">({formatDate(avaliacao.created_date)})</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
 

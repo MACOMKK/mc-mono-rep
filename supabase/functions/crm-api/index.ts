@@ -38,7 +38,14 @@ const ENTITY_CONFIG = {
       'municipio',
       'uf',
       'cep',
+      'tags',
     ],
+  },
+  avaliacoes_cliente: {
+    table: 'avaliacoes_cliente',
+    orderBy: 'criado_em',
+    orderDirection: 'desc',
+    allowedFields: ['cliente_id', 'nota', 'comentario'],
   },
   leads: {
     table: 'leads',
@@ -701,6 +708,7 @@ const CLIENTE_EXTENSAO_FIELDS = [
   'status_relacionamento',
   'observacoes',
   'criado_por',
+  'tags',
 ] as const;
 
 function splitClientePayload(payload: Record<string, unknown>) {
@@ -1679,6 +1687,70 @@ Deno.serve(async (request) => {
       await ensureEntityAccess('clientes', String(contatoRows[0].cliente_id), access, collaborator);
       await sql.unsafe('delete from public.clientes_telefones_adicionais where id = $1;', [contatoId]);
       return json({ success: true });
+    }
+
+    // Card 3 do Trello (Atendimento): substitui os dados mockados de venda do painel lateral
+    // (MOCK_VEICULO_ATUAL/MOCK_ULTIMA_COMPRA/MOCK_TICKET_MEDIO/MOCK_SATISFACAO) por leitura real.
+    // Veiculo atual/ultima compra/ticket medio vem da venda mais recente do cliente; CSAT vem de
+    // gestao_crm.avaliacoes_cliente (registro manual, sem pesquisa automatizada).
+    if (action === 'get_cliente_resumo_vendas') {
+      const clienteId = String(body.cliente_id || '');
+      if (!clienteId) return json({ error: 'cliente_id obrigatorio.' }, 400);
+      await ensureEntityAccess('clientes', clienteId, access, collaborator);
+
+      const vendasRows = await sql.unsafe(`
+        select
+          v.valor_final,
+          v.data_venda,
+          v.criado_em,
+          mk.nome as marca_nome,
+          mv.nome as modelo_nome,
+          vs.nome as versao_nome,
+          vc.placa,
+          vc.km
+        from ${CRM_SCHEMA}.vendas v
+        join ${CRM_SCHEMA}.veiculos_estoque ve on ve.id = v.veiculo_estoque_id
+        join public.veiculos vc on vc.id = ve.veiculo_id
+        left join public.modelos_veiculo mv on mv.id = vc.modelo_id
+        left join public.marcas_veiculo mk on mk.id = mv.marca_id
+        left join public.versoes_veiculo vs on vs.id = vc.versao_id
+        where v.cliente_id = $1 and v.status = 'concluida'
+        order by v.data_venda desc, v.criado_em desc;
+      `, [clienteId]);
+
+      const avaliacaoRows = await sql.unsafe(`
+        select
+          round(avg(nota)::numeric, 1) as media,
+          count(*)::integer as total
+        from ${CRM_SCHEMA}.avaliacoes_cliente
+        where cliente_id = $1;
+      `, [clienteId]);
+
+      const ultimaVenda = vendasRows[0] || null;
+      const totalVendas = vendasRows.length;
+      const ticketMedio = totalVendas
+        ? vendasRows.reduce((sum: number, row: Record<string, unknown>) => sum + Number(row.valor_final || 0), 0) / totalVendas
+        : null;
+
+      return json({
+        veiculo_atual: ultimaVenda
+          ? {
+              modelo: [ultimaVenda.marca_nome, ultimaVenda.modelo_nome, ultimaVenda.versao_nome].filter(Boolean).join(' '),
+              placa: ultimaVenda.placa || null,
+              km: ultimaVenda.km ?? null,
+            }
+          : null,
+        ultima_compra_em: ultimaVenda?.data_venda || null,
+        ticket_medio: ticketMedio,
+        total_vendas: totalVendas,
+        cliente_recorrente: totalVendas > 1,
+        avaliacoes: {
+          media: avaliacaoRows[0]?.media !== null && avaliacaoRows[0]?.media !== undefined
+            ? Number(avaliacaoRows[0].media)
+            : null,
+          total: Number(avaliacaoRows[0]?.total || 0),
+        },
+      });
     }
 
     if (action === 'get_distribution_config') {

@@ -214,7 +214,11 @@ export const crmApi = {
       await invokeCrm({ action: 'cliente_contato_remover', id });
       return { id };
     },
+    async getResumoVendas(clienteId) {
+      return invokeCrm({ action: 'get_cliente_resumo_vendas', cliente_id: clienteId });
+    },
   },
+  avaliacoes_cliente: buildEntity('avaliacoes_cliente'),
   leads: {
     ...buildEntity('leads'),
     async saveFull(payload) {

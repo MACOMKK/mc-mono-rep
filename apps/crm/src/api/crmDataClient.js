@@ -156,7 +156,18 @@ function mapClienteRow(row = {}) {
     municipio: row.municipio || '',
     uf: row.uf || '',
     cep: row.cep || '',
+    tags: row.tags || [],
     telefones_adicionais: row.telefones_adicionais || [],
+    ...mapBaseDates(row),
+  };
+}
+
+function mapAvaliacaoClienteRow(row = {}) {
+  return {
+    id: row.id,
+    cliente_id: row.cliente_id || '',
+    nota: row.nota ?? null,
+    comentario: row.comentario || '',
     ...mapBaseDates(row),
   };
 }
@@ -851,6 +862,36 @@ const ClienteRepository = {
 
   async removerContato(contatoId) {
     return crmApi.clientes.removerContato(contatoId);
+  },
+
+  async getResumoVendas(id) {
+    return crmApi.clientes.getResumoVendas(id);
+  },
+
+  async updateTags(id, tags) {
+    const row = await crmApi.clientes.update(id, { tags });
+    return mapClienteRow(row);
+  },
+};
+
+const AvaliacaoClienteRepository = {
+  async listByCliente(clienteId) {
+    const rows = await crmApi.avaliacoes_cliente.list({
+      filters: { cliente_id: clienteId },
+      orderBy: 'criado_em',
+      ascending: false,
+      limit: 50,
+    });
+    return rows.map(mapAvaliacaoClienteRow);
+  },
+
+  async create(data) {
+    const row = await crmApi.avaliacoes_cliente.create({
+      cliente_id: data.cliente_id,
+      nota: Number(data.nota),
+      comentario: data.comentario?.trim() || null,
+    });
+    return mapAvaliacaoClienteRow(row);
   },
 };
 
@@ -1584,5 +1625,6 @@ export const crmDataClient = {
     VeiculoEstoque: VeiculoEstoqueRepository,
     Proposta: PropostaRepository,
     Venda: VendaRepository,
+    AvaliacaoCliente: AvaliacaoClienteRepository,
   },
 };

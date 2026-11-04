@@ -1,11 +1,32 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Mic, Paperclip, SendHorizontal, Smile, Sparkles, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+// Cadastro fixo por enquanto -- sem tela de configuracao ainda. Migrar para tabela propria se
+// o uso pegar (ver plano de melhorias do chat de Atendimento).
+const TEMPLATES_RESPOSTA_RAPIDA = [
+  { titulo: 'Saudação', texto: 'Olá! Em que posso ajudar?' },
+  { titulo: 'Horário de atendimento', texto: 'Nosso horário de atendimento é de segunda a sábado, das 8h às 18h.' },
+  { titulo: 'Aguarde um momento', texto: 'Só um momento, vou verificar essa informação para você.' },
+  { titulo: 'Encerramento', texto: 'Fico à disposição! Qualquer outra dúvida, é só chamar por aqui.' },
+];
 
 export default function MensagemComposer({ onSend, disabled }) {
   const [value, setValue] = useState('');
   const [sending, setSending] = useState(false);
+  const textareaRef = useRef(null);
+
+  const handleTemplateSelect = (texto) => {
+    setValue(texto);
+    textareaRef.current?.focus();
+  };
 
   const handleSend = async () => {
     const trimmed = value.trim();
@@ -37,10 +58,34 @@ export default function MensagemComposer({ onSend, disabled }) {
         <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground" disabled aria-label="Emoji (em breve)">
           <Smile className="h-4 w-4" />
         </Button>
-        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground" disabled aria-label="Acoes rapidas (em breve)">
-          <Zap className="h-4 w-4" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground"
+              disabled={disabled}
+              aria-label="Respostas rápidas"
+            >
+              <Zap className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-72">
+            {TEMPLATES_RESPOSTA_RAPIDA.map((template) => (
+              <DropdownMenuItem
+                key={template.titulo}
+                className="flex flex-col items-start gap-0.5 whitespace-normal"
+                onSelect={() => handleTemplateSelect(template.texto)}
+              >
+                <span className="text-xs font-semibold">{template.titulo}</span>
+                <span className="text-xs text-muted-foreground">{template.texto}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Textarea
+          ref={textareaRef}
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={handleKeyDown}

@@ -5,6 +5,7 @@ import { isSupabaseConfigured, supabase } from '@macom/api-client/supabaseClient
 const REALTIME_TABLES = [
   { schema: 'gestao_crm', table: 'leads' },
   { schema: 'gestao_crm', table: 'clientes_crm' },
+  { schema: 'gestao_crm', table: 'avaliacoes_cliente' },
   { schema: 'gestao_crm', table: 'atendimentos' },
   { schema: 'gestao_crm', table: 'historico_atendimentos' },
   { schema: 'gestao_crm', table: 'veiculos_interesse' },
@@ -35,6 +36,11 @@ const TABLE_CACHE_CONFIG = {
   clientes_crm: {
     queryKeys: [['clientes'], ['dashboard-metrics']],
     mapRow: mapClienteRow,
+  },
+  // Sem mapRow proposital: avaliacao nao e exibida em listagem paginada, so em agregados
+  // (media/total via get_cliente_resumo_vendas) -- mais simples invalidar do que patchear.
+  avaliacoes_cliente: {
+    queryKeys: [['cliente-resumo-vendas'], ['cliente-avaliacoes']],
   },
   atendimentos: {
     queryKeys: [['eventos'], ['eventos-resumo'], ['eventos-contadores'], ['cliente-atendimentos'], ['atividade-planejadas'], ['dashboard-metrics']],
@@ -126,6 +132,7 @@ function mapClienteRow(row = {}) {
     empresa: row.empresa || 'Macom Ananindeua',
     status_relacionamento: row.status_relacionamento || 'lead',
     observacoes: row.observacoes || '',
+    tags: row.tags || [],
     ...baseDates(row),
   };
 }

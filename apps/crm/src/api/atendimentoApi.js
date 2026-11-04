@@ -75,6 +75,11 @@ async function marcarConversaLida(conversaId) {
   await crmApi.conversas_atendimento.update(conversaId, { nao_lida: false });
 }
 
+async function vincularLead(conversaId, leadId) {
+  if (!conversaId || !leadId) return;
+  await crmApi.conversas_atendimento.update(conversaId, { lead_id: leadId });
+}
+
 // Envia de fato pelo WhatsApp (Meta ou Evolution API, conforme integracao ativa -- ver
 // send_atendimento_mensagem em crm-api/index.ts) e so grava a mensagem/atualiza a conversa
 // depois do envio ter sucesso.
@@ -98,4 +103,5 @@ export const atendimentoApi = {
   encerrarConversa,
   enviarMensagemManual,
   marcarConversaLida,
+  vincularLead,
 };

@@ -1,6 +1,6 @@
 export const CRM_SCHEMA = 'gestao_crm';
 
-export type EntityName = 'clientes' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'cores_veiculo' | 'veiculos_estoque' | 'veiculos_estoque_historico_reserva' | 'pipelines' | 'etapas_pipeline' | 'motivos_status' | 'propostas' | 'vendas' | 'conversas_atendimento' | 'mensagens_atendimento';
+export type EntityName = 'clientes' | 'avaliacoes_cliente' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'cores_veiculo' | 'veiculos_estoque' | 'veiculos_estoque_historico_reserva' | 'pipelines' | 'etapas_pipeline' | 'motivos_status' | 'propostas' | 'vendas' | 'conversas_atendimento' | 'mensagens_atendimento';
 
 export function getAccessLevel(access: Record<string, unknown> | null) {
   return String(access?.nivel_acesso || '');
@@ -37,9 +37,11 @@ export function buildAccessScope(
       case 'atendimentos':
         return { clause: `l."unidade_id" = $${startIndex}`, values: [unitId] };
       case 'clientes':
+      case 'avaliacoes_cliente':
         // Clientes (identidade) nao tem restricao de posse/unidade para nenhum nivel --
         // qualquer vendedor pode buscar/achar um cliente e abrir um lead novo para ele.
         // Quem fica isolado por unidade/posse e o lead em si (case 'leads' acima).
+        // avaliacoes_cliente segue a mesma regra do cliente a que pertence.
         return { clause: '', values: [] as unknown[] };
       case 'historico_atendimentos':
         return {
@@ -145,7 +147,8 @@ export function buildAccessScope(
         values: [collaboratorId],
       };
     case 'clientes':
-      // Mesma regra do bloco gestor acima: clientes nunca sao restritos por posse/unidade.
+    case 'avaliacoes_cliente':
+      // Mesma regra do bloco gestor acima: clientes (e avaliacoes) nunca sao restritos por posse/unidade.
       return { clause: '', values: [] as unknown[] };
     case 'historico_atendimentos':
       return {

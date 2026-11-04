@@ -335,18 +335,29 @@ serve(async (req) => {
       }
 
       if (!conversa) {
-        // Identidade (nome/telefone) mora em public.clientes desde a migration
-        // 20260915120000_extract_public_clientes.sql -- gestao_crm.clientes_crm e' so a
-        // extensao comercial (empresa, status_relacionamento etc.), sem telefone_normalizado.
-        const [cliente] = await sql`
-          select id from public.clientes
+        // Lead tem prioridade sobre cliente: um contato que ja e' lead (oportunidade em aberto)
+        // nao deve ser rebaixado a vinculo de cliente so porque o telefone tambem bateu la --
+        // ver analise em apps/crm/CLAUDE.md, secao "Atendimento (WhatsApp + IA)".
+        const [lead] = await sql`
+          select id from gestao_crm.leads
           where telefone_normalizado = ${telefoneNormalizado}
           limit 1
         `;
 
+        // Identidade (nome/telefone) mora em public.clientes desde a migration
+        // 20260915120000_extract_public_clientes.sql -- gestao_crm.clientes_crm e' so a
+        // extensao comercial (empresa, status_relacionamento etc.), sem telefone_normalizado.
+        const [cliente] = lead
+          ? [null]
+          : await sql`
+              select id from public.clientes
+              where telefone_normalizado = ${telefoneNormalizado}
+              limit 1
+            `;
+
         const [novaConversa] = await sql`
-          insert into gestao_crm.conversas_atendimento (telefone_normalizado, cliente_id, status)
-          values (${telefoneNormalizado}, ${cliente?.id ?? null}, 'aberta')
+          insert into gestao_crm.conversas_atendimento (telefone_normalizado, lead_id, cliente_id, status)
+          values (${telefoneNormalizado}, ${lead?.id ?? null}, ${cliente?.id ?? null}, 'aberta')
           returning id, status
         `;
         conversa = novaConversa;
