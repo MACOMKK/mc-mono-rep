@@ -1,6 +1,6 @@
 export const CRM_SCHEMA = 'gestao_crm';
 
-export type EntityName = 'clientes' | 'avaliacoes_cliente' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'cores_veiculo' | 'veiculos_estoque' | 'veiculos_estoque_historico_reserva' | 'pipelines' | 'etapas_pipeline' | 'motivos_status' | 'propostas' | 'vendas' | 'conversas_atendimento' | 'mensagens_atendimento';
+export type EntityName = 'clientes' | 'avaliacoes_cliente' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'cores_veiculo' | 'veiculos_estoque' | 'veiculos_estoque_historico_reserva' | 'pipelines' | 'etapas_pipeline' | 'motivos_status' | 'propostas' | 'vendas' | 'conversas_atendimento' | 'mensagens_atendimento' | 'notas_conversa';
 
 export function getAccessLevel(access: Record<string, unknown> | null) {
   return String(access?.nivel_acesso || '');
@@ -118,6 +118,26 @@ export function buildAccessScope(
           )`,
           values: [unitId],
         };
+      case 'notas_conversa':
+        return {
+          clause: `exists (
+            select 1 from ${CRM_SCHEMA}.conversas_atendimento scope_conversa
+            where scope_conversa.id = notas_conversa.conversa_id
+              and (
+                exists (
+                  select 1 from ${CRM_SCHEMA}.leads scope_lead
+                  where scope_lead.id = scope_conversa.lead_id
+                    and scope_lead.unidade_id = $${startIndex}
+                )
+                or exists (
+                  select 1 from ${CRM_SCHEMA}.leads scope_lead
+                  where scope_lead.cliente_id = scope_conversa.cliente_id
+                    and scope_lead.unidade_id = $${startIndex}
+                )
+              )
+          )`,
+          values: [unitId],
+        };
       case 'categorias_veiculo':
       case 'origens_lead':
       case 'marcas_veiculo':
@@ -206,6 +226,26 @@ export function buildAccessScope(
         clause: `exists (
           select 1 from ${CRM_SCHEMA}.conversas_atendimento scope_conversa
           where scope_conversa.id = mensagens_atendimento.conversa_id
+            and (
+              exists (
+                select 1 from ${CRM_SCHEMA}.leads scope_lead
+                where scope_lead.id = scope_conversa.lead_id
+                  and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
+              )
+              or exists (
+                select 1 from ${CRM_SCHEMA}.leads scope_lead
+                where scope_lead.cliente_id = scope_conversa.cliente_id
+                  and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
+              )
+            )
+        )`,
+        values: [collaboratorId],
+      };
+    case 'notas_conversa':
+      return {
+        clause: `exists (
+          select 1 from ${CRM_SCHEMA}.conversas_atendimento scope_conversa
+          where scope_conversa.id = notas_conversa.conversa_id
             and (
               exists (
                 select 1 from ${CRM_SCHEMA}.leads scope_lead

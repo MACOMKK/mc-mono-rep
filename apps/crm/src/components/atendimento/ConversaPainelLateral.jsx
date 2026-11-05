@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, UserPlus } from 'lucide-react';
+import { Plus, Search, UserPlus, X } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { atendimentoApi } from '@/api/atendimentoApi';
 import { Badge } from '@/components/ui/badge';
@@ -182,6 +182,79 @@ function NotaInternaLead({ lead }) {
   );
 }
 
+function formatDataHoraNota(value) {
+  if (!value) return '';
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+}
+
+// Card "Nota interna da conversa" (Fase 1, item 12 do roadmap de Atendimento): distinto de
+// NotaInternaLead (que grava em Lead.observacoes) -- este histórico pertence à conversa em si,
+// disponível mesmo sem lead/cliente vinculado, e é cumulativo (nunca editado/apagado).
+function NotasConversa({ conversa }) {
+  const queryClient = useQueryClient();
+  const [texto, setTexto] = useState('');
+  const queryKey = ['atendimento-notas-conversa', conversa.id];
+
+  const { data: notas = [], isLoading } = useQuery({
+    queryKey,
+    queryFn: () => atendimentoApi.listNotasConversa(conversa.id),
+    enabled: Boolean(conversa.id),
+  });
+
+  const adicionarMutation = useMutation({
+    mutationFn: (conteudo) => atendimentoApi.adicionarNotaConversa({ conversaId: conversa.id, conteudo }),
+    onSuccess: () => {
+      setTexto('');
+      queryClient.invalidateQueries({ queryKey });
+    },
+    onError: () => {
+      toast({ title: 'Não foi possível adicionar a nota.', variant: 'destructive' });
+    },
+  });
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    const trimmed = texto.trim();
+    if (!trimmed) return;
+    adicionarMutation.mutate(trimmed);
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-background px-3 py-3">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nota interna da conversa</span>
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
+        <Textarea
+          value={texto}
+          onChange={(event) => setTexto(event.target.value)}
+          placeholder="Registrar observação sobre este atendimento..."
+          rows={2}
+          className="resize-none text-sm"
+        />
+        <Button type="submit" variant="outline" size="sm" className="self-end" disabled={adicionarMutation.isPending || !texto.trim()}>
+          Adicionar nota
+        </Button>
+      </form>
+
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground">Carregando...</p>
+      ) : notas.length > 0 ? (
+        <div className="flex flex-col gap-2 border-t border-border pt-2">
+          {notas.map((nota) => (
+            <div key={nota.id} className="flex flex-col gap-0.5 text-xs">
+              <span className="font-semibold text-foreground">
+                {nota.colaborador_nome || 'Colaborador'}{' '}
+                <span className="font-normal text-muted-foreground">· {formatDataHoraNota(nota.criado_em)}</span>
+              </span>
+              <p className="whitespace-pre-wrap text-muted-foreground">{nota.conteudo}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function VincularLeadPanel({ conversa }) {
   const queryClient = useQueryClient();
   const [busca, setBusca] = useState('');
@@ -330,6 +403,67 @@ function VincularLeadPanel({ conversa }) {
   );
 }
 
+function TagsConversa({ conversa }) {
+  const queryClient = useQueryClient();
+  const [novaTag, setNovaTag] = useState('');
+  const tags = conversa.tags || [];
+
+  const tagsMutation = useMutation({
+    mutationFn: (novasTags) => atendimentoApi.updateTags(conversa.id, novasTags),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['conversas-atendimento'], (old = []) =>
+        old.map((item) => (item.id === conversa.id ? { ...item, tags: updated.tags } : item)));
+      setNovaTag('');
+    },
+    onError: () => {
+      toast({ title: 'Não foi possível atualizar as tags.', variant: 'destructive' });
+    },
+  });
+
+  function adicionarTag(event) {
+    event.preventDefault();
+    const tag = novaTag.trim();
+    if (!tag || tags.includes(tag)) {
+      setNovaTag('');
+      return;
+    }
+    tagsMutation.mutate([...tags, tag]);
+  }
+
+  function removerTag(tag) {
+    tagsMutation.mutate(tags.filter((item) => item !== tag));
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-background px-3 py-3">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Tags da conversa</span>
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map((tag) => (
+            <Badge key={tag} variant="outline" className="flex items-center gap-1 rounded-full border-violet-200 bg-violet-50 text-[10px] text-violet-700">
+              {tag}
+              <button type="button" onClick={() => removerTag(tag)} aria-label={`Remover tag ${tag}`}>
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+      <form onSubmit={adicionarTag} className="flex gap-1.5">
+        <Input
+          value={novaTag}
+          onChange={(event) => setNovaTag(event.target.value)}
+          placeholder="Adicionar tag..."
+          className="h-8 text-sm"
+        />
+        <Button type="submit" variant="outline" size="sm" disabled={tagsMutation.isPending || !novaTag.trim()}>
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
+      </form>
+    </div>
+  );
+}
+
 export default function ConversaPainelLateral({ conversa }) {
   const leadId = conversa?.lead_id || '';
   const clienteId = !leadId && conversa?.cliente_id ? conversa.cliente_id : '';
@@ -355,6 +489,9 @@ export default function ConversaPainelLateral({ conversa }) {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-muted/20 px-4 py-4">
+        {conversa && <TagsConversa conversa={conversa} />}
+        {conversa && <NotasConversa conversa={conversa} />}
+
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Carregando...</p>
         ) : !leadId && !clienteId ? (

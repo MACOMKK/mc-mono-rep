@@ -15,20 +15,6 @@ const STATUS_STYLES = {
   encerrada: 'border-border bg-muted text-muted-foreground',
 };
 
-// Tags de interesse (ex.: modelo do veiculo mencionado na conversa) -- sem fonte real ainda,
-// nao existe esse dado no schema (conversas_atendimento nao tem campo de tag/categoria).
-// Mockado deterministicamente a partir do id so pra aproximar o visual de referencia (ver
-// MOCK_TAGS em ConversaPainelLateral.jsx, mesmo espirito) -- trocar por dado de verdade quando
-// existir.
-const MOCK_TAGS_POOL = [['Triton'], ['SUV'], ['Triton', 'Preço'], ['Onix'], []];
-
-function mockTagsFor(id = '') {
-  const hash = String(id)
-    .split('')
-    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return MOCK_TAGS_POOL[hash % MOCK_TAGS_POOL.length];
-}
-
 function formatHora(value) {
   if (!value) return '';
   return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
@@ -57,7 +43,7 @@ export default function ConversaListItem({ conversa, isActive, onClick }) {
   const titulo = conversa.cliente_nome || formatTelefone(conversa.telefone_normalizado);
   const naoLida = Boolean(conversa.nao_lida);
   const sigla = iniciais(conversa.cliente_nome);
-  const tags = mockTagsFor(conversa.id);
+  const tags = conversa.tags || [];
 
   return (
     <button

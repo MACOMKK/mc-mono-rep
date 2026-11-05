@@ -21,6 +21,7 @@ const REALTIME_TABLES = [
   { schema: 'gestao_crm', table: 'vendedores_distribuicao' },
   { schema: 'gestao_crm', table: 'conversas_atendimento' },
   { schema: 'gestao_crm', table: 'mensagens_atendimento' },
+  { schema: 'gestao_crm', table: 'notas_conversa' },
   { schema: 'gestao_crm', table: 'pipelines' },
   { schema: 'gestao_crm', table: 'etapas_pipeline' },
   { schema: 'gestao_crm', table: 'motivos_status' },
@@ -92,6 +93,9 @@ const TABLE_CACHE_CONFIG = {
   // proprio dentro de handleRealtimeChange (merge por linha via setQueryData, nao invalidate),
   // que ja retorna antes de qualquer codigo generico deste arquivo ler esta entrada.
   mensagens_atendimento: {},
+  notas_conversa: {
+    queryKeys: [['atendimento-notas-conversa']],
+  },
   pipelines: {
     queryKeys: [['crm-pipelines']],
   },

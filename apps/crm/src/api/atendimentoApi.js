@@ -18,6 +18,7 @@ function mapConversaRow(row = {}) {
     ultima_mensagem_em: row.ultima_mensagem_em || null,
     ultima_mensagem_preview: row.ultima_mensagem_preview || '',
     nao_lida: Boolean(row.nao_lida),
+    tags: row.tags || [],
     cliente_nome: row.cliente?.nome || '',
     responsavel_id: row.lead?.responsavel_id || '',
     created_date: row.criado_em || null,
@@ -80,6 +81,43 @@ async function vincularLead(conversaId, leadId) {
   await crmApi.conversas_atendimento.update(conversaId, { lead_id: leadId });
 }
 
+async function updateTags(conversaId, tags) {
+  const row = await crmApi.conversas_atendimento.update(conversaId, { tags });
+  return mapConversaRow(row);
+}
+
+function mapNotaConversaRow(row = {}) {
+  return {
+    id: row.id,
+    conversa_id: row.conversa_id,
+    colaborador_id: row.colaborador_id || '',
+    colaborador_nome: row.colaborador_nome || '',
+    conteudo: row.conteudo || '',
+    criado_em: row.criado_em || null,
+  };
+}
+
+async function listNotasConversa(conversaId) {
+  if (!conversaId) return [];
+
+  const rows = await crmApi.notas_conversa.list({
+    filters: { conversa_id: conversaId },
+    orderBy: 'criado_em',
+    ascending: true,
+  });
+
+  return rows.map(mapNotaConversaRow);
+}
+
+async function adicionarNotaConversa({ conversaId, conteudo }) {
+  if (!conversaId || !conteudo?.trim()) {
+    throw new Error('Conversa e conteudo da nota sao obrigatorios.');
+  }
+
+  const row = await crmApi.notas_conversa.create({ conversa_id: conversaId, conteudo: conteudo.trim() });
+  return mapNotaConversaRow(row);
+}
+
 // Envia de fato pelo WhatsApp (Meta ou Evolution API, conforme integracao ativa -- ver
 // send_atendimento_mensagem em crm-api/index.ts) e so grava a mensagem/atualiza a conversa
 // depois do envio ter sucesso.
@@ -104,5 +142,8 @@ export const atendimentoApi = {
   enviarMensagemManual,
   marcarConversaLida,
   vincularLead,
+  updateTags,
+  listNotasConversa,
+  adicionarNotaConversa,
   mapMensagemRow,
 };

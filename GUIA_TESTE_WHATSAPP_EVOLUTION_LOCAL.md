@@ -116,8 +116,7 @@ No Manager (`http://localhost:8080/manager`) → instância → Webhook:
 ### 6. Testar
 
 - **Envio (CRM → WhatsApp)**: abrir `Atendimento` no CRM, escolher/criar uma conversa com o
-  número de teste conectado no passo 2, mandar uma mensagem. Confirmar que chegou no celular de
-  teste.
+  número de teste conectado no passo 2, mandar uma mensagem. Confirmar que chegou no celular de teste.
 - **Recebimento (WhatsApp → CRM)**: mandar uma mensagem do celular de teste pro número conectado.
   Confirmar que aparece em tempo real na tela de Atendimento (exige o passo 5 configurado, e a
   `whatsapp-api` publicada/rodando).

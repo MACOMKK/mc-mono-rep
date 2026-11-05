@@ -119,6 +119,13 @@ vínculo (número desconhecido) só são visíveis para admin via RLS até serem
 cliente/lead. `mensagens_atendimento.autor` distingue `cliente`/`ia`/`humano`; conversa com
 `status = 'aguardando_humano'` pausa a resposta automática da IA.
 
+`notas_conversa` (`conversa_id`, `colaborador_id`, `conteudo`, `criado_em`,
+`20261105110000_add_crm_notas_conversa.sql`) é o histórico de notas internas **da conversa**,
+distinto de `Lead.observacoes` (nota do lead, `NotaInternaLead` em `ConversaPainelLateral.jsx`):
+disponível mesmo sem lead/cliente vinculado, cumulativo (nunca editado/apagado — `update`/`delete`
+bloqueados em `crm-api/index.ts`), escopo de acesso idêntico ao de `mensagens_atendimento`
+(via conversa → lead → unidade/posse, `access-scope.ts`).
+
 ## Realtime
 
 `useCrmRealtime.js` escuta INSERT/UPDATE/DELETE em `gestao_crm` (leads, clientes, atendimentos,

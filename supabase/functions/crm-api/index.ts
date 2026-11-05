@@ -267,13 +267,19 @@ const ENTITY_CONFIG = {
     table: 'conversas_atendimento',
     orderBy: 'ultima_mensagem_em',
     orderDirection: 'desc',
-    allowedFields: ['lead_id', 'cliente_id', 'status', 'ultima_mensagem_em', 'nao_lida'],
+    allowedFields: ['lead_id', 'cliente_id', 'status', 'ultima_mensagem_em', 'nao_lida', 'tags'],
   },
   mensagens_atendimento: {
     table: 'mensagens_atendimento',
     orderBy: 'criado_em',
     orderDirection: 'asc',
     allowedFields: ['conversa_id', 'direcao', 'autor', 'colaborador_id', 'conteudo', 'metadados'],
+  },
+  notas_conversa: {
+    table: 'notas_conversa',
+    orderBy: 'criado_em',
+    orderDirection: 'asc',
+    allowedFields: ['conversa_id', 'conteudo'],
   },
 } as const;
 
@@ -1107,6 +1113,14 @@ function buildListSelect(entity: EntityName) {
       left join ${CRM_SCHEMA}.clientes_crm cli on cli.id = conversas_atendimento.cliente_id
       left join public.clientes cp on cp.id = cli.id
       left join ${CRM_SCHEMA}.leads ld on ld.id = conversas_atendimento.lead_id
+    `;
+  }
+
+  if (entity === 'notas_conversa') {
+    return `
+      select notas_conversa.*, col.nome as colaborador_nome
+      from ${CRM_SCHEMA}.notas_conversa
+      left join public.colaboradores col on col.id = notas_conversa.colaborador_id
     `;
   }
 
@@ -2809,7 +2823,7 @@ Deno.serve(async (request) => {
       if (entity === 'propostas' && payload.eh_teste === true && !['admin', 'gestor'].includes(String(access?.nivel_acesso || ''))) {
         return json({ error: 'Apenas administradores e gestores podem marcar uma proposta como teste.' }, 403);
       }
-      const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'cores_veiculo', 'pipelines', 'etapas_pipeline', 'pipeline_automacoes', 'motivos_status', 'conversas_atendimento', 'mensagens_atendimento'];
+      const entitiesWithoutCriadoPor = ['categorias_veiculo', 'origens_lead', 'marcas_veiculo', 'modelos_veiculo', 'versoes_veiculo', 'cores_veiculo', 'pipelines', 'etapas_pipeline', 'pipeline_automacoes', 'motivos_status', 'conversas_atendimento', 'mensagens_atendimento', 'notas_conversa'];
       if (collaborator?.id && !entitiesWithoutCriadoPor.includes(entity)) payload.criado_por = collaborator.id;
       await ensureLeadIdScope(entity, payload, access, collaborator);
       if (entity === 'mensagens_atendimento' && payload.conversa_id) {
@@ -2817,6 +2831,13 @@ Deno.serve(async (request) => {
         // mensagem nela -- allowedFields nao impede um usuario mandar um conversa_id
         // de uma conversa que ele nao deveria enxergar.
         await ensureEntityAccess('conversas_atendimento', String(payload.conversa_id), access, collaborator);
+      }
+      if (entity === 'notas_conversa') {
+        // Mesma validacao de mensagens_atendimento (acesso a conversa) + colaborador_id
+        // sempre setado pelo servidor, nunca aceito do payload (mesmo espirito de criado_por).
+        if (!payload.conversa_id) return json({ error: 'Conversa obrigatoria.' }, 400);
+        await ensureEntityAccess('conversas_atendimento', String(payload.conversa_id), access, collaborator);
+        if (collaborator?.id) payload.colaborador_id = collaborator.id;
       }
       if (entity === 'historico_atendimentos' && payload.lead_id) {
         await ensureLeadAccessLight(String(payload.lead_id), access, collaborator);
@@ -2845,6 +2866,11 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'update') {
+      if (entity === 'notas_conversa') {
+        // Historico append-only, write-once (mesmo espirito de mensagens de chat) --
+        // nao ha caso de uso de editar nota registrada.
+        return json({ error: 'Nota de conversa nao pode ser editada.' }, 403);
+      }
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
       const existingRow = await ensureEntityAccess(entity, id, access, collaborator);
       const payload = applyCreateScope(entity, sanitizePayload(entity, body.payload || {}), access, collaborator, 'update');
@@ -2879,6 +2905,9 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'delete') {
+      if (entity === 'notas_conversa') {
+        return json({ error: 'Nota de conversa nao pode ser excluida.' }, 403);
+      }
       if (!id) return json({ error: 'ID obrigatorio.' }, 400);
       await ensureEntityAccess(entity, id, access, collaborator);
       await sql.unsafe(`delete from ${config.schema ?? CRM_SCHEMA}.${config.table} where id = $1;`, [id]);

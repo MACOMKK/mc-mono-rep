@@ -289,4 +289,5 @@ export const crmApi = {
     },
   },
   mensagens_atendimento: buildEntity('mensagens_atendimento'),
+  notas_conversa: buildEntity('notas_conversa'),
 };
