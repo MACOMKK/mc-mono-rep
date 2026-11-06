@@ -1,6 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Phone, Search, UserCheck, CheckCheck, ArrowDown } from 'lucide-react';
+import {
+  MessageCircle,
+  Phone,
+  Search,
+  UserCheck,
+  CheckCheck,
+  ArrowDown,
+  ChevronUp,
+  ChevronDown,
+  X,
+} from 'lucide-react';
 import { atendimentoApi } from '@/api/atendimentoApi';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -8,7 +18,8 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/components/ui/use-toast';
 import { useAuth } from '@/lib/AuthContext';
-import ConversaListItem from '@/components/atendimento/ConversaListItem';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import ConversaListItem, { SlaPendenteBadge } from '@/components/atendimento/ConversaListItem';
 import ConversaPainelLateral from '@/components/atendimento/ConversaPainelLateral';
 import MensagemBubble from '@/components/atendimento/MensagemBubble';
 import MensagemComposer from '@/components/atendimento/MensagemComposer';
@@ -97,12 +108,16 @@ export default function Atendimento() {
   const [filtro, setFiltro] = useState('todas');
   const [busca, setBusca] = useState('');
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+  const [buscaMensagensAberta, setBuscaMensagensAberta] = useState(false);
+  const [buscaMensagens, setBuscaMensagens] = useState('');
+  const [resultadoAtual, setResultadoAtual] = useState(0);
   const bottomRef = useRef(null);
   const scrollAreaRef = useRef(null);
   const stickToBottomRef = useRef(true);
   const previousNaoLidaRef = useRef(new Map());
   const hasSeenConversasRef = useRef(false);
   const envioEmFilaRef = useRef(Promise.resolve());
+  const mensagemRefs = useRef(new Map());
 
   const { data: conversas = [], isLoading: isLoadingConversas } = useQuery({
     queryKey: ['conversas-atendimento'],
@@ -117,6 +132,61 @@ export default function Atendimento() {
     queryFn: () => atendimentoApi.listMensagens(conversaId),
     enabled: Boolean(conversaId),
   });
+
+  const termoBuscaMensagens = useDebouncedValue(buscaMensagens, 300).trim();
+
+  const resultadosBusca = useMemo(() => {
+    if (!termoBuscaMensagens) return [];
+    const termoNormalizado = termoBuscaMensagens.toLowerCase();
+    return mensagens.filter((mensagem) => mensagem.conteudo?.toLowerCase().includes(termoNormalizado));
+  }, [mensagens, termoBuscaMensagens]);
+
+  const resultadoFocado = resultadosBusca[resultadoAtual] || null;
+
+  useEffect(() => {
+    setResultadoAtual(0);
+  }, [termoBuscaMensagens, conversaId]);
+
+  useEffect(() => {
+    if (!buscaMensagensAberta) {
+      setBuscaMensagens('');
+    }
+  }, [conversaId, buscaMensagensAberta]);
+
+  useEffect(() => {
+    if (!resultadoFocado) return;
+    const elemento = mensagemRefs.current.get(resultadoFocado.id);
+    elemento?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [resultadoFocado]);
+
+  const irParaProximoResultado = () => {
+    if (resultadosBusca.length === 0) return;
+    setResultadoAtual((atual) => (atual + 1) % resultadosBusca.length);
+  };
+
+  const irParaResultadoAnterior = () => {
+    if (resultadosBusca.length === 0) return;
+    setResultadoAtual((atual) => (atual - 1 + resultadosBusca.length) % resultadosBusca.length);
+  };
+
+  const fecharBuscaMensagens = () => {
+    setBuscaMensagensAberta(false);
+    setBuscaMensagens('');
+  };
+
+  const handleBuscaMensagensKeyDown = (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (event.shiftKey) {
+        irParaResultadoAnterior();
+      } else {
+        irParaProximoResultado();
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      fecharBuscaMensagens();
+    }
+  };
 
   useEffect(() => {
     if (!conversaId && conversas.length > 0) {
@@ -362,8 +432,19 @@ export default function Atendimento() {
                   </p>
                   <p className="truncate text-xs text-muted-foreground">{conversaAtiva.telefone_normalizado}</p>
                 </div>
+                {conversaAtiva.sla_primeira_resposta_em && !conversaAtiva.primeira_resposta_humana_em ? (
+                  <SlaPendenteBadge desde={conversaAtiva.sla_primeira_resposta_em} className="shrink-0" />
+                ) : null}
               </div>
               <div className="flex shrink-0 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => setBuscaMensagensAberta((aberta) => !aberta)}
+                >
+                  <Search className="h-3.5 w-3.5" />
+                </Button>
                 {conversaAtiva.status !== 'aguardando_humano' ? (
                   <Button
                     size="sm"
@@ -390,6 +471,54 @@ export default function Atendimento() {
               </div>
             </div>
 
+            {buscaMensagensAberta ? (
+              <div className="flex items-center gap-2 border-b border-border bg-background px-4 py-2">
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  value={buscaMensagens}
+                  onChange={(event) => setBuscaMensagens(event.target.value)}
+                  onKeyDown={handleBuscaMensagensKeyDown}
+                  placeholder="Buscar nesta conversa..."
+                  className="h-8 flex-1 text-sm"
+                />
+                {termoBuscaMensagens ? (
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {resultadosBusca.length > 0 ? resultadoAtual + 1 : 0} de {resultadosBusca.length}
+                  </span>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 shrink-0 p-0"
+                  disabled={resultadosBusca.length === 0}
+                  onClick={irParaResultadoAnterior}
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 shrink-0 p-0"
+                  disabled={resultadosBusca.length === 0}
+                  onClick={irParaProximoResultado}
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 shrink-0 p-0"
+                  onClick={fecharBuscaMensagens}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : null}
+
             <div className="relative min-h-0 flex-1 bg-muted/50">
               <ScrollArea ref={scrollAreaRef} className="h-full px-4 py-3">
                 <div className="flex flex-col gap-3">
@@ -399,7 +528,20 @@ export default function Atendimento() {
                     <p className="py-6 text-center text-sm text-muted-foreground">Nenhuma mensagem nesta conversa ainda.</p>
                   ) : (
                     mensagens.map((mensagem) => (
-                      <MensagemBubble key={mensagem.id} mensagem={mensagem} onRetry={handleRetryMensagem} />
+                      <MensagemBubble
+                        key={mensagem.id}
+                        ref={(elemento) => {
+                          if (elemento) {
+                            mensagemRefs.current.set(mensagem.id, elemento);
+                          } else {
+                            mensagemRefs.current.delete(mensagem.id);
+                          }
+                        }}
+                        mensagem={mensagem}
+                        onRetry={handleRetryMensagem}
+                        termoBusca={termoBuscaMensagens || null}
+                        isResultadoAtual={mensagem.id === resultadoFocado?.id}
+                      />
                     ))
                   )}
                   <div ref={bottomRef} />

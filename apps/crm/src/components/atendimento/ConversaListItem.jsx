@@ -1,7 +1,44 @@
-import { Headset, Phone } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Clock, Headset, Phone } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+
+const SLA_ALERTA_MINUTOS = 10;
+
+function formatTempoDecorrido(desde) {
+  const minutos = Math.max(0, Math.floor((Date.now() - new Date(desde).getTime()) / 60000));
+  if (minutos < 60) return `há ${minutos} min`;
+  const horas = Math.floor(minutos / 60);
+  const minutosRestantes = minutos % 60;
+  return minutosRestantes > 0 ? `há ${horas}h ${minutosRestantes}min` : `há ${horas}h`;
+}
+
+export function SlaPendenteBadge({ desde, className }) {
+  const [, forcarAtualizacao] = useState(0);
+
+  useEffect(() => {
+    const intervalo = setInterval(() => forcarAtualizacao((valor) => valor + 1), 30000);
+    return () => clearInterval(intervalo);
+  }, []);
+
+  const minutos = Math.floor((Date.now() - new Date(desde).getTime()) / 60000);
+  const estourado = minutos >= SLA_ALERTA_MINUTOS;
+
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'flex items-center gap-1 rounded-full px-2 py-0 text-[10px] font-semibold',
+        estourado ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700',
+        className,
+      )}
+    >
+      <Clock className="h-2.5 w-2.5" />
+      {formatTempoDecorrido(desde)}
+    </Badge>
+  );
+}
 
 const STATUS_LABEL = {
   aberta: 'Novo',
@@ -44,6 +81,7 @@ export default function ConversaListItem({ conversa, isActive, onClick }) {
   const naoLida = Boolean(conversa.nao_lida);
   const sigla = iniciais(conversa.cliente_nome);
   const tags = conversa.tags || [];
+  const slaPendente = Boolean(conversa.sla_primeira_resposta_em) && !conversa.primeira_resposta_humana_em;
 
   return (
     <button
@@ -74,6 +112,7 @@ export default function ConversaListItem({ conversa, isActive, onClick }) {
           <Badge variant="outline" className={cn('rounded-full px-2 py-0 text-[10px] font-semibold', STATUS_STYLES[conversa.status])}>
             {STATUS_LABEL[conversa.status] || conversa.status}
           </Badge>
+          {slaPendente ? <SlaPendenteBadge desde={conversa.sla_primeira_resposta_em} /> : null}
           {tags.map((tag) => (
             <Badge key={tag} variant="outline" className="rounded-full border-violet-200 bg-violet-50 px-2 py-0 text-[10px] font-semibold text-violet-700">
               {tag}

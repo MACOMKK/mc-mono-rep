@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { Bot, Check, CheckCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -19,7 +20,24 @@ function formatHora(value) {
   return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
 
-export default function MensagemBubble({ mensagem, onRetry }) {
+function highlightTexto(texto, termo) {
+  if (!termo) return texto;
+  const partes = texto.split(new RegExp(`(${termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+  return partes.map((parte, index) =>
+    parte.toLowerCase() === termo.toLowerCase() ? (
+      <mark key={index} className="rounded-sm bg-primary/20 text-inherit">
+        {parte}
+      </mark>
+    ) : (
+      parte
+    ),
+  );
+}
+
+const MensagemBubble = forwardRef(function MensagemBubble(
+  { mensagem, onRetry, termoBusca, isResultadoAtual },
+  ref,
+) {
   const isSaida = mensagem.direcao === 'saida';
   const isIa = mensagem.autor === 'ia';
   const label = AUTOR_LABEL[mensagem.autor];
@@ -27,7 +45,7 @@ export default function MensagemBubble({ mensagem, onRetry }) {
   const isErro = Boolean(mensagem.erro);
 
   return (
-    <div className={cn('flex w-full items-end gap-2', isSaida ? 'justify-end' : 'justify-start')}>
+    <div ref={ref} className={cn('flex w-full items-end gap-2', isSaida ? 'justify-end' : 'justify-start')}>
       {isIa ? (
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
           <Bot className="h-3.5 w-3.5" />
@@ -40,6 +58,7 @@ export default function MensagemBubble({ mensagem, onRetry }) {
             isSaida ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm border border-border bg-white text-foreground',
             isPending && 'opacity-60',
             isErro && 'border border-destructive bg-destructive/10 text-destructive-foreground',
+            isResultadoAtual && 'ring-2 ring-offset-2 ring-amber-500',
           )}
         >
           {label ? (
@@ -47,7 +66,7 @@ export default function MensagemBubble({ mensagem, onRetry }) {
               {label}
             </p>
           ) : null}
-          <p className="whitespace-pre-wrap break-words">{mensagem.conteudo}</p>
+          <p className="whitespace-pre-wrap break-words">{highlightTexto(mensagem.conteudo, termoBusca)}</p>
         </div>
         {isErro ? (
           <button
@@ -66,4 +85,6 @@ export default function MensagemBubble({ mensagem, onRetry }) {
       </div>
     </div>
   );
-}
+});
+
+export default MensagemBubble;
