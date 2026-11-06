@@ -11,7 +11,7 @@ import type { EntityName } from './access-scope.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { CLEAR_MUST_CHANGE_PASSWORD_SQL, mapMustChangePassword } from '../_shared/auth.ts';
 import { loadIntegracaoCredenciais } from '../_shared/integracoes.ts';
-import { sendWhatsappMessageMeta, sendWhatsappMessageEvolution } from '../_shared/whatsapp.ts';
+import { sendWhatsappMessageMeta, sendWhatsappMessageEvolution, extractWhatsappMessageId } from '../_shared/whatsapp.ts';
 
 const CRM_SYSTEM_SLUG = 'crm';
 
@@ -997,10 +997,18 @@ async function ensureLeadAccessLight(
   return rows[0];
 }
 
+// "metadados" e' sempre jsonb no schema (ver migrations) e chega aqui como string
+// (JSON.stringify feito pelo chamador) -- sem o cast, o Postgres guarda a string crua dentro
+// da coluna jsonb (um JSON *scalar* string, nao um objeto), e operadores como ->> nunca
+// funcionam nela depois (ver status de entrega/leitura em mensagens_atendimento).
+function placeholderFor(field: string, index: number) {
+  return field === 'metadados' ? `$${index}::jsonb` : `$${index}`;
+}
+
 function buildInsertQuery(schema: string, table: string, payload: Record<string, unknown>) {
   const fields = Object.keys(payload);
   const columns = fields.map(quoteIdentifier).join(', ');
-  const placeholders = fields.map((_, index) => `$${index + 1}`).join(', ');
+  const placeholders = fields.map((field, index) => placeholderFor(field, index + 1)).join(', ');
   return {
     text: `insert into ${schema}.${table} (${columns}) values (${placeholders}) returning *;`,
     values: fields.map((field) => payload[field]),
@@ -1009,7 +1017,9 @@ function buildInsertQuery(schema: string, table: string, payload: Record<string,
 
 function buildUpdateQuery(schema: string, table: string, id: string, payload: Record<string, unknown>) {
   const fields = Object.keys(payload);
-  const assignments = fields.map((field, index) => `${quoteIdentifier(field)} = $${index + 2}`).join(', ');
+  const assignments = fields
+    .map((field, index) => `${quoteIdentifier(field)} = ${placeholderFor(field, index + 2)}`)
+    .join(', ');
   return {
     text: `update ${schema}.${table} set ${assignments} where id = $1 returning *;`,
     values: [id, ...fields.map((field) => payload[field])],
@@ -1108,11 +1118,13 @@ function buildListSelect(entity: EntityName) {
     return `
       select conversas_atendimento.*,
         case when cli.id is null then null else json_build_object('id', cli.id, 'nome', cp.nome) end as cliente,
-        case when ld.id is null then null else json_build_object('id', ld.id, 'nome', ld.nome, 'responsavel_id', ld.responsavel_id) end as lead
+        case when ld.id is null then null else json_build_object('id', ld.id, 'nome', ld.nome, 'responsavel_id', ld.responsavel_id) end as lead,
+        atd.nome as atendente_nome
       from ${CRM_SCHEMA}.conversas_atendimento
       left join ${CRM_SCHEMA}.clientes_crm cli on cli.id = conversas_atendimento.cliente_id
       left join public.clientes cp on cp.id = cli.id
       left join ${CRM_SCHEMA}.leads ld on ld.id = conversas_atendimento.lead_id
+      left join public.colaboradores atd on atd.id = conversas_atendimento.atendente_id
     `;
   }
 
@@ -1402,9 +1414,10 @@ Deno.serve(async (request) => {
       // bater perto de WHATSAPP_SEND_TIMEOUT_MS, o provedor (ngrok/Evolution local) e' o gargalo.
       const provedor = evolutionCredenciais ? 'evolution' : 'meta';
       const inicioEnvio = Date.now();
+      let sendResult: unknown = null;
       try {
         if (evolutionCredenciais) {
-          await sendWhatsappMessageEvolution(
+          sendResult = await sendWhatsappMessageEvolution(
             String(evolutionCredenciais.instance_url || ''),
             String(evolutionCredenciais.instance_name || ''),
             String(evolutionCredenciais.api_key || ''),
@@ -1412,7 +1425,7 @@ Deno.serve(async (request) => {
             texto,
           );
         } else if (whatsappToken && whatsappPhoneNumberId) {
-          await sendWhatsappMessageMeta(whatsappPhoneNumberId, whatsappToken, toPhone, texto);
+          sendResult = await sendWhatsappMessageMeta(whatsappPhoneNumberId, whatsappToken, toPhone, texto);
         } else {
           return json({ error: 'Nenhum provedor de WhatsApp configurado (Meta ou Evolution API).' }, 400);
         }
@@ -1426,12 +1439,19 @@ Deno.serve(async (request) => {
         return json({ error: `Falha ao enviar mensagem pelo WhatsApp: ${message}` }, 502);
       }
 
+      const sentMessageId = extractWhatsappMessageId(provedor, sendResult);
       const insertPayload = {
         conversa_id: conversaId,
         direcao: 'saida',
         autor: 'humano',
         colaborador_id: collaborator?.id ?? null,
         conteudo: texto,
+        // Nao usar JSON.stringify aqui: o driver (postgres.js) ja serializa objetos JS para o
+        // "::jsonb" (ver placeholderFor) automaticamente -- stringificar a mao faz o Postgres
+        // guardar um JSON *scalar* string (texto duplamente encodado) em vez de um objeto, e
+        // ->>'...' nunca mais encontra a chave depois (bug real: status de entrega/leitura
+        // nunca avancava para mensagens enviadas manualmente pelo chat).
+        metadados: sentMessageId ? { whatsapp_message_id: sentMessageId } : {},
       };
       const insertQuery = buildInsertQuery(CRM_SCHEMA, 'mensagens_atendimento', insertPayload);
       const preview = texto.length > 140 ? `${texto.slice(0, 139)}…` : texto;
@@ -1463,6 +1483,52 @@ Deno.serve(async (request) => {
       }
 
       return json({ row: rows[0] || null });
+    }
+
+    // Transferencia de conversa entre atendentes (Fase 1, item 6 do roadmap de Atendimento):
+    // atendente_id e' independente do responsavel_id do lead -- atualiza quem esta tocando a
+    // conversa agora e deixa um registro automatico em notas_conversa (tipo='sistema'), igual
+    // a um log de auditoria simples, visivel no mesmo historico das notas manuais.
+    if (action === 'transferir_atendimento') {
+      const conversaId = typeof body.conversaId === 'string' ? body.conversaId : '';
+      const atendenteIdRaw = typeof body.atendenteId === 'string' ? body.atendenteId.trim() : '';
+      if (!conversaId) {
+        return json({ error: 'Conversa e obrigatoria.' }, 400);
+      }
+
+      await ensureEntityAccess('conversas_atendimento', conversaId, access, collaborator);
+
+      let atendenteNome = '';
+      if (atendenteIdRaw) {
+        const [atendenteRow] = await sql.unsafe(
+          `select id, nome from public.colaboradores where id = $1 and status <> 'inativo' limit 1;`,
+          [atendenteIdRaw],
+        );
+        if (!atendenteRow) {
+          return json({ error: 'Atendente nao encontrado ou inativo.' }, 400);
+        }
+        atendenteNome = String(atendenteRow.nome || '');
+      }
+
+      const [conversaAtualizada] = await sql.unsafe(
+        `update ${CRM_SCHEMA}.conversas_atendimento set atendente_id = $2 where id = $1 returning *;`,
+        [conversaId, atendenteIdRaw || null],
+      );
+
+      const notaConteudo = atendenteIdRaw
+        ? `Conversa transferida para ${atendenteNome || 'outro atendente'}.`
+        : 'Atendente removido da conversa.';
+      const notaQuery = buildInsertQuery(CRM_SCHEMA, 'notas_conversa', {
+        conversa_id: conversaId,
+        colaborador_id: collaborator?.id ?? null,
+        conteudo: notaConteudo,
+        tipo: 'sistema',
+      });
+      await sql.unsafe(notaQuery.text, notaQuery.values);
+
+      return json({
+        row: conversaAtualizada ? { ...conversaAtualizada, atendente_nome: atendenteNome } : null,
+      });
     }
 
     if (action === 'list_atividades_contadores') {
@@ -1900,6 +1966,126 @@ Deno.serve(async (request) => {
           `, [unitId, collaboratorIds, ativos, limites]);
         }
       });
+
+      return json({ success: true });
+    }
+
+    // Fila/distribuicao automatica de conversas de atendimento (Fase 1, item 5 do roadmap): o
+    // atendente_id e' atribuido por um trigger BEFORE INSERT em conversas_atendimento
+    // (gestao_crm.prepare_conversa_atendimento, ver migration 20261107100000), espelhando
+    // get_distribution_config/save_distribution_config (leads) -- mas sem unidade_id, porque uma
+    // conversa nova pode nao ter lead/cliente vinculado ainda e portanto nao tem unidade. Gestor
+    // so edita participacao do proprio time; os campos globais do singleton sao admin-only.
+    if (action === 'get_fila_atendimento_config') {
+      ensureCanConfigure(access);
+      const scopeUnitId = String(access?.nivel_acesso) === 'admin'
+        ? null
+        : (collaborator?.unidade_id || null);
+      const [config] = await sql.unsafe(`
+        select ativa, estrategia, limite_padrao_conversas_ativas
+        from ${CRM_SCHEMA}.configuracao_fila_atendimento
+        where id = true;
+      `);
+      const atendentes = await sql.unsafe(`
+        select
+          c.id,
+          c.nome,
+          c.email,
+          c.unidade_id,
+          coalesce(af.ativo, true) as ativo,
+          af.limite_conversas_ativas,
+          af.ultimo_atendimento_atribuido_em,
+          count(ca.id)::integer as conversas_ativas
+        from public.colaboradores c
+        join public.acessos_usuario_sistema aus on aus.colaborador_id = c.id and aus.ativo = true
+        join public.sistemas s on s.id = aus.sistema_id and s.slug = $1 and s.ativo = true
+        left join ${CRM_SCHEMA}.atendentes_fila af on af.colaborador_id = c.id
+        left join ${CRM_SCHEMA}.conversas_atendimento ca
+          on ca.atendente_id = c.id
+         and ca.status in ('aberta', 'aguardando_humano')
+        where c.status <> 'inativo'
+          and ($2::uuid is null or c.unidade_id = $2::uuid)
+        group by c.id, c.nome, c.email, c.unidade_id, af.ativo,
+          af.limite_conversas_ativas, af.ultimo_atendimento_atribuido_em
+        order by c.nome;
+      `, [CRM_SYSTEM_SLUG, scopeUnitId]);
+      return json({
+        config: config
+          ? config
+          : { ativa: true, estrategia: 'rodizio', limite_padrao_conversas_ativas: null },
+        atendentes,
+      });
+    }
+
+    if (action === 'save_fila_atendimento_config') {
+      ensureCanConfigure(access);
+      const nivelAcesso = String(access?.nivel_acesso || '');
+      const atendentes = Array.isArray(body.atendentes) ? body.atendentes : [];
+      const alterouConfigGlobal = body.ativa !== undefined
+        || body.estrategia !== undefined
+        || body.limite_padrao_conversas_ativas !== undefined;
+
+      if (alterouConfigGlobal && nivelAcesso !== 'admin') {
+        return json({ error: 'Apenas administradores podem alterar as regras globais da fila.' }, 403);
+      }
+
+      if (alterouConfigGlobal) {
+        const strategy = String(body.estrategia || 'rodizio');
+        const defaultLimit = body.limite_padrao_conversas_ativas === null || body.limite_padrao_conversas_ativas === ''
+          ? null
+          : Number(body.limite_padrao_conversas_ativas);
+
+        if (!['rodizio', 'menor_carga'].includes(strategy)) return json({ error: 'Estrategia invalida.' }, 400);
+        if (defaultLimit !== null && (!Number.isInteger(defaultLimit) || defaultLimit < 1)) {
+          return json({ error: 'O limite padrao deve ser um numero maior que zero.' }, 400);
+        }
+
+        await sql.unsafe(`
+          update ${CRM_SCHEMA}.configuracao_fila_atendimento
+          set ativa = $1, estrategia = $2, limite_padrao_conversas_ativas = $3
+          where id = true;
+        `, [body.ativa !== false, strategy, defaultLimit]);
+      }
+
+      const atendentesById = new Map<string, { ativo: boolean; limite: number | null }>();
+      for (const atendente of atendentes) {
+        const collaboratorId = String(atendente?.colaborador_id || '');
+        if (!collaboratorId) continue;
+        const limit = atendente?.limite_conversas_ativas === null || atendente?.limite_conversas_ativas === ''
+          ? null
+          : Number(atendente.limite_conversas_ativas);
+        if (limit !== null && (!Number.isInteger(limit) || limit < 1)) {
+          return json({ error: 'O limite individual deve ser maior que zero.' }, 400);
+        }
+        atendentesById.set(collaboratorId, { ativo: atendente.ativo !== false, limite: limit });
+      }
+
+      if (atendentesById.size > 0) {
+        const collaboratorIds = [...atendentesById.keys()];
+
+        if (nivelAcesso === 'gestor') {
+          const [{ fora_de_escopo }] = await sql.unsafe(`
+            select count(*)::integer as fora_de_escopo
+            from public.colaboradores
+            where id = any($1::uuid[]) and unidade_id is distinct from $2;
+          `, [collaboratorIds, collaborator?.unidade_id || null]);
+          if (fora_de_escopo > 0) {
+            return json({ error: 'Gestores podem configurar somente atendentes da propria unidade.' }, 403);
+          }
+        }
+
+        const ativos = collaboratorIds.map((id) => atendentesById.get(id)!.ativo);
+        const limites = collaboratorIds.map((id) => atendentesById.get(id)!.limite);
+
+        await sql.unsafe(`
+          insert into ${CRM_SCHEMA}.atendentes_fila (colaborador_id, ativo, limite_conversas_ativas)
+          select v.colaborador_id, v.ativo, v.limite_conversas_ativas
+          from unnest($1::uuid[], $2::boolean[], $3::int[]) as v(colaborador_id, ativo, limite_conversas_ativas)
+          on conflict (colaborador_id) do update set
+            ativo = excluded.ativo,
+            limite_conversas_ativas = excluded.limite_conversas_ativas;
+        `, [collaboratorIds, ativos, limites]);
+      }
 
       return json({ success: true });
     }

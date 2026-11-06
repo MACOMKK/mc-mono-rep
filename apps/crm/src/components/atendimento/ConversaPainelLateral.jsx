@@ -6,6 +6,7 @@ import { atendimentoApi } from '@/api/atendimentoApi';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -240,17 +241,69 @@ function NotasConversa({ conversa }) {
         <p className="text-xs text-muted-foreground">Carregando...</p>
       ) : notas.length > 0 ? (
         <div className="flex flex-col gap-2 border-t border-border pt-2">
-          {notas.map((nota) => (
-            <div key={nota.id} className="flex flex-col gap-0.5 text-xs">
-              <span className="font-semibold text-foreground">
-                {nota.colaborador_nome || 'Colaborador'}{' '}
-                <span className="font-normal text-muted-foreground">· {formatDataHoraNota(nota.criado_em)}</span>
-              </span>
-              <p className="whitespace-pre-wrap text-muted-foreground">{nota.conteudo}</p>
-            </div>
-          ))}
+          {notas.map((nota) =>
+            nota.tipo === 'sistema' ? (
+              <p key={nota.id} className="text-[11px] italic text-muted-foreground">
+                {nota.conteudo} · {formatDataHoraNota(nota.criado_em)}
+              </p>
+            ) : (
+              <div key={nota.id} className="flex flex-col gap-0.5 text-xs">
+                <span className="font-semibold text-foreground">
+                  {nota.colaborador_nome || 'Colaborador'}{' '}
+                  <span className="font-normal text-muted-foreground">· {formatDataHoraNota(nota.criado_em)}</span>
+                </span>
+                <p className="whitespace-pre-wrap text-muted-foreground">{nota.conteudo}</p>
+              </div>
+            ),
+          )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// Card "Transferencia de conversa entre atendentes" (Fase 1, item 6 do roadmap de
+// Atendimento): atendente_id e' quem esta tocando a conversa agora, independente do
+// responsavel_id do lead -- reaproveita list_responsaveis (mesmo seletor do campo
+// "Responsavel" do LeadForm) para listar os colaboradores elegiveis.
+function TransferirAtendente({ conversa }) {
+  const queryClient = useQueryClient();
+
+  const { data: responsaveis = [] } = useQuery({
+    queryKey: ['crm-responsaveis'],
+    queryFn: () => crmDataClient.entities.Responsavel.list(),
+  });
+
+  const transferirMutation = useMutation({
+    mutationFn: (atendenteId) => atendimentoApi.transferirConversa(conversa.id, atendenteId),
+    onSuccess: (updated) => {
+      if (!updated) return;
+      queryClient.setQueryData(['conversas-atendimento'], (old = []) =>
+        old.map((item) => (item.id === conversa.id ? { ...item, atendente_id: updated.atendente_id, atendente_nome: updated.atendente_nome } : item)));
+      queryClient.invalidateQueries({ queryKey: ['atendimento-notas-conversa', conversa.id] });
+      toast({ title: updated.atendente_id ? 'Conversa transferida.' : 'Atendente removido da conversa.' });
+    },
+    onError: () => {
+      toast({ title: 'Não foi possível transferir a conversa.', variant: 'destructive' });
+    },
+  });
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-background px-3 py-3">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Atendente da conversa</span>
+      <Select
+        value={conversa.atendente_id || 'ninguem'}
+        onValueChange={(value) => transferirMutation.mutate(value === 'ninguem' ? '' : value)}
+        disabled={transferirMutation.isPending}
+      >
+        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sem atendente" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ninguem">Sem atendente</SelectItem>
+          {responsaveis.map((responsavel) => (
+            <SelectItem key={responsavel.id} value={responsavel.id}>{responsavel.nome}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -489,6 +542,7 @@ export default function ConversaPainelLateral({ conversa }) {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-muted/20 px-4 py-4">
+        {conversa && <TransferirAtendente conversa={conversa} />}
         {conversa && <TagsConversa conversa={conversa} />}
         {conversa && <NotasConversa conversa={conversa} />}
 

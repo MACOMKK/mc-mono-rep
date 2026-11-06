@@ -1,4 +1,4 @@
-import { Phone } from 'lucide-react';
+import { Headset, Phone } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -79,6 +79,12 @@ export default function ConversaListItem({ conversa, isActive, onClick }) {
               {tag}
             </Badge>
           ))}
+          {conversa.atendente_nome ? (
+            <Badge variant="outline" className="flex items-center gap-1 rounded-full border-emerald-200 bg-emerald-50 px-2 py-0 text-[10px] font-semibold text-emerald-700">
+              <Headset className="h-2.5 w-2.5" />
+              {conversa.atendente_nome}
+            </Badge>
+          ) : null}
           {naoLida ? (
             <span className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
               1

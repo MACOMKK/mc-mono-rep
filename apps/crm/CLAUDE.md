@@ -124,7 +124,63 @@ cliente/lead. `mensagens_atendimento.autor` distingue `cliente`/`ia`/`humano`; c
 distinto de `Lead.observacoes` (nota do lead, `NotaInternaLead` em `ConversaPainelLateral.jsx`):
 disponível mesmo sem lead/cliente vinculado, cumulativo (nunca editado/apagado — `update`/`delete`
 bloqueados em `crm-api/index.ts`), escopo de acesso idêntico ao de `mensagens_atendimento`
-(via conversa → lead → unidade/posse, `access-scope.ts`).
+(via conversa → lead → unidade/posse, `access-scope.ts`). Coluna `tipo` (`'usuario'` default |
+`'sistema'`, `20261106100000_add_crm_atendente_conversa.sql`) distingue nota manual de registro
+automático — hoje só gerado pela transferência de atendente abaixo; cliente nunca grava `tipo`
+diretamente (fora de `allowedFields`).
+
+`conversas_atendimento.atendente_id` (mesma migration) é quem está **tocando a conversa agora**,
+independente do `responsavel_id` do lead (card "Transferência de conversa entre atendentes", Fase
+1 do roadmap) — um vendedor pode ser responsável pelo lead e outro atendente pode estar na
+conversa no momento. Troca via action dedicada `transferir_atendimento` (não pelo `update`
+genérico): valida acesso à conversa, valida que o novo atendente é um colaborador ativo, grava
+`atendente_id` e insere automaticamente uma `notas_conversa` com `tipo = 'sistema'` registrando a
+transferência. Seletor no painel lateral (`TransferirAtendente` em `ConversaPainelLateral.jsx`)
+reaproveita `list_responsaveis`/`Responsavel.list()`, mesma fonte do campo "Responsável" do
+`LeadForm`.
+
+**Fila automática de atendimento** (card "Fila/distribuição automática de conversas", Fase 1,
+`20261107100000_add_crm_fila_atendimento.sql`) atribui `atendente_id` ao criar uma conversa nova,
+espelhando o padrão de distribuição de leads (`prepare_lead_phase1`), com duas diferenças
+deliberadas: (1) **fila global, sem `unidade_id`** — `gestao_crm.configuracao_fila_atendimento`
+(singleton) + `gestao_crm.atendentes_fila` (por colaborador), já que uma conversa nova sem
+lead/cliente vinculado ainda não tem unidade; (2) **sem atendente elegível não bloqueia o
+INSERT** — diferente do trigger de lead (que lança exceção), a conversa é inbound do WhatsApp e
+simplesmente fica com `atendente_id = null`. Lógica no trigger `BEFORE INSERT`
+`gestao_crm.prepare_conversa_atendimento`, que só dispara na criação real: `whatsapp-api/index.ts`
+faz UPDATE (não INSERT) ao reabrir uma conversa de telefone já conhecido, então o atendente
+anterior é preservado. Estratégias `rodizio` (por `ultimo_atendimento_atribuido_em`) e
+`menor_carga` (por contagem de conversas `aberta`/`aguardando_humano`), com `pg_advisory_xact_lock`
+contra corrida entre conversas simultâneas — mesmos critérios de elegibilidade de
+`vendedores_distribuicao` (`ativo` na fila + `colaboradores.status <> 'inativo'`). Config em
+`ConfiguracaoDistribuicao.jsx`, aba "Atendimento" (ao lado da aba "Leads"): campos globais
+(`ativa`/`estrategia`/`limite_padrao_conversas_ativas`) só editáveis por `admin`
+(`save_fila_atendimento_config` rejeita gestor com 403); lista de atendentes (participação +
+limite individual) editável por `admin`/`gestor`, mas gestor só pode alterar colaboradores da
+própria unidade.
+
+**Status de entrega/leitura** (card "Status de entrega/leitura (✓✓)", Fase 2,
+`20261108100000_add_crm_mensagem_status.sql`) adiciona `mensagens_atendimento.status`
+(`enviado`/`entregue`/`lido`/`falha`, default `enviado`) e `status_atualizado_em`, relevante só
+para mensagens de saída. Toda mensagem de saída (resposta da IA em `whatsapp-api/index.ts`, envio
+manual do atendente na action `send_atendimento_mensagem` do `crm-api`) agora guarda
+`metadados.whatsapp_message_id` do retorno do envio (`extractWhatsappMessageId` em
+`_shared/whatsapp.ts`) — antes só mensagens de **entrada** guardavam isso, para dedupe. O webhook
+da Meta manda os eventos de status em `value.statuses[]` (hoje totalmente ignorado, só
+`value.messages` era lido); `extractStatusUpdatesMeta` + o `update` que segue na função
+`serve()` casam pelo `whatsapp_message_id` e só avançam o status (nunca regridem, exceto
+`falha`, que sempre vence) — importante porque a Meta pode reenviar eventos fora de ordem.
+**Evolution também é tratada**, formato validado em 2026-11-06 com payload real via ngrok
+(evoapicloud/evolution-api, não é o enum numérico do Baileys como se assumiu inicialmente):
+evento `messages.update`, `data` é um objeto achatado (não array, não aninha em `key`/`update`)
+com `keyId` (id do protocolo WhatsApp — o que casa com `metadados.whatsapp_message_id`),
+`fromMe` e `status` como string (`SERVER_ACK`/`DELIVERY_ACK`/`READ`/`PLAYED`/`ERROR` — mapeados
+em `EVOLUTION_STATUS_MAP`). **Cuidado**: o mesmo payload também tem um `messageId` (formato
+cuid, id interno da Evolution) que parece com o que precisamos mas não é — usar sempre `keyId`.
+Exige o evento `MESSAGES_UPDATE` habilitado no webhook da instância (além de `MESSAGES_UPSERT`),
+ver `GUIA_TESTE_WHATSAPP_EVOLUTION_LOCAL.md`. UI: `MensagemBubble.jsx` mostra ✓ (enviado) ou ✓✓
+(entregue, cinza; lido, azul) ao lado do horário, só em mensagens de saída — chega via Realtime
+(UPDATE em `mensagens_atendimento`, já tratado pelo merge direto no cache descrito abaixo).
 
 ## Realtime
 

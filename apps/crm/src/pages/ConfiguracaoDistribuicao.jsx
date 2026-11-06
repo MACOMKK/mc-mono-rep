@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import {
   AlertDialog,
@@ -41,8 +42,20 @@ export function validateDraft(value) {
   return null;
 }
 
-export default function ConfiguracaoDistribuicao() {
-  const { user } = useAuth();
+export function validateFilaDraft(value) {
+  const isBlankOrPositiveInt = (raw) => raw === '' || raw === null || raw === undefined || (Number.isInteger(Number(raw)) && Number(raw) >= 1);
+
+  if (!isBlankOrPositiveInt(value.limite_padrao_conversas_ativas)) {
+    return 'Limite padrao por atendente deve ser vazio (sem limite) ou um numero inteiro maior ou igual a 1.';
+  }
+  const invalidAtendente = (value.atendentes || []).find((atendente) => !isBlankOrPositiveInt(atendente.limite_conversas_ativas));
+  if (invalidAtendente) {
+    return 'Limite individual do atendente deve ser vazio (usar padrao) ou um numero inteiro maior ou igual a 1.';
+  }
+  return null;
+}
+
+function LeadsDistribuicaoTab({ user }) {
   const queryClient = useQueryClient();
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [draft, setDraft] = useState(null);
@@ -117,10 +130,6 @@ export default function ConfiguracaoDistribuicao() {
     }),
   });
 
-  if (user?.role !== 'admin' && user?.role !== 'manager') {
-    return <div className="p-8 text-sm text-muted-foreground">Apenas gestores e administradores podem configurar a distribuicao.</div>;
-  }
-
   const updateSeller = (collaboratorId, changes) => setDraft((current) => ({
     ...current,
     sellers: current.sellers.map((seller) => seller.colaborador_id === collaboratorId ? { ...seller, ...changes } : seller),
@@ -136,10 +145,10 @@ export default function ConfiguracaoDistribuicao() {
   }
 
   return (
-    <div className="px-4 py-6 md:px-6 xl:px-10 2xl:px-16">
+    <div>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4 border-b pb-5">
         <div>
-          <h1 className="text-xl font-black uppercase tracking-widest">Distribuicao de Leads</h1>
+          <h2 className="text-sm font-black uppercase tracking-widest">Distribuicao de Leads</h2>
           <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground">Regras automaticas por unidade</p>
         </div>
         <Select value={selectedUnit?.id || ''} onValueChange={setSelectedUnitId}>
@@ -280,6 +289,193 @@ export default function ConfiguracaoDistribuicao() {
           ) : null}
         </>
       ) : null}
+    </div>
+  );
+}
+
+function FilaAtendimentoTab({ user }) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState(null);
+  const isAdmin = user?.role === 'admin';
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['crm-fila-atendimento'],
+    queryFn: () => crmDataClient.entities.FilaAtendimento.getConfig(),
+  });
+
+  const atendentes = data?.atendentes || [];
+
+  useEffect(() => {
+    if (!data) return;
+    setDraft({
+      ativa: data.config?.ativa !== false,
+      estrategia: data.config?.estrategia || 'rodizio',
+      limite_padrao_conversas_ativas: data.config?.limite_padrao_conversas_ativas ?? '',
+      atendentes: atendentes.map((atendente) => ({
+        colaborador_id: atendente.id,
+        ativo: atendente.ativo !== false,
+        limite_conversas_ativas: atendente.limite_conversas_ativas ?? '',
+      })),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: (payload) => crmDataClient.entities.FilaAtendimento.saveConfig(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['crm-fila-atendimento'] });
+      toast({ title: 'Fila de atendimento atualizada', description: 'As regras foram salvas.', variant: 'success' });
+    },
+    onError: (mutationError) => toast({
+      title: 'Nao foi possivel salvar',
+      description: mutationError.message,
+      variant: 'destructive',
+    }),
+  });
+
+  const updateAtendente = (collaboratorId, changes) => setDraft((current) => ({
+    ...current,
+    atendentes: current.atendentes.map((atendente) => atendente.colaborador_id === collaboratorId ? { ...atendente, ...changes } : atendente),
+  }));
+
+  function handleSave() {
+    const validationError = validateFilaDraft(draft);
+    if (validationError) {
+      toast({ title: 'Revise os valores informados', description: validationError, variant: 'destructive' });
+      return;
+    }
+    // Campos globais (ativa/estrategia/limite padrao) sao admin-only no backend; gestor manda so
+    // a lista de atendentes para nao disparar o 403 de 'save_fila_atendimento_config'.
+    const payload = isAdmin
+      ? draft
+      : { atendentes: draft.atendentes };
+    saveMutation.mutate(payload);
+  }
+
+  if (!draft) {
+    return (
+      <div>
+        {isLoading ? <p className="py-10 text-sm text-muted-foreground">Carregando configuracoes...</p> : null}
+        {error ? <p className="py-10 text-sm text-red-600">{error.message}</p> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-5 border-b pb-5">
+        <h2 className="text-sm font-black uppercase tracking-widest">Fila de Atendimento</h2>
+        <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground">
+          Rodizio automatico de conversas novas entre atendentes (fila unica, sem distincao por unidade)
+        </p>
+      </div>
+
+      <section className="grid gap-5 border-b bg-white p-5 md:grid-cols-[1fr_1fr_1fr]">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <Label className="text-xs font-bold uppercase tracking-wider">Fila automatica</Label>
+            <p className="mt-1 text-xs text-muted-foreground">Quando pausada, conversas novas ficam sem atendente.</p>
+          </div>
+          <Switch
+            checked={draft.ativa}
+            disabled={!isAdmin}
+            onCheckedChange={(ativa) => setDraft((current) => ({ ...current, ativa }))}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Estrategia</Label>
+          <Select
+            value={draft.estrategia}
+            disabled={!isAdmin}
+            onValueChange={(estrategia) => setDraft((current) => ({ ...current, estrategia }))}
+          >
+            <SelectTrigger className="h-9 rounded-none"><SelectValue /></SelectTrigger>
+            <SelectContent className="rounded-none">
+              <SelectItem value="rodizio">Rodizio</SelectItem>
+              <SelectItem value="menor_carga">Menor carga ativa</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider">Limite padrao por atendente</Label>
+          <Input
+            type="number"
+            min="1"
+            disabled={!isAdmin}
+            value={draft.limite_padrao_conversas_ativas}
+            onChange={(event) => setDraft((current) => ({ ...current, limite_padrao_conversas_ativas: event.target.value }))}
+            placeholder="Sem limite"
+            className="h-9 rounded-none"
+          />
+        </div>
+      </section>
+
+      {!isAdmin ? (
+        <p className="mt-3 text-xs text-muted-foreground">Apenas administradores podem alterar as regras globais da fila. Gestores podem ativar/desativar atendentes da propria unidade.</p>
+      ) : null}
+
+      <section className="mt-5">
+        <div className="mb-3 flex items-center gap-2">
+          <Users className="h-4 w-4" />
+          <h2 className="text-sm font-black uppercase tracking-widest">Atendentes elegiveis</h2>
+        </div>
+        <div className="overflow-hidden border bg-white">
+          <Table>
+            <TableHeader className="bg-[#1a1a1a]">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-white">Participa</TableHead>
+                <TableHead className="text-white">Atendente</TableHead>
+                <TableHead className="text-white">Conversas ativas</TableHead>
+                <TableHead className="text-white">Limite individual</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {atendentes.map((atendente) => {
+                const atendenteDraft = draft.atendentes.find((item) => item.colaborador_id === atendente.id);
+                return (
+                  <TableRow key={atendente.id}>
+                    <TableCell><Switch checked={atendenteDraft?.ativo !== false} onCheckedChange={(ativo) => updateAtendente(atendente.id, { ativo })} /></TableCell>
+                    <TableCell><p className="font-semibold">{atendente.nome}</p><p className="text-xs text-muted-foreground">{atendente.email}</p></TableCell>
+                    <TableCell className="font-bold">{atendente.conversas_ativas || 0}</TableCell>
+                    <TableCell><Input type="number" min="1" value={atendenteDraft?.limite_conversas_ativas ?? ''} onChange={(event) => updateAtendente(atendente.id, { limite_conversas_ativas: event.target.value })} placeholder="Usar padrao" className="h-8 w-36 rounded-none" /></TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </section>
+
+      <div className="mt-5 flex justify-end">
+        <Button onClick={handleSave} disabled={saveMutation.isPending} className="rounded-none text-xs font-bold uppercase tracking-wider">
+          <Save className="mr-2 h-4 w-4" /> {saveMutation.isPending ? 'Salvando...' : 'Salvar regras'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export default function ConfiguracaoDistribuicao() {
+  const { user } = useAuth();
+
+  if (user?.role !== 'admin' && user?.role !== 'manager') {
+    return <div className="p-8 text-sm text-muted-foreground">Apenas gestores e administradores podem configurar a distribuicao.</div>;
+  }
+
+  return (
+    <div className="px-4 py-6 md:px-6 xl:px-10 2xl:px-16">
+      <Tabs defaultValue="leads">
+        <TabsList className="mb-5">
+          <TabsTrigger value="leads">Leads</TabsTrigger>
+          <TabsTrigger value="atendimento">Atendimento</TabsTrigger>
+        </TabsList>
+        <TabsContent value="leads">
+          <LeadsDistribuicaoTab user={user} />
+        </TabsContent>
+        <TabsContent value="atendimento">
+          <FilaAtendimentoTab user={user} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

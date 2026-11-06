@@ -1,4 +1,4 @@
-import { Bot } from 'lucide-react';
+import { Bot, Check, CheckCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const AUTOR_LABEL = {
@@ -6,6 +6,13 @@ const AUTOR_LABEL = {
   humano: 'Você',
   cliente: null,
 };
+
+function StatusIcon({ status }) {
+  if (status === 'lido') return <CheckCheck className="h-3 w-3 text-sky-500" />;
+  if (status === 'entregue') return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+  if (status === 'falha') return null;
+  return <Check className="h-3 w-3 text-muted-foreground" />;
+}
 
 function formatHora(value) {
   if (!value) return '';
@@ -51,8 +58,9 @@ export default function MensagemBubble({ mensagem, onRetry }) {
             Falha ao enviar · tentar novamente
           </button>
         ) : (
-          <span className="mt-0.5 text-[10px] text-muted-foreground">
+          <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
             {isPending ? 'Enviando...' : formatHora(mensagem.created_date)}
+            {!isPending && isSaida ? <StatusIcon status={mensagem.status} /> : null}
           </span>
         )}
       </div>

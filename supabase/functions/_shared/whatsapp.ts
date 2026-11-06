@@ -77,3 +77,18 @@ export async function sendWhatsappMessageEvolution(
 
   return data;
 }
+
+// Extrai o id da mensagem enviada do payload de resposta de cada provedor -- usado para casar
+// com os eventos de status (entregue/lido) que chegam depois no webhook, ver status em
+// mensagens_atendimento (migration 20261108100000_add_crm_mensagem_status.sql).
+export function extractWhatsappMessageId(provider: WhatsappProvider, data: unknown): string | null {
+  if (provider === 'meta') {
+    const id = (data as { messages?: { id?: unknown }[] })?.messages?.[0]?.id;
+    return typeof id === 'string' ? id : null;
+  }
+
+  const evolutionData = data as { key?: { id?: unknown } } | { key?: { id?: unknown } }[];
+  const key = Array.isArray(evolutionData) ? evolutionData[0]?.key : evolutionData?.key;
+  const id = key?.id;
+  return typeof id === 'string' ? id : null;
+}

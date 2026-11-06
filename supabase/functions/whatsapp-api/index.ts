@@ -2,7 +2,12 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { loadIntegracaoCredenciais } from '../_shared/integracoes.ts';
-import { sendWhatsappMessageMeta, sendWhatsappMessageEvolution, type WhatsappProvider } from '../_shared/whatsapp.ts';
+import {
+  sendWhatsappMessageMeta,
+  sendWhatsappMessageEvolution,
+  extractWhatsappMessageId,
+  type WhatsappProvider,
+} from '../_shared/whatsapp.ts';
 
 // gestao_crm nao e' exposto via PostgREST (so acessivel por conexao direta Postgres) --
 // mesmo padrao ja usado em crm-api/index.ts. Nao usar supabase-js .schema(...).from(...)
@@ -165,6 +170,74 @@ function extractIncomingMessagesEvolution(payload: any): IncomingMessage[] {
   return messages;
 }
 
+// Eventos de status (enviado/entregue/lido/falha) de cada provedor. Meta manda isso no formato
+// value.statuses[]; Evolution (evoapicloud/evolution-api) manda no evento "messages.update", com
+// "status" como string (nao numerico, nao e' o enum WAMessageStatus do Baileys como se assumiu
+// antes) -- validado em 2026-11-06 via payload real capturado com ngrok (ver log temporario que
+// existia aqui): {"event":"messages.update","data":{"keyId":"...","fromMe":true,"status":
+// "DELIVERY_ACK"|"READ","messageId":"<id interno, nao usar>"}}.
+const META_STATUS_MAP: Record<string, string> = {
+  sent: 'enviado',
+  delivered: 'entregue',
+  read: 'lido',
+  failed: 'falha',
+};
+
+const EVOLUTION_STATUS_MAP: Record<string, string> = {
+  ERROR: 'falha',
+  SERVER_ACK: 'enviado',
+  DELIVERY_ACK: 'entregue',
+  READ: 'lido',
+  PLAYED: 'lido', // midia de audio reproduzida, sem status mais especifico no nosso schema
+};
+
+type StatusUpdate = { messageId: string; status: string };
+
+function extractStatusUpdatesMeta(payload: any): StatusUpdate[] {
+  const updates: StatusUpdate[] = [];
+  const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+
+  for (const entry of entries) {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    for (const change of changes) {
+      const waStatuses = Array.isArray(change?.value?.statuses) ? change.value.statuses : [];
+      for (const item of waStatuses) {
+        const status = META_STATUS_MAP[String(item?.status)];
+        if (item?.id && status) {
+          updates.push({ messageId: item.id, status });
+        }
+      }
+    }
+  }
+
+  return updates;
+}
+
+// So processa mensagens nossas (fromMe) -- sao as unicas que tem whatsapp_message_id gravado
+// do nosso lado (ver extractWhatsappMessageId em _shared/whatsapp.ts). "keyId" e' o id do
+// protocolo WhatsApp (o mesmo que extractWhatsappMessageId captura no envio); "messageId" e'
+// um id interno da Evolution (formato cuid) e NAO deve ser usado pra casar com
+// metadados.whatsapp_message_id.
+function extractStatusUpdatesEvolution(payload: any): StatusUpdate[] {
+  const updates: StatusUpdate[] = [];
+  if (payload?.event !== 'messages.update') return updates;
+
+  const rawData = payload?.data;
+  const entries = Array.isArray(rawData) ? rawData : rawData ? [rawData] : [];
+
+  for (const entry of entries) {
+    const keyId = entry?.keyId;
+    if (!keyId || !entry?.fromMe) continue;
+
+    const status = EVOLUTION_STATUS_MAP[String(entry?.status)];
+    if (status) {
+      updates.push({ messageId: String(keyId), status });
+    }
+  }
+
+  return updates;
+}
+
 async function callAi(openaiApiKey: string, history: { autor: string; conteudo: string }[]) {
   const messages = [
     {
@@ -290,8 +363,27 @@ serve(async (req) => {
       provider === 'meta' ? extractIncomingMessagesMeta(payload) : extractIncomingMessagesEvolution(payload);
 
     if (incomingMessages.length === 0) {
-      // Webhooks de status (entregue/lido) tambem chegam aqui; nao ha o que processar.
-      return new Response(JSON.stringify({ success: true, processed: 0 }), {
+      // Webhooks de status (enviado/entregue/lido) tambem chegam aqui, sem nenhuma mensagem em
+      // value.messages/messages.upsert -- ver extractStatusUpdatesMeta/extractStatusUpdatesEvolution.
+      const statusUpdates =
+        provider === 'meta' ? extractStatusUpdatesMeta(payload) : extractStatusUpdatesEvolution(payload);
+
+      for (const update of statusUpdates) {
+        // So avanca o status (nunca regride) -- evita que um reenvio fora de ordem do webhook
+        // sobrescreva "lido" de volta para "entregue". "falha" sempre vence.
+        await sql`
+          update gestao_crm.mensagens_atendimento
+          set status = ${update.status}, status_atualizado_em = now()
+          where metadados->>'whatsapp_message_id' = ${update.messageId}
+            and (
+              ${update.status} = 'falha'
+              or case status when 'enviado' then 1 when 'entregue' then 2 when 'lido' then 3 else 0 end
+                 < case ${update.status} when 'enviado' then 1 when 'entregue' then 2 when 'lido' then 3 else 0 end
+            )
+        `;
+      }
+
+      return new Response(JSON.stringify({ success: true, processed: 0, statusUpdates: statusUpdates.length }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -411,15 +503,11 @@ serve(async (req) => {
 
       const respostaIa = await callAi(OPENAI_API_KEY, historicoRows || []);
 
-      await sql`
-        insert into gestao_crm.mensagens_atendimento (conversa_id, direcao, autor, conteudo)
-        values (${conversa.id}, 'saida', 'ia', ${respostaIa})
-      `;
-
+      let sendResult: unknown;
       if (provider === 'meta') {
-        await sendWhatsappMessageMeta(metaPhoneNumberId!, metaToken!, incoming.fromPhone, respostaIa);
+        sendResult = await sendWhatsappMessageMeta(metaPhoneNumberId!, metaToken!, incoming.fromPhone, respostaIa);
       } else {
-        await sendWhatsappMessageEvolution(
+        sendResult = await sendWhatsappMessageEvolution(
           evolutionCredenciais!.instance_url as string,
           evolutionCredenciais!.instance_name as string,
           evolutionCredenciais!.api_key as string,
@@ -427,6 +515,18 @@ serve(async (req) => {
           respostaIa,
         );
       }
+      const sentMessageId = extractWhatsappMessageId(provider, sendResult);
+
+      await sql`
+        insert into gestao_crm.mensagens_atendimento (conversa_id, direcao, autor, conteudo, metadados)
+        values (
+          ${conversa.id},
+          'saida',
+          'ia',
+          ${respostaIa},
+          ${sql.json(sentMessageId ? { whatsapp_message_id: sentMessageId } : {})}
+        )
+      `;
 
       await sql`
         update gestao_crm.conversas_atendimento

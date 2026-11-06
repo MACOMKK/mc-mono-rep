@@ -195,6 +195,14 @@ export const crmApi = {
       return invokeCrm({ action: 'clear_crm_test_data', confirm: 'LIMPAR-DADOS-CRM', confirmar_global: true });
     },
   },
+  fila_atendimento: {
+    async getConfig() {
+      return invokeCrm({ action: 'get_fila_atendimento_config' });
+    },
+    async saveConfig(payload) {
+      return invokeCrm({ action: 'save_fila_atendimento_config', ...payload });
+    },
+  },
   clientes: {
     ...buildEntity('clientes'),
     async buscar(busca) {
@@ -285,6 +293,10 @@ export const crmApi = {
     ...buildEntity('conversas_atendimento'),
     async sendMensagem(payload) {
       const result = await invokeCrm({ action: 'send_atendimento_mensagem', ...payload });
+      return result.row || null;
+    },
+    async transferir(payload) {
+      const result = await invokeCrm({ action: 'transferir_atendimento', ...payload });
       return result.row || null;
     },
   },

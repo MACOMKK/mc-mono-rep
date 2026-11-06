@@ -21,6 +21,8 @@ function mapConversaRow(row = {}) {
     tags: row.tags || [],
     cliente_nome: row.cliente?.nome || '',
     responsavel_id: row.lead?.responsavel_id || '',
+    atendente_id: row.atendente_id || '',
+    atendente_nome: row.atendente_nome || '',
     created_date: row.criado_em || null,
     updated_date: row.atualizado_em || null,
   };
@@ -34,6 +36,7 @@ function mapMensagemRow(row = {}) {
     autor: row.autor,
     colaborador_id: row.colaborador_id || '',
     conteudo: row.conteudo || '',
+    status: row.status || 'enviado',
     metadados: row.metadados || {},
     created_date: row.criado_em || null,
   };
@@ -86,6 +89,14 @@ async function updateTags(conversaId, tags) {
   return mapConversaRow(row);
 }
 
+// Transfere o "atendente do chat" (atendente_id), distinto do responsavel_id do lead -- ver
+// action transferir_atendimento em crm-api/index.ts. atendenteId vazio remove o atendente.
+async function transferirConversa(conversaId, atendenteId) {
+  if (!conversaId) return null;
+  const row = await crmApi.conversas_atendimento.transferir({ conversaId, atendenteId: atendenteId || '' });
+  return row ? mapConversaRow(row) : null;
+}
+
 function mapNotaConversaRow(row = {}) {
   return {
     id: row.id,
@@ -93,6 +104,7 @@ function mapNotaConversaRow(row = {}) {
     colaborador_id: row.colaborador_id || '',
     colaborador_nome: row.colaborador_nome || '',
     conteudo: row.conteudo || '',
+    tipo: row.tipo || 'usuario',
     criado_em: row.criado_em || null,
   };
 }
@@ -143,6 +155,7 @@ export const atendimentoApi = {
   marcarConversaLida,
   vincularLead,
   updateTags,
+  transferirConversa,
   listNotasConversa,
   adicionarNotaConversa,
   mapMensagemRow,

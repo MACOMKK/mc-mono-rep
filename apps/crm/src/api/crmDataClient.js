@@ -1500,6 +1500,15 @@ const DistribuicaoRepository = {
   },
 };
 
+const FilaAtendimentoRepository = {
+  async getConfig() {
+    return crmApi.fila_atendimento.getConfig();
+  },
+  async saveConfig(data) {
+    return crmApi.fila_atendimento.saveConfig(data);
+  },
+};
+
 const EventoRepository = {
   ...createListRepository('Evento', crmApi.atendimentos, mapEventoRow),
 
@@ -1611,6 +1620,7 @@ export const crmDataClient = {
     Lead: LeadRepository,
     Responsavel: ResponsavelRepository,
     Distribuicao: DistribuicaoRepository,
+    FilaAtendimento: FilaAtendimentoRepository,
     VeiculoInteresse: VeiculoInteresseRepository,
     CategoriaVeiculo: CategoriaVeiculoRepository,
     OrigemLead: OrigemLeadRepository,

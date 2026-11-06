@@ -111,7 +111,9 @@ No Manager (`http://localhost:8080/manager`) → instância → Webhook:
 
 - URL: `https://<project-ref>.supabase.co/functions/v1/whatsapp-api?token=<webhook_token>`
   (o `webhook_token` é o valor cadastrado nos Segredos da integração `whatsapp_evolution`)
-- Evento: `MESSAGES_UPSERT`
+- Eventos: `MESSAGES_UPSERT` (recebimento) e `MESSAGES_UPDATE` (status de entrega/leitura —
+  ver `extractStatusUpdatesEvolution` em `whatsapp-api/index.ts`; formato validado em
+  2026-11-06 com payload real via ngrok)
 
 ### 6. Testar
 
