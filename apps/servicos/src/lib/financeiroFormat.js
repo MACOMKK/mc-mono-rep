@@ -65,6 +65,7 @@ export const TIPOS_ANEXO = [
   { value: 'comunicado_interno', label: 'Comunicado interno' },
   { value: 'proposta', label: 'Proposta' },
   { value: 'ordem_servico', label: 'Ordem de Serviço' },
+  { value: 'cupom_fiscal', label: 'Cupom fiscal' },
   { value: 'outros', label: 'Outros' },
 ];
 
@@ -78,6 +79,7 @@ export const TIPO_ANEXO_LABEL = Object.fromEntries(
 // genericas (comprovante), pra "boleto_nf_123.pdf" nao cair em "comprovante" por engano.
 const REGRAS_CLASSIFICACAO_ANEXO = [
   { termos: ['boleto'], tipoAnexo: 'boleto' },
+  { termos: ['cupom_fiscal', 'cupom fiscal', 'cupomfiscal', 'cupom'], tipoAnexo: 'cupom_fiscal' },
   { termos: ['nfe', 'nf-e', 'nota_fiscal', 'notafiscal', 'nota fiscal', 'danfe'], tipoAnexo: 'nota_fiscal' },
   { termos: ['pix'], tipoAnexo: 'comprovante_pix' },
   { termos: ['orcamento', 'orçamento', 'cotacao', 'cotação'], tipoAnexo: 'orcamento' },

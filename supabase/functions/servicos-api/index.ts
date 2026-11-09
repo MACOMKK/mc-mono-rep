@@ -122,6 +122,7 @@ const ANEXO_TIPOS = [
   'comunicado_interno',
   'proposta',
   'ordem_servico',
+  'cupom_fiscal',
   'outros',
 ] as const;
 const ORDER_BY_COLUMNS: Record<string, string> = {
