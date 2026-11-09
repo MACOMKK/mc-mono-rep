@@ -69,6 +69,7 @@ import {
 import FornecedorDetalheDialog from '@/components/FornecedorDetalheDialog';
 import JuntarAnexosDialog, { podeJuntarAnexo } from '@/components/JuntarAnexosDialog';
 import PessoalBadge from '@/components/PessoalBadge';
+import RecorrenteBadge from '@/components/RecorrenteBadge';
 import { useAuth } from '@/lib/AuthContext';
 import { isAllowedAnexoMimeType, MAX_ANEXO_SIZE, substituirAnexo, uploadAnexo } from '@/lib/anexoUpload';
 import { getFriendlyErrorMessage } from '@/lib/errorMessage';
@@ -142,6 +143,14 @@ const EVENTO_META = {
   },
   cancelada: { label: 'Cancelada', icon: X, className: 'text-destructive bg-destructive/20' },
   reenviada: { label: 'Corrigida e reenviada', icon: RefreshCw, className: 'text-muted-foreground bg-muted' },
+  // Conta recorrente (ver PLANO_RECORRENCIA_FINANCEIRO.md).
+  recorrencia_gerada: { label: 'Próxima ocorrência gerada', icon: RefreshCw, className: 'text-sky-600 bg-sky-500/20' },
+  criada_por_recorrencia: {
+    label: 'Gerada pela recorrência',
+    icon: RefreshCw,
+    className: 'text-sky-600 bg-sky-500/20',
+  },
+  valor_informado: { label: 'Valor informado', icon: Wallet, className: 'text-sky-600 bg-sky-500/20' },
   parcela_criada: {
     label: 'Plano de pagamento definido',
     icon: CreditCard,
@@ -764,6 +773,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                 </Badge>
               )}
               {solicitacao?.pessoal && <PessoalBadge />}
+              {solicitacao?.recorrente && <RecorrenteBadge />}
               {solicitacao?.eh_teste && (
                 <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-600">
                   Teste
@@ -915,7 +925,11 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                       </>
                     )}
                     <CampoDetalhe icon={UserCheck} label="Aprovador responsável" value={solicitacao.aprovador_destino_nome} />
-                    <CampoDetalhe icon={Wallet} label="Valor" value={formatValor(solicitacao.valor)} />
+                    <CampoDetalhe
+                      icon={Wallet}
+                      label="Valor"
+                      value={solicitacao.status === 'rascunho' ? 'Aguardando valor' : formatValor(solicitacao.valor)}
+                    />
                     <CampoDetalhe icon={Tag} label="Categoria" value={solicitacao.categoria} />
                     <CampoDetalhe
                       icon={Calendar}

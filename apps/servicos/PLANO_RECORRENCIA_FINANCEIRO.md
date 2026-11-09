@@ -1,7 +1,15 @@
 # Plano: Solicitações recorrentes no Financeiro
 
-> **Status:** ideia aprovada no conceito, **não implementada** (registrada em 2026-10-05).
-> Ponto em aberto: confirmar se a próxima passa de novo pela aprovação (recomendado: sim).
+> **Status:** **implementado em 2026-11-09** (migration `20261109130000_add_servicos_solicitacao_recorrente.sql`).
+> Decisões confirmadas na implementação:
+> - a próxima ocorrência **passa de novo pela aprovação**;
+> - **Pessoal não pode ser recorrente**.
+>
+> Diferenças em relação ao desenho abaixo:
+> - não houve action nova `enviar_rascunho`: o envio reaproveita `reenviar_solicitacao`, que aceita `rascunho`;
+> - não há links clicáveis entre as ocorrências: o vínculo aparece no histórico, com o número da outra solicitação.
+>
+> O resumo das regras atuais está em `apps/servicos/CLAUDE.md` (Convenções do Financeiro).
 
 ## Objetivo
 Algumas despesas se repetem todo mês: mensalidades, assinaturas de serviço etc. A solicitação pode ser

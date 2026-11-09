@@ -12,7 +12,10 @@ export function truncarTitulo(titulo, max = 40) {
   return texto.length > max ? `${texto.slice(0, max).trimEnd()}...` : texto;
 }
 
+// 'rascunho' = ocorrencia de conta recorrente gerada automaticamente ao pagar a anterior,
+// aguardando o solicitante informar o valor do mes (ver PLANO_RECORRENCIA_FINANCEIRO.md).
 export const STATUS_VARIANT = {
+  rascunho: 'outline',
   pendente: 'warning',
   aprovado: 'success',
   reprovado: 'destructive',
@@ -21,6 +24,7 @@ export const STATUS_VARIANT = {
 };
 
 export const STATUS_LABEL = {
+  rascunho: 'Aguardando valor',
   pendente: 'Pendente',
   aprovado: 'Aprovado',
   reprovado: 'Reprovado',

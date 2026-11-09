@@ -41,6 +41,7 @@ import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
 import PaymentSuccessOverlay from '@/components/PaymentSuccessOverlay';
 import SolicitacaoDrawer from '@/components/SolicitacaoDrawer';
 import SolicitacaoCard from '@/components/SolicitacaoCard';
+import RecorrenteBadge from '@/components/RecorrenteBadge';
 import FiltersDrawer from '@/components/FiltersDrawer';
 import Pagination from '@/components/Pagination';
 import SearchInput from '@/components/SearchInput';
@@ -976,6 +977,7 @@ export default function Pagamentos() {
                       ) : (
                         <Badge variant={STATUS_VARIANT[row.status]}>{STATUS_LABEL[row.status] || row.status}</Badge>
                       )}
+                      {row.recorrente && <RecorrenteBadge />}
                       {row.eh_teste && (
                         <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-600">
                           Teste
@@ -1102,6 +1104,7 @@ export default function Pagamentos() {
                         <Badge variant={STATUS_VARIANT[row.status]}>{STATUS_LABEL[row.status] || row.status}</Badge>
                       )
                     )}
+                    {row.recorrente && <RecorrenteBadge />}
                     {row.eh_teste && (
                       <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-600">
                         Teste

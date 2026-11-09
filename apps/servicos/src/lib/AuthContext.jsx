@@ -48,6 +48,9 @@ function normalizeServicosUser(authUser, authPayload = {}, oficinaRole = null) {
     // calcula em `me`, ver servicos-api/index.ts). Nao tem relacao com reprovar pendente
     // (Aprovacoes), que continua so isAprovador/isFinanceiro.
     canReprovarAprovada: Boolean(authPayload.pode_reprovar_aprovada),
+    // Marcar solicitacao como recorrente (liberacao gradual: admin ou setor de Tecnologia) --
+    // backend calcula em `me` (podeMarcarRecorrencia na servicos-api).
+    canMarcarRecorrencia: Boolean(authPayload.pode_marcar_recorrencia),
     // Papel efetivo no modulo Oficina (Camada 2), resolvido via servicos-oficina-api
     // (edge function separada, ver apps/servicos/CLAUDE.md) -- nao vem de authPayload
     // porque financeiro/oficina sao papeis independentes em modulos diferentes.

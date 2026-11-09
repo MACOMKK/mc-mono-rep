@@ -258,9 +258,24 @@ reais (só adicionar coluna `mod_<novo>` na tabela, seguindo o mesmo padrão).
   (fornecedor/categoria/aprovador inativado) são descartados. Também há `beforeunload` enquanto o
   drawer tem alterações não enviadas. Sem backend: o rascunho não acompanha o usuário em outro
   dispositivo.
-- **Solicitações recorrentes (planejado, não implementado):** ao pagar uma solicitação marcada
-  como recorrente, gera a do mês seguinte (status `rascunho`, valor vazio, vencimento = vencimento
-  da conta + 1 mês). Desenho completo em [PLANO_RECORRENCIA_FINANCEIRO.md](PLANO_RECORRENCIA_FINANCEIRO.md).
+- **Solicitações recorrentes (mensais)** (migration `20261109130000_add_servicos_solicitacao_recorrente.sql`,
+  colunas `recorrente`, `recorrencia_dia` e `recorrencia_origem_id`). Desenho em
+  [PLANO_RECORRENCIA_FINANCEIRO.md](PLANO_RECORRENCIA_FINANCEIRO.md).
+  - **Em teste, só admin ou setor de Tecnologia (2026-11-09):** `RECORRENCIA_RESTRITA` na servicos-api (`podeMarcarRecorrencia`: nível admin do sistema, ou o departamento atual do colaborador com nome "TI", "Tecnologia" ou "Tecnologia da Informação", comparado sem acento e sem diferenciar maiúsculas). A action `me` devolve `pode_marcar_recorrencia`, exposto no front como `user.canMarcarRecorrencia`, que mostra o checkbox. Quem não tem permissão recebe 403 ao tentar marcar. Para liberar a todos, trocar para `false` só na servicos-api.
+  - **Marcação:** checkbox "Recorrente (mensal)" no `NovaSolicitacaoDrawer`. Exige vencimento e nunca vale para Pessoal (check `chk_servicos_solicitacoes_recorrente_pessoal`).
+  - **Âncora:** `aplicarRecorrencia` (servicos-api) grava `recorrencia_dia` com o dia do vencimento informado, antes do `proximaDataUtil`.
+  - **Geração:** ao virar `pago`, `gerarProximaRecorrencia` cria a ocorrência seguinte.
+    - Os dois gatilhos são `set_status` à vista e a última parcela em `registrar_pagamento_parcela`. O `marcar_pago_pessoal` não gera.
+    - Vencimento: mês seguinte ao vencimento da conta, nunca ao do pagamento. Usa o dia âncora limitado ao fim do mês e depois `proximaDataUtil`.
+    - Status `rascunho` ("Aguardando valor"), com `valor` nulo. O check `chk_servicos_solicitacoes_valor` só libera nulo nesse status.
+    - Copia: título, descrição, beneficiário, categoria, forma, empresa/unidade/setor, aprovador, solicitante, `eh_teste` e NF esperada.
+    - Não copia: valor, anexos, parcelas, pendência e análise.
+    - Registra histórico (`recorrencia_gerada` / `criada_por_recorrencia`) e notifica o solicitante.
+    - O índice único parcial em `recorrencia_origem_id` impede gerar duas (por exemplo, reverter e pagar de novo).
+    - Uma falha na geração só loga e não desfaz o pagamento.
+  - **Envio:** o solicitante abre "Informar valor" e preenche valor e anexo (obrigatórios). O envio usa a action `reenviar_solicitacao`, que aceita `rascunho` além de `reprovado`: vai para `pendente`, passa de novo pela aprovação, registra o histórico `valor_informado` e notifica o aprovador.
+  - **Parar a recorrência:** cancelar o rascunho (solicitante ou financeiro, botão "Encerrar recorrência") ou desmarcar "Recorrente" antes de pagar.
+  - **Rascunho fora das telas:** fica fora de `relatorio_financeiro` (filtro na CTE base), de Aprovações (lista `pendente`), de Pagamentos/Calendário (filtram `aprovado`/`pago`) e do cron `servicos-lembrete-aprovacoes` (`pendente`).
 
 ## Oficina — Checklist de inspeção de veículos
 

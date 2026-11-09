@@ -52,6 +52,9 @@ import {
 
 const FORMAS_PAGAMENTO = Object.entries(FORMA_PAGAMENTO_LABEL).map(([value, label]) => ({ value, label }));
 
+// Liberacao gradual (2026-11-09): "Recorrente (mensal)" so aparece para quem o backend libera em
+// `me` (`canMarcarRecorrencia`: admin ou setor de Tecnologia, RECORRENCIA_RESTRITA na servicos-api).
+
 // Referencia estavel: um `[]` literal como default do useQuery criaria um array novo a cada
 // render (a query fica desabilitada/sem dado ao criar uma solicitacao nova), o que reexecutava
 // o useEffect que le esse valor em loop infinito ("Maximum update depth exceeded").
@@ -76,13 +79,17 @@ const EMPTY_FORM = {
   aprovadorDestinoId: '',
   ehTeste: false,
   possuiNotaFiscal: false,
+  recorrente: false,
 };
 
 export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao = null }) {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const isReenvio = Boolean(solicitacao) && solicitacao.status === 'reprovado';
+  // Rascunho de conta recorrente ("Aguardando valor"): usa o mesmo fluxo do reenvio
+  // (reenviar_solicitacao), que tira do rascunho e manda pra aprovacao.
+  const isRascunhoRecorrente = Boolean(solicitacao) && solicitacao.status === 'rascunho';
+  const isReenvio = Boolean(solicitacao) && (solicitacao.status === 'reprovado' || isRascunhoRecorrente);
   const isEdicao =
     Boolean(solicitacao) && (solicitacao.status === 'pendente' || solicitacao.pendencia_bloqueio === true);
 
@@ -192,7 +199,9 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
         });
       } else {
         toast(
-          isReenvio
+          isRascunhoRecorrente
+            ? { title: 'Conta enviada para aprovação', description: 'O valor do mês foi informado.' }
+            : isReenvio
             ? { title: 'Solicitação reenviada', description: 'Sua solicitação voltou para a fila de aprovação.' }
             : isEdicao
               ? { title: 'Solicitação atualizada' }
@@ -320,6 +329,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
         departamentoId: solicitacao.departamento_id || '',
         aprovadorDestinoId: solicitacao.aprovador_destino_id || '',
         possuiNotaFiscal: solicitacao.possui_nota_fiscal === true,
+        recorrente: solicitacao.recorrente === true,
       };
       setForm(loadedForm);
       initialFormRef.current = loadedForm;
@@ -597,8 +607,23 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
 
     const beneficiarioFaltando = form.tipoBeneficiario === 'fornecedor' && !form.fornecedorId;
 
-    if (!isEdicao && !isReenvio && !isPessoal && anexos.length === 0) {
-      toast({ title: 'Anexo obrigatório', description: 'Selecione ao menos um arquivo antes de enviar a solicitação.' });
+    if ((isNova || isRascunhoRecorrente) && !isPessoal && anexos.length === 0) {
+      toast({
+        title: 'Anexo obrigatório',
+        description: isRascunhoRecorrente
+          ? 'Anexe o boleto ou a nota deste mês antes de enviar.'
+          : 'Selecione ao menos um arquivo antes de enviar a solicitação.',
+      });
+      return;
+    }
+
+    if (isRascunhoRecorrente && !(Number(form.valor) > 0)) {
+      toast({ title: 'Informe o valor', description: 'Preencha o valor deste mês antes de enviar para aprovação.' });
+      return;
+    }
+
+    if (!isPessoal && form.recorrente && !form.dataVencimento) {
+      toast({ title: 'Informe o vencimento', description: 'Conta recorrente precisa de data de vencimento.' });
       return;
     }
 
@@ -687,6 +712,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
         departamento_id: form.departamentoId || null,
         aprovador_destino_id: aprovadorDispensado ? null : form.aprovadorDestinoId,
         possui_nota_fiscal: form.possuiNotaFiscal,
+        recorrente: form.recorrente === true,
         ...(parcelasPayload ? { parcelas: parcelasPayload } : {}),
         ...(!isEdicao && !isReenvio && user?.system_access_level === 'admin' && form.ehTeste
           ? { eh_teste: true }
@@ -706,9 +732,22 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
       >
         <SheetHeader>
           <SheetTitle>
-            {isReenvio ? 'Corrigir e reenviar solicitação' : isEdicao ? 'Editar solicitação' : 'Nova solicitação de pagamento'}
+            {isRascunhoRecorrente
+              ? 'Informar valor da conta recorrente'
+              : isReenvio
+                ? 'Corrigir e reenviar solicitação'
+                : isEdicao
+                  ? 'Editar solicitação'
+                  : 'Nova solicitação de pagamento'}
           </SheetTitle>
         </SheetHeader>
+
+        {isRascunhoRecorrente && (
+          <div className="mt-4 rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-700 dark:bg-sky-950/40 dark:text-sky-200">
+            Esta conta foi gerada automaticamente a partir do pagamento do mês anterior. Confira os dados, informe o
+            valor deste mês e anexe o boleto/nota. Ao enviar, ela segue para aprovação.
+          </div>
+        )}
 
         {rascunhoPendente && (
           <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
@@ -1093,6 +1132,31 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
             </div>
           </div>
 
+          {!isPessoal &&
+            (user?.canMarcarRecorrencia || solicitacao?.recorrente === true) && (
+            <div className="space-y-1">
+              <label
+                htmlFor="recorrente"
+                className={`flex w-fit items-center gap-2 text-sm font-medium ${
+                  form.dataVencimento ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+                }`}
+              >
+                <Checkbox
+                  id="recorrente"
+                  checked={form.recorrente}
+                  disabled={!form.dataVencimento}
+                  onCheckedChange={(checked) => setField('recorrente')(checked === true)}
+                />
+                Recorrente (mensal)
+              </label>
+              <p className="text-xs text-muted-foreground">
+                {form.dataVencimento
+                  ? 'Quando esta conta for paga, a do mês seguinte é criada automaticamente com os mesmos dados, aguardando o valor.'
+                  : 'Informe a data de vencimento para marcar como recorrente.'}
+              </p>
+            </div>
+          )}
+
           {!isPessoal && empresas.length > 0 && (
             <div className="space-y-2">
               <Label htmlFor="empresa">
@@ -1161,7 +1225,7 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
 
           <div className="space-y-2">
             <Label htmlFor="anexos">
-              Anexos {!isEdicao && !isReenvio && !isPessoal ? '(obrigatório, máx 5 MB cada)' : '(máx 5 MB cada)'}
+              Anexos {(isNova || isRascunhoRecorrente) && !isPessoal ? '(obrigatório, máx 5 MB cada)' : '(máx 5 MB cada)'}
             </Label>
             <label
               htmlFor="anexos"
@@ -1254,6 +1318,8 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
                         ? 'Salvando...'
                         : 'Enviando...'}
               </>
+            ) : isRascunhoRecorrente ? (
+              'Enviar para aprovação'
             ) : isReenvio ? (
               'Reenviar solicitação'
             ) : isEdicao ? (

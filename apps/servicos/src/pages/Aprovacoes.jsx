@@ -36,6 +36,7 @@ import {
 } from '@macom/ui';
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
 import PessoalBadge from '@/components/PessoalBadge';
+import RecorrenteBadge from '@/components/RecorrenteBadge';
 import SolicitacaoDrawer from '@/components/SolicitacaoDrawer';
 import SolicitacaoCard from '@/components/SolicitacaoCard';
 import FiltersDrawer from '@/components/FiltersDrawer';
@@ -484,6 +485,7 @@ export default function Aprovacoes() {
                       <div className="flex items-center gap-1.5">
                         <span className="truncate">{truncarTitulo(row.titulo)}</span>
                         {row.pessoal && <PessoalBadge />}
+                        {row.recorrente && <RecorrenteBadge />}
                       </div>
                     </TableCell>
                     <TableCell>{row.solicitante_nome}</TableCell>
@@ -546,6 +548,7 @@ export default function Aprovacoes() {
                 onClick={() => setSelectedId(row.id)}
                 showSolicitante
                 showAprovador
+                showRecorrente
                 actions={
                   row.pessoal ? (
                     <Button

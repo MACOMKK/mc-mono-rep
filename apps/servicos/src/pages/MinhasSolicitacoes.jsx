@@ -52,6 +52,7 @@ import SolicitacaoCard from '@/components/SolicitacaoCard';
 import NovaSolicitacaoDrawer from '@/components/NovaSolicitacaoDrawer';
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
 import PessoalBadge from '@/components/PessoalBadge';
+import RecorrenteBadge from '@/components/RecorrenteBadge';
 import FiltersDrawer from '@/components/FiltersDrawer';
 import Pagination from '@/components/Pagination';
 import SearchInput from '@/components/SearchInput';
@@ -70,6 +71,8 @@ const UNIDADE_FILTRO_TODAS = 'todas';
 const FORNECEDOR_FILTRO_TODOS = 'todos';
 const FORNECEDOR_FILTRO_SUPRIMENTO_CAIXA = 'suprimento_caixa';
 const FORMA_PAGAMENTO_FILTRO_TODAS = 'todas';
+const RECORRENCIA_FILTRO_TODAS = 'todas';
+const RECORRENCIA_FILTRO_RECORRENTES = 'recorrentes';
 
 export default function MinhasSolicitacoes() {
   const { user } = useAuth();
@@ -96,6 +99,7 @@ export default function MinhasSolicitacoes() {
   const [unidadeFiltro, setUnidadeFiltro] = useState(UNIDADE_FILTRO_TODAS);
   const [fornecedorFiltro, setFornecedorFiltro] = useState(FORNECEDOR_FILTRO_TODOS);
   const [formaPagamentoFiltro, setFormaPagamentoFiltro] = useState(FORMA_PAGAMENTO_FILTRO_TODAS);
+  const [recorrenciaFiltro, setRecorrenciaFiltro] = useState(RECORRENCIA_FILTRO_TODAS);
   const [valorFiltro, setValorFiltro] = useState(null);
   const [valorResetToken, setValorResetToken] = useState(0);
   const [vencimentoFiltro, setVencimentoFiltro] = useState(null);
@@ -189,6 +193,7 @@ export default function MinhasSolicitacoes() {
 
   const filteredRows = rows.filter((row) => {
     if (statusFiltro.length > 0 && !statusFiltro.includes(row.status)) return false;
+    if (recorrenciaFiltro === RECORRENCIA_FILTRO_RECORRENTES && row.recorrente !== true) return false;
     if (categoriaFiltro !== CATEGORIA_FILTRO_TODAS && row.categoria_id !== categoriaFiltro) return false;
     if (solicitanteFiltro !== SOLICITANTE_FILTRO_TODOS && String(row.solicitante_id) !== solicitanteFiltro) return false;
     if (aprovadorFiltro !== APROVADOR_FILTRO_TODOS && String(row.aprovador_destino_id) !== aprovadorFiltro) return false;
@@ -325,6 +330,7 @@ export default function MinhasSolicitacoes() {
     unidadeFiltro !== UNIDADE_FILTRO_TODAS,
     fornecedorFiltro !== FORNECEDOR_FILTRO_TODOS,
     formaPagamentoFiltro !== FORMA_PAGAMENTO_FILTRO_TODAS,
+    recorrenciaFiltro !== RECORRENCIA_FILTRO_TODAS,
     Boolean(valorFiltro),
     Boolean(vencimentoFiltro),
     Boolean(criacaoFiltro),
@@ -339,6 +345,7 @@ export default function MinhasSolicitacoes() {
     setUnidadeFiltro(UNIDADE_FILTRO_TODAS);
     setFornecedorFiltro(FORNECEDOR_FILTRO_TODOS);
     setFormaPagamentoFiltro(FORMA_PAGAMENTO_FILTRO_TODAS);
+    setRecorrenciaFiltro(RECORRENCIA_FILTRO_TODAS);
     setValorFiltro(null);
     setValorResetToken((current) => current + 1);
     setVencimentoFiltro(null);
@@ -373,6 +380,22 @@ export default function MinhasSolicitacoes() {
             Cancelar
           </Button>
           {marcarPago}
+        </div>
+      );
+    }
+    if (selected.status === 'rascunho' && (isDono(selected) || user?.isFinanceiro)) {
+      return (
+        <div className="flex w-full gap-2">
+          {isDono(selected) && (
+            <Button className="flex-1" onClick={() => setFormTarget(selected)}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Informar valor
+            </Button>
+          )}
+          <Button variant="outline" className="flex-1" onClick={() => setCancelTarget(selected)}>
+            <X className="mr-2 h-4 w-4" />
+            Encerrar recorrência
+          </Button>
         </div>
       );
     }
@@ -591,6 +614,16 @@ export default function MinhasSolicitacoes() {
             </SelectContent>
           </Select>
 
+          <Select value={recorrenciaFiltro} onValueChange={setRecorrenciaFiltro}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={RECORRENCIA_FILTRO_TODAS}>Recorrentes e avulsas</SelectItem>
+              <SelectItem value={RECORRENCIA_FILTRO_RECORRENTES}>Somente recorrentes</SelectItem>
+            </SelectContent>
+          </Select>
+
           <VencimentoRangeFilter onChange={setVencimentoFiltro} resetToken={vencimentoResetToken} />
 
           <VencimentoRangeFilter
@@ -666,11 +699,12 @@ export default function MinhasSolicitacoes() {
                         )
                       )}
                     </TableCell>
-                    <TableCell>{formatValor(row.valor)}</TableCell>
+                    <TableCell>{row.status === 'rascunho' ? '—' : formatValor(row.valor)}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1">
                         <Badge variant={STATUS_VARIANT[row.status]}>{STATUS_LABEL[row.status] || row.status}</Badge>
                         {row.pessoal && <PessoalBadge />}
+                        {row.recorrente && <RecorrenteBadge />}
                         {row.status === 'aprovado' && isParcialmentePago(row) && (
                           <Badge variant="outline">
                             Pago parcial ({row.parcelas_pagas}/{row.parcelas_total})
@@ -719,6 +753,7 @@ export default function MinhasSolicitacoes() {
                 badges={
                   <>
                     <Badge variant={STATUS_VARIANT[row.status]}>{STATUS_LABEL[row.status] || row.status}</Badge>
+                    {row.recorrente && <RecorrenteBadge />}
                     {row.status === 'aprovado' && isParcialmentePago(row) && (
                       <Badge variant="outline">
                         Pago parcial ({row.parcelas_pagas}/{row.parcelas_total})

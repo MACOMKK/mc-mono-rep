@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowRight, RefreshCw } from 'lucide-react';
 import { Badge } from '@macom/ui';
 import PessoalBadge from '@/components/PessoalBadge';
+import RecorrenteBadge from '@/components/RecorrenteBadge';
 import { formatDataVencimento, formatValor, truncarTitulo } from '@/lib/financeiroFormat';
 
 // Card usado como fallback de <Table> em telas estreitas (md:hidden) nas listagens de
@@ -11,6 +12,7 @@ export default function SolicitacaoCard({
   row,
   onClick,
   showSolicitante = false,
+  showRecorrente = false,
   showAprovador = false,
   badges,
   actions,
@@ -48,7 +50,7 @@ export default function SolicitacaoCard({
         <p className="text-sm font-medium leading-snug" title={row.titulo || '-'}>
           {truncarTitulo(row.titulo)}
         </p>
-        <p className="shrink-0 text-sm font-semibold">{formatValor(row.valor)}</p>
+        <p className="shrink-0 text-sm font-semibold">{row.status === 'rascunho' ? '—' : formatValor(row.valor)}</p>
       </div>
 
       {((showSolicitante && row.solicitante_nome) || (showAprovador && row.aprovador_destino_nome)) && (
@@ -67,6 +69,7 @@ export default function SolicitacaoCard({
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
         {row.pessoal && <PessoalBadge />}
+        {showRecorrente && row.recorrente && <RecorrenteBadge />}
         <Badge variant="outline" className="shrink-0">
           {formatDataVencimento(row.vencimento_efetivo)}
         </Badge>

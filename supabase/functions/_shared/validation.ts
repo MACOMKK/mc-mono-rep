@@ -442,6 +442,8 @@ export const solicitacaoPagamentoPayloadFieldsSchema = z.object({
   observacao: z.string().nullish(),
   aprovador_destino_id: z.string().nullish(),
   possui_nota_fiscal: z.boolean().nullish(),
+  // Conta mensal: ao ser paga, gera a ocorrencia do mes seguinte (status 'rascunho').
+  recorrente: z.boolean().nullish(),
   parcelas: z.array(parcelaItemSchema).nullish(),
   // Só usado em `create`, e só honrado se quem chama for admin (checado no handler) -- não faz
   // parte de CREATE_FIELDS/sanitizePayload, por isso precisa entrar aqui explicitamente, mesmo

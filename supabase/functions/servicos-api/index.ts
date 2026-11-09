@@ -66,6 +66,7 @@ const CREATE_FIELDS = [
   'observacao',
   'aprovador_destino_id',
   'possui_nota_fiscal',
+  'recorrente',
 ] as const;
 const UPDATE_FIELDS = CREATE_FIELDS;
 const UPDATE_FIELD_LABELS: Record<(typeof CREATE_FIELDS)[number], string> = {
@@ -85,6 +86,7 @@ const UPDATE_FIELD_LABELS: Record<(typeof CREATE_FIELDS)[number], string> = {
   observacao: 'Observacao',
   aprovador_destino_id: 'Aprovador responsavel',
   possui_nota_fiscal: 'Nota fiscal esperada',
+  recorrente: 'Recorrente',
 };
 const FORMAS_PAGAMENTO = [
   'pix',
@@ -911,6 +913,179 @@ function formatDateLabel(value: unknown): string {
   return `${dia}/${mes}/${ano}`;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Solicitacao recorrente (mensal) -- plano em apps/servicos/PLANO_RECORRENCIA_FINANCEIRO.md.
+// ---------------------------------------------------------------------------------------------
+
+// Normaliza `recorrente` no payload de create/update/reenvio e grava `recorrencia_dia` (dia
+// ancora do vencimento). `vencimentoInformado` e o valor BRUTO vindo do cliente (antes do
+// proximaDataUtil), `undefined` quando o campo nao veio. Pessoal nunca e recorrente, e
+// recorrente sempre exige vencimento (e dele que sai a data da proxima ocorrencia).
+// Liberacao gradual (2026-11-09): por enquanto so admin do sistema OU colaborador do setor de
+// Tecnologia (departamento atual do colaborador logado) pode MARCAR uma solicitacao como
+// recorrente (fase de teste). Para liberar a todos, trocar RECORRENCIA_RESTRITA para false -- o
+// front nao tem flag propria, le `pode_marcar_recorrencia` da action `me`. A geracao da proxima
+// ocorrencia e o envio do rascunho nao dependem disso (so existem pra solicitacoes ja marcadas).
+const RECORRENCIA_RESTRITA = true;
+const RECORRENCIA_DEPARTAMENTOS_LIBERADOS = ['ti', 'tecnologia', 'tecnologia_da_informacao'];
+
+function departamentoKey(nome: unknown) {
+  return String(nome || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
+async function podeMarcarRecorrencia(
+  access: Record<string, unknown> | null | undefined,
+  collaborator: Record<string, unknown> | null | undefined,
+) {
+  if (!RECORRENCIA_RESTRITA) return true;
+  if (getAccessLevel(access ?? null) === 'admin') return true;
+  if (!sql || !collaborator?.departamento_id) return false;
+  const rows = await sql.unsafe(`select nome from public.departamentos where id = $1 limit 1;`, [
+    collaborator.departamento_id,
+  ]);
+  return RECORRENCIA_DEPARTAMENTOS_LIBERADOS.includes(departamentoKey(rows[0]?.nome));
+}
+
+async function aplicarRecorrencia(
+  payload: Record<string, unknown>,
+  vencimentoInformado: unknown,
+  existing: Record<string, unknown> | null,
+  pessoal: boolean,
+  podeMarcar: () => Promise<boolean>,
+) {
+  if ('recorrente' in payload) payload.recorrente = payload.recorrente === true;
+  if (payload.recorrente === true && existing?.recorrente !== true && !(await podeMarcar())) {
+    throw Object.assign(
+      new Error('Solicitacao recorrente ainda esta em teste e disponivel so para o setor de Tecnologia.'),
+      { status: 403 },
+    );
+  }
+  const recorrente = 'recorrente' in payload ? payload.recorrente === true : existing?.recorrente === true;
+  if (!recorrente) return;
+  if (pessoal) {
+    throw Object.assign(new Error('Solicitacao pessoal nao pode ser recorrente.'), { status: 400 });
+  }
+
+  const informouVencimento = vencimentoInformado !== undefined;
+  const bruto = String(vencimentoInformado || '').slice(0, 10);
+  const vencimentoEfetivo = informouVencimento ? bruto : existing ? toIsoDateOnly(existing.data_vencimento) : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(vencimentoEfetivo)) {
+    throw Object.assign(new Error('Informe o vencimento para marcar a solicitacao como recorrente.'), { status: 400 });
+  }
+
+  // So reancora quando o vencimento foi de fato alterado (ou ainda nao ha ancora): o vencimento
+  // ja pre-preenchido no rascunho vem deslocado pra dia util e nao pode mover a ancora (senao
+  // "dia 31" escorregaria pra "dia 2" do mes seguinte e dali em diante).
+  const mudouVencimento = informouVencimento && (!existing || bruto !== toIsoDateOnly(existing.data_vencimento));
+  if (mudouVencimento || !existing?.recorrencia_dia) {
+    payload.recorrencia_dia = Number(vencimentoEfetivo.slice(8, 10));
+  }
+}
+
+// Vencimento da proxima ocorrencia: mes seguinte ao do vencimento da conta (nunca da data em que
+// foi paga), no dia ancora limitado ao ultimo dia do mes (31 -> 30/28), depois proximo dia util.
+// Se o vencimento atual foi empurrado pra dia util do mes seguinte (ancora 31/out caiu num sabado
+// e virou 03/nov), o mes de referencia continua sendo outubro -- detectado pelo dia bem menor que
+// a ancora (o deslocamento por dia util e de poucos dias).
+function calcularProximoVencimentoRecorrente(vencimentoAtual: unknown, diaAncora: number | null): string {
+  const iso = toIsoDateOnly(vencimentoAtual);
+  let ano = Number(iso.slice(0, 4));
+  let mes = Number(iso.slice(5, 7));
+  const diaAtual = Number(iso.slice(8, 10));
+  const ancora = diaAncora && diaAncora >= 1 && diaAncora <= 31 ? diaAncora : diaAtual;
+
+  if (ancora - diaAtual > 15) {
+    mes -= 1;
+    if (mes < 1) {
+      mes = 12;
+      ano -= 1;
+    }
+  }
+
+  mes += 1;
+  if (mes > 12) {
+    mes = 1;
+    ano += 1;
+  }
+  const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+  const dia = Math.min(ancora, ultimoDia);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return proximaDataUtil(`${ano}-${pad(mes)}-${pad(dia)}`);
+}
+
+// Chamado nos pontos em que uma solicitacao vira 'pago' (set_status a vista e ultima parcela em
+// registrar_pagamento_parcela). Gera a ocorrencia do mes seguinte como 'rascunho' ("Aguardando
+// valor"): mesmos dados, sem valor/anexos/parcelas/NF/pendencia/analise. O indice unico parcial
+// em recorrencia_origem_id garante no maximo uma "proxima" (reverter e pagar de novo nao duplica).
+// Nunca propaga erro: falha aqui so loga, o pagamento ja foi registrado.
+async function gerarProximaRecorrencia(row: Record<string, unknown> | null | undefined, autorId: string) {
+  try {
+    if (!row || row.recorrente !== true || row.pessoal === true || !row.data_vencimento) return;
+
+    const proximoVencimento = calcularProximoVencimentoRecorrente(
+      row.data_vencimento,
+      row.recorrencia_dia != null ? Number(row.recorrencia_dia) : null,
+    );
+
+    const rows = await sql!.unsafe(
+      `
+        insert into ${SERVICOS_SCHEMA}.solicitacoes_pagamento (
+          titulo, descricao, tipo_beneficiario, fornecedor_id, colaborador_beneficiario_id, fornecedor,
+          categoria_id, categoria, forma_pagamento, empresa_id, unidade_id, departamento_id,
+          aprovador_destino_id, solicitante_id, criado_por, eh_teste, possui_nota_fiscal,
+          status, valor, data_vencimento, recorrente, recorrencia_dia, recorrencia_origem_id
+        )
+        select
+          titulo, descricao, tipo_beneficiario, fornecedor_id, colaborador_beneficiario_id, fornecedor,
+          categoria_id, categoria, forma_pagamento, empresa_id, unidade_id, departamento_id,
+          aprovador_destino_id, solicitante_id, solicitante_id, eh_teste, possui_nota_fiscal,
+          'rascunho', null, $2::date, true,
+          coalesce(recorrencia_dia, extract(day from data_vencimento)::smallint), id
+        from ${SERVICOS_SCHEMA}.solicitacoes_pagamento
+        where id = $1
+        on conflict (recorrencia_origem_id) where recorrencia_origem_id is not null do nothing
+        returning *;
+      `,
+      [row.id, proximoVencimento],
+    );
+    const nova = rows[0];
+    if (!nova) return; // ja existia uma proxima para esta solicitacao
+
+    const vencimentoLabel = formatDateLabel(proximoVencimento);
+    await insertHistorico(
+      String(row.id),
+      'recorrencia_gerada',
+      autorId,
+      `Próxima ocorrência gerada (#${nova.numero ?? ''}, vencimento ${vencimentoLabel}).`,
+    );
+    await insertHistorico(
+      String(nova.id),
+      'criada_por_recorrencia',
+      autorId,
+      `Gerada automaticamente a partir da solicitação #${row.numero ?? ''}. Informe o valor para enviar à aprovação.`,
+    );
+    await insertNotificacao(
+      String(nova.solicitante_id),
+      'recorrencia_aguardando_valor',
+      'Conta recorrente aguardando valor',
+      `${nova.titulo || nova.fornecedor} — vence ${vencimentoLabel}. Informe o valor do mês.`,
+      `/solicitacoes?sol=${nova.id}`,
+      'solicitacao_pagamento',
+      String(nova.id),
+      autorId,
+      'solicitante',
+    );
+  } catch (error) {
+    console.error('gerarProximaRecorrencia failed:', { id: row?.id, error });
+  }
+}
+
 async function insertNotificacao(
   colaboradorId: string,
   tipo: string,
@@ -1173,6 +1348,7 @@ Deno.serve(async (request) => {
         role: moduleRole,
         must_change_password: mapMustChangePassword(collaborator),
         pode_reprovar_aprovada: podeReprovarAprovada,
+        pode_marcar_recorrencia: await podeMarcarRecorrencia(access, collaborator),
       });
     }
 
@@ -2111,6 +2287,9 @@ Deno.serve(async (request) => {
           ) pp on true
           where sp.criado_em >= $1 and sp.criado_em <= $2
             and not sp.pessoal
+            -- Rascunho de recorrencia ("Aguardando valor") ainda nao tem valor nem foi enviado:
+            -- fica fora de todos os totais/rankings.
+            and sp.status <> 'rascunho'
             and ($3::uuid is null or sp.empresa_id = $3)
             and ($4::bigint is null or sp.numero = $4)
             and ($5::uuid is null or sp.solicitante_id = $5)
@@ -2299,6 +2478,7 @@ Deno.serve(async (request) => {
       const pessoal = createBody.payload?.pessoal === true;
       if (pessoal) normalizarPayloadPessoal(payload, createBody.payload?.favorecido);
       else validateCreatePayload(payload);
+      await aplicarRecorrencia(payload, createBody.payload?.data_vencimento, null, pessoal, () => podeMarcarRecorrencia(access, collaborator));
       validateComprovanteSize(createBody.payload?.comprovante_file_size);
 
       // Parcelamento e opcional: o solicitante pode propor um plano de pagamento ja na
@@ -2549,6 +2729,7 @@ Deno.serve(async (request) => {
         }
         payload.data_vencimento = proximaDataUtil(String(payload.data_vencimento));
       }
+      await aplicarRecorrencia(payload, updateBody.payload?.data_vencimento, existing, existing.pessoal === true, () => podeMarcarRecorrencia(access, collaborator));
 
       const fields = Object.keys(payload);
       let row = existing;
@@ -2561,7 +2742,9 @@ Deno.serve(async (request) => {
         row = rows[0] || existing;
 
         const camposRealmenteAlterados = fields.filter(
-          (field) => normalizeCompareValue(payload[field]) !== normalizeCompareValue((existing as Record<string, unknown>)[field]),
+          (field) =>
+            field !== 'recorrencia_dia' &&
+            normalizeCompareValue(payload[field]) !== normalizeCompareValue((existing as Record<string, unknown>)[field]),
         );
         if (camposRealmenteAlterados.length) {
           const camposAlterados = camposRealmenteAlterados
@@ -2655,8 +2838,10 @@ Deno.serve(async (request) => {
       const souGerente = isFinanceiro(moduleRole);
 
       let motivo: string | null = body.motivo ? String(body.motivo).trim() : null;
-      if (existing.status === 'pendente') {
-        if (!souSolicitante) {
+      // Cancelar o rascunho de uma conta recorrente e uma das formas de parar a recorrencia (a
+      // outra e desmarcar "Recorrente" antes de pagar) -- o rascunho cancelado nao gera proxima.
+      if (existing.status === 'pendente' || existing.status === 'rascunho') {
+        if (!souSolicitante && !(existing.status === 'rascunho' && souGerente)) {
           throw Object.assign(new Error('Apenas o solicitante pode cancelar esta solicitacao.'), { status: 403 });
         }
       } else if (existing.status === 'pago') {
@@ -2781,7 +2966,11 @@ Deno.serve(async (request) => {
       if (String(existing.solicitante_id) !== String(collaborator!.id)) {
         throw Object.assign(new Error('Apenas o solicitante pode reenviar esta solicitacao.'), { status: 403 });
       }
-      if (existing.status !== 'reprovado') {
+      // Alem da reprovada (corrigir e reenviar), tambem e por aqui que o rascunho de uma conta
+      // recorrente ("Aguardando valor") e enviado: o solicitante informa o valor/boleto do mes e a
+      // solicitacao vai pra 'pendente', passando de novo pela aprovacao.
+      const enviandoRascunho = existing.status === 'rascunho';
+      if (existing.status !== 'reprovado' && !enviandoRascunho) {
         throw Object.assign(new Error('Somente solicitacoes reprovadas podem ser reenviadas.'), { status: 400 });
       }
 
@@ -2851,6 +3040,14 @@ Deno.serve(async (request) => {
         }
         payload.data_vencimento = proximaDataUtil(String(payload.data_vencimento));
       }
+      await aplicarRecorrencia(payload, reenviarBody.payload?.data_vencimento, existing, existing.pessoal === true, () => podeMarcarRecorrencia(access, collaborator));
+
+      // O rascunho nasce sem valor (check chk_servicos_solicitacoes_valor so libera nulo nele):
+      // pra sair de 'rascunho' o valor passa a ser obrigatorio, mesma regra do create.
+      const valorEfetivo = 'valor' in payload ? Number(payload.valor) : Number(existing.valor);
+      if (!Number.isFinite(valorEfetivo) || valorEfetivo <= 0) {
+        throw Object.assign(new Error('Informe um valor valido.'), { status: 400 });
+      }
 
       payload.status = 'pendente';
       payload.observacao_analise = null;
@@ -2860,12 +3057,22 @@ Deno.serve(async (request) => {
       const fields = Object.keys(payload);
       const assignments = fields.map((field, index) => `${quoteIdentifier(field)} = $${index + 2}`).join(', ');
       const rows = await sql.unsafe(
-        `update ${SERVICOS_SCHEMA}.solicitacoes_pagamento set ${assignments} where id = $1 returning *;`,
-        [id, ...fields.map((field) => payload[field])],
+        `update ${SERVICOS_SCHEMA}.solicitacoes_pagamento set ${assignments} where id = $1 and status = $${fields.length + 2} returning *;`,
+        [id, ...fields.map((field) => payload[field]), existing.status],
       );
 
       let row = rows[0] || null;
-      await insertHistorico(id, 'reenviada', collaborator!.id as string);
+      if (!row) {
+        throw Object.assign(new Error('A solicitacao mudou de status; atualize a tela.'), { status: 409 });
+      }
+      await insertHistorico(
+        id,
+        enviandoRascunho ? 'valor_informado' : 'reenviada',
+        collaborator!.id as string,
+        enviandoRascunho
+          ? `Valor informado: ${valorEfetivo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}. Enviada para aprovação.`
+          : null,
+      );
 
       if (parcelasPropostas !== null) {
         const valorReferencia = payload.valor != null ? Number(payload.valor) : Number(existing.valor);
@@ -2896,7 +3103,11 @@ Deno.serve(async (request) => {
         await notifySolicitanteStatusChange(row, 'aprovado', collaborator!.id as string);
         await notifyFinanceirosSolicitacaoAprovada(row, collaborator!.id as string);
       } else if (row) {
-        await notifyAprovadorNovaSolicitacao(row, 'Solicitação corrigida e reenviada', collaborator!.id as string);
+        await notifyAprovadorNovaSolicitacao(
+          row,
+          enviandoRascunho ? 'Conta recorrente para aprovar' : 'Solicitação corrigida e reenviada',
+          collaborator!.id as string,
+        );
       }
 
       return json({ row });
@@ -3029,6 +3240,7 @@ Deno.serve(async (request) => {
         await insertHistorico(id, 'pago', collaborator!.id as string);
         await enqueueStatusEmail(row, status);
         await notifySolicitanteStatusChange(row, status, collaborator!.id as string);
+        await gerarProximaRecorrencia(row, collaborator!.id as string);
         return json({ row });
       }
     }
@@ -3713,6 +3925,7 @@ Deno.serve(async (request) => {
         await insertHistorico(String(solicitacao.id), 'pago', collaborator!.id as string);
         await notifySolicitanteStatusChange(solicitacao, 'pago', collaborator!.id as string);
         await enqueueStatusEmail(solicitacao, 'pago');
+        await gerarProximaRecorrencia(solicitacao, collaborator!.id as string);
       }
 
       return json({ row: parcelaAtualizada, solicitacao });
