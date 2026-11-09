@@ -8,6 +8,7 @@ import {
   extractWhatsappMessageId,
   type WhatsappProvider,
 } from '../_shared/whatsapp.ts';
+import { downloadMediaMeta, downloadMediaEvolution, uploadMedia, type MediaTipo } from '../_shared/whatsappMedia.ts';
 
 // gestao_crm nao e' exposto via PostgREST (so acessivel por conexao direta Postgres) --
 // mesmo padrao ja usado em crm-api/index.ts. Nao usar supabase-js .schema(...).from(...)
@@ -118,10 +119,21 @@ function verifyEvolutionWebhookToken(req: Request, expectedToken: string) {
   return timingSafeEquals(providedToken, expectedToken);
 }
 
+type IncomingMedia = {
+  tipo: MediaTipo;
+  mimeType: string;
+  nomeArquivo: string | null;
+  // Meta: id a resolver via GET /{media-id}. Evolution: key da mensagem, usada em
+  // POST /chat/getBase64FromMediaMessage.
+  metaMediaId?: string;
+  evolutionMessageKey?: unknown;
+};
+
 type IncomingMessage = {
   messageId: string;
   fromPhone: string;
   text: string;
+  media?: IncomingMedia;
 };
 
 function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
@@ -134,9 +146,29 @@ function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
       const value = change?.value;
       const waMessages = Array.isArray(value?.messages) ? value.messages : [];
       for (const message of waMessages) {
+        if (!message?.id || !message?.from) continue;
+
         const text = message?.text?.body;
-        if (message?.id && message?.from && typeof text === 'string') {
+        if (typeof text === 'string') {
           messages.push({ messageId: message.id, fromPhone: message.from, text });
+          continue;
+        }
+
+        const mediaTipo: MediaTipo | null =
+          message?.type === 'image' ? 'imagem' : message?.type === 'audio' ? 'audio' : message?.type === 'document' ? 'documento' : null;
+        const mediaNode = mediaTipo ? message?.[message.type] : null;
+        if (mediaTipo && mediaNode?.id) {
+          messages.push({
+            messageId: message.id,
+            fromPhone: message.from,
+            text: mediaNode?.caption || '',
+            media: {
+              tipo: mediaTipo,
+              mimeType: mediaNode.mime_type || 'application/octet-stream',
+              nomeArquivo: mediaNode.filename || null,
+              metaMediaId: mediaNode.id,
+            },
+          });
         }
       }
     }
@@ -147,8 +179,9 @@ function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
 
 // Formato Baileys (usado pela Evolution API): evento "messages.upsert", corpo em
 // payload.data (objeto unico) ou payload.data (array), conforme a versao da instancia.
-// Ignora mensagens enviadas por nos mesmos (key.fromMe) e qualquer coisa sem texto simples
-// (ex.: midia, figurinha) -- fora de escopo por enquanto, so texto e' processado.
+// Ignora mensagens enviadas por nos mesmos (key.fromMe) e figurinha/sticker/contato/localizacao
+// (fora de escopo). Midia (imagem/audio/documento) so' traz metadados criptografados aqui --
+// o binario e' baixado depois via downloadMediaEvolution, ver whatsappMedia.ts.
 function extractIncomingMessagesEvolution(payload: any): IncomingMessage[] {
   const messages: IncomingMessage[] = [];
   if (payload?.event !== 'messages.upsert') return messages;
@@ -160,11 +193,35 @@ function extractIncomingMessagesEvolution(payload: any): IncomingMessage[] {
     const key = entry?.key;
     if (!key?.id || !key?.remoteJid || key?.fromMe) continue;
 
-    const text = entry?.message?.conversation ?? entry?.message?.extendedTextMessage?.text;
-    if (typeof text !== 'string' || !text) continue;
-
     const fromPhone = String(key.remoteJid).split('@')[0];
-    messages.push({ messageId: String(key.id), fromPhone, text });
+    const msg = entry?.message;
+
+    const text = msg?.conversation ?? msg?.extendedTextMessage?.text;
+    if (typeof text === 'string' && text) {
+      messages.push({ messageId: String(key.id), fromPhone, text });
+      continue;
+    }
+
+    const mediaNode = msg?.imageMessage
+      ? { tipo: 'imagem' as MediaTipo, node: msg.imageMessage }
+      : msg?.audioMessage
+        ? { tipo: 'audio' as MediaTipo, node: msg.audioMessage }
+        : msg?.documentMessage
+          ? { tipo: 'documento' as MediaTipo, node: msg.documentMessage }
+          : null;
+    if (mediaNode) {
+      messages.push({
+        messageId: String(key.id),
+        fromPhone,
+        text: mediaNode.node?.caption || '',
+        media: {
+          tipo: mediaNode.tipo,
+          mimeType: mediaNode.node?.mimetype || 'application/octet-stream',
+          nomeArquivo: mediaNode.node?.fileName || null,
+          evolutionMessageKey: key,
+        },
+      });
+    }
   }
 
   return messages;
@@ -455,21 +512,59 @@ serve(async (req) => {
         conversa = novaConversa;
       }
 
+      let uploaded: { tipo: string; url: string; mimeType: string; nomeArquivo: string | null } | null = null;
+      if (incoming.media) {
+        try {
+          const media = incoming.media;
+          const mediaInfo =
+            provider === 'meta'
+              ? await downloadMediaMeta(
+                  media.metaMediaId!,
+                  media.mimeType,
+                  media.tipo,
+                  metaCredenciais!.access_token as string,
+                )
+              : await downloadMediaEvolution(
+                  evolutionCredenciais!.instance_url as string,
+                  evolutionCredenciais!.instance_name as string,
+                  evolutionCredenciais!.api_key as string,
+                  media.evolutionMessageKey,
+                  media.mimeType,
+                  media.tipo,
+                  media.nomeArquivo,
+                );
+          uploaded = await uploadMedia(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, conversa.id, mediaInfo);
+        } catch (mediaError) {
+          console.error('Falha ao processar midia recebida:', getErrorMessage(mediaError));
+          // Midia nao baixou -- ainda grava a mensagem (com o caption, se houver) pra nao perder
+          // o evento, so sem anexo.
+        }
+      }
+
+      const previewTexto = uploaded
+        ? `[${uploaded.tipo === 'imagem' ? 'Imagem' : uploaded.tipo === 'audio' ? 'Áudio' : 'Documento'}]${incoming.text ? ` ${incoming.text}` : ''}`
+        : incoming.text;
+
       await sql`
-        insert into gestao_crm.mensagens_atendimento (conversa_id, direcao, autor, conteudo, metadados)
+        insert into gestao_crm.mensagens_atendimento
+          (conversa_id, direcao, autor, conteudo, metadados, tipo_conteudo, midia_url, midia_mime_type, midia_nome_arquivo)
         values (
           ${conversa.id},
           'entrada',
           'cliente',
           ${incoming.text},
-          ${sql.json({ whatsapp_message_id: incoming.messageId })}
+          ${sql.json({ whatsapp_message_id: incoming.messageId })},
+          ${uploaded?.tipo ?? 'texto'},
+          ${uploaded?.url ?? null},
+          ${uploaded?.mimeType ?? null},
+          ${uploaded?.nomeArquivo ?? null}
         )
       `;
 
       await sql`
         update gestao_crm.conversas_atendimento
         set ultima_mensagem_em = now(),
-            ultima_mensagem_preview = ${truncatePreview(incoming.text)},
+            ultima_mensagem_preview = ${truncatePreview(previewTexto)},
             nao_lida = true
         where id = ${conversa.id}
       `;
@@ -488,6 +583,13 @@ serve(async (req) => {
         typeof evolutionCredenciais?.instance_url === 'string' &&
         typeof evolutionCredenciais?.instance_name === 'string' &&
         typeof evolutionCredenciais?.api_key === 'string';
+
+      // Midia sem legenda nao tem o que a IA responda com contexto -- deixa so' registrado,
+      // igual a uma mensagem escalada (nao gera resposta automatica vazia/generica).
+      if (incoming.media && !incoming.text) {
+        results.push({ messageId: incoming.messageId, status: 'midia_sem_legenda' });
+        continue;
+      }
 
       if (!OPENAI_API_KEY || (!canSendViaMeta && !canSendViaEvolution)) {
         results.push({ messageId: incoming.messageId, status: 'recebido_sem_ia' });

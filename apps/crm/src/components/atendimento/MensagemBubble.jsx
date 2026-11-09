@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { Bot, Check, CheckCheck } from 'lucide-react';
+import { Bot, Check, CheckCheck, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const AUTOR_LABEL = {
@@ -18,6 +18,34 @@ function StatusIcon({ status }) {
 function formatHora(value) {
   if (!value) return '';
   return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+}
+
+function MidiaConteudo({ mensagem }) {
+  const { tipo_conteudo: tipo, midia_url: url, midia_nome_arquivo: nomeArquivo } = mensagem;
+  if (tipo === 'imagem') {
+    return (
+      <a href={url} target="_blank" rel="noreferrer">
+        <img src={url} alt={nomeArquivo || 'Imagem recebida'} className="max-h-64 max-w-full rounded-lg object-contain" />
+      </a>
+    );
+  }
+  if (tipo === 'audio') {
+    return <audio controls src={url} className="h-9 max-w-[220px]" />;
+  }
+  if (tipo === 'documento') {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className={cn('flex items-center gap-2 underline-offset-2 hover:underline')}
+      >
+        <FileText className="h-4 w-4 shrink-0" />
+        <span className="truncate">{nomeArquivo || 'Documento'}</span>
+      </a>
+    );
+  }
+  return null;
 }
 
 function highlightTexto(texto, termo) {
@@ -66,7 +94,16 @@ const MensagemBubble = forwardRef(function MensagemBubble(
               {label}
             </p>
           ) : null}
-          <p className="whitespace-pre-wrap break-words">{highlightTexto(mensagem.conteudo, termoBusca)}</p>
+          {mensagem.tipo_conteudo && mensagem.tipo_conteudo !== 'texto' ? (
+            <div className="flex flex-col gap-1">
+              <MidiaConteudo mensagem={mensagem} />
+              {mensagem.conteudo ? (
+                <p className="whitespace-pre-wrap break-words">{highlightTexto(mensagem.conteudo, termoBusca)}</p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="whitespace-pre-wrap break-words">{highlightTexto(mensagem.conteudo, termoBusca)}</p>
+          )}
         </div>
         {isErro ? (
           <button
