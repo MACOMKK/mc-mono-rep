@@ -9,6 +9,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+
+// Conjunto curado (sem lib de picker nova) -- cobre as reacoes/expressoes mais comuns num chat de
+// atendimento. Pode crescer, mas o objetivo aqui e' cobertura pratica, nao o unicode completo.
+const EMOJIS_RAPIDOS = [
+  '😀', '😁', '😂', '🙂', '😉', '😊', '😍', '😘',
+  '😎', '🤔', '😅', '😢', '😭', '😡', '😱', '🥳',
+  '👍', '👎', '🙏', '👏', '🤝', '💪', '✅', '❌',
+  '❤️', '🔥', '🎉', '⭐', '⏰', '📅', '📞', '💰',
+];
 
 // Mesmo limite do bucket crm-atendimento-midia (storage.buckets.file_size_limit, ver migration
 // 20261109140000_add_crm_atendimento_midia.sql) -- falhar aqui evita gastar o upload so pra
@@ -47,6 +57,11 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
 
   const handleTemplateSelect = (texto) => {
     setValue(texto);
+    textareaRef.current?.focus();
+  };
+
+  const handleEmojiSelect = (emoji) => {
+    setValue((atual) => atual + emoji);
     textareaRef.current?.focus();
   };
 
@@ -121,9 +136,34 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
         >
           <Paperclip className="h-4 w-4" />
         </Button>
-        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground" disabled aria-label="Emoji (em breve)">
-          <Smile className="h-4 w-4" />
-        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground"
+              disabled={disabled}
+              aria-label="Emoji"
+            >
+              <Smile className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64 p-2">
+            <div className="grid grid-cols-8 gap-1">
+              {EMOJIS_RAPIDOS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded text-lg hover:bg-muted"
+                  onClick={() => handleEmojiSelect(emoji)}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
