@@ -306,7 +306,10 @@ const sql = databaseUrl
   ? postgres(databaseUrl, {
       prepare: false,
       max: 3,
-      idle_timeout: 5,
+      // 5s derrubava a conexao entre cliques do usuario e cada reconexao (TCP+TLS+auth) custava
+      // varios round-trips ate o banco. 20s mantem a conexao viva entre requisicoes seguidas;
+      // continua limitado por `max: 3` por isolate e pelo pool do Supavisor.
+      idle_timeout: 20,
       connect_timeout: 15,
     })
   : null;

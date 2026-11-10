@@ -16,6 +16,17 @@ function toError(message, status = 500, code, details, hint) {
 
 const CRM_API_TIMEOUT_MS = 20000;
 
+// Regiao opcional de execucao da Edge Function (ex.: us-west-2, onde fica o banco). Sem a
+// variavel, o Supabase escolhe a regiao mais proxima do usuario (sa-east-1), que fica a ~200 ms
+// de ida e volta do banco a cada query. `forceFunctionRegion` na URL (em vez do header
+// x-region) evita preflight/CORS extra. Atencao: com regiao explicita NAO ha fallback
+// automatico se a regiao cair -- para voltar ao padrao, basta remover a variavel e refazer o
+// deploy do app. Ver docs: supabase.com/docs/guides/functions/regional-invocation
+const CRM_API_REGION = String(import.meta.env.VITE_CRM_API_REGION || '').trim();
+const CRM_API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/crm-api${
+  CRM_API_REGION ? `?forceFunctionRegion=${encodeURIComponent(CRM_API_REGION)}` : ''
+}`;
+
 async function invokeCrm(body = {}, accessTokenOverride) {
   assertSupabaseConfigured();
 
@@ -33,7 +44,7 @@ async function invokeCrm(body = {}, accessTokenOverride) {
 
   let response;
   try {
-    response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/crm-api`, {
+    response = await fetch(CRM_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -76,6 +76,23 @@ function mapAuthError(error) {
   };
 }
 
+// 401/403 do `me` significam sessao invalida ou sem acesso -- ai sim derruba a sessao. Qualquer
+// outra falha (timeout, rede, 5xx -- comuns com a Edge Function em sa-east-1 e o banco em
+// us-west-2) e transitoria e nao pode deslogar nem esvaziar a tela do usuario.
+function isDefinitiveAuthFailure(error) {
+  return error?.status === 401 || error?.status === 403;
+}
+
+async function fetchMeWithRetry(accessToken) {
+  try {
+    return await crmApi.auth.me(accessToken);
+  } catch (error) {
+    if (isDefinitiveAuthFailure(error)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return crmApi.auth.me(accessToken);
+  }
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
@@ -98,7 +115,7 @@ export function AuthProvider({ children }) {
     setIsLoadingAuth(false);
   }
 
-  async function runCrmAccessValidation(nextSession) {
+  async function runCrmAccessValidation(nextSession, { silent = false } = {}) {
     if (!isSupabaseConfigured) {
       setAuthError(mapAuthError());
       setIsLoadingAuth(false);
@@ -111,7 +128,7 @@ export function AuthProvider({ children }) {
     }
 
     try {
-      const authPayload = await crmApi.auth.me(nextSession.access_token);
+      const authPayload = await fetchMeWithRetry(nextSession.access_token);
       const currentUser = normalizeCrmUser(nextSession.user, authPayload);
 
       if (!currentUser.active) {
@@ -129,6 +146,13 @@ export function AuthProvider({ children }) {
       setMustChangePassword(Boolean(currentUser.must_change_password));
       return currentUser;
     } catch (error) {
+      // Revalidacao em segundo plano (renovacao de token) de um usuario ja autenticado: falha
+      // transitoria mantem a sessao e a tela como estao; a proxima revalidacao tenta de novo.
+      if (silent && userRef.current && !isDefinitiveAuthFailure(error)) {
+        setSession(nextSession);
+        return userRef.current;
+      }
+
       validatedTokenRef.current = null;
       userRef.current = null;
       setSession(null);
@@ -155,7 +179,10 @@ export function AuthProvider({ children }) {
     const nextSession = sessionData?.data?.session || null;
     const nextToken = nextSession?.access_token || null;
 
-    setIsLoadingAuth(true);
+    // Usuario ja autenticado revalidando (ex.: TOKEN_REFRESHED): nao liga o loading global,
+    // senao o CrmRoutes troca o app inteiro por um spinner e perde o estado das telas.
+    const silent = !force && Boolean(userRef.current);
+    if (!silent) setIsLoadingAuth(true);
 
     if (sessionData?.error || !nextSession?.user || !nextToken) {
       clearAuthState();
@@ -175,7 +202,7 @@ export function AuthProvider({ children }) {
       return inFlightValidationRef.current.promise;
     }
 
-    const validationPromise = runCrmAccessValidation(nextSession).finally(() => {
+    const validationPromise = runCrmAccessValidation(nextSession, { silent }).finally(() => {
       if (inFlightValidationRef.current?.token === nextToken) {
         inFlightValidationRef.current = null;
       }
