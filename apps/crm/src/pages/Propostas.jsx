@@ -113,6 +113,10 @@ export default function Propostas() {
 
   const [propostaImprimindo, setPropostaImprimindo] = useState(null);
 
+  const [filtroStatus, setFiltroStatus] = useState('todos');
+  const [filtroFormaPagamento, setFiltroFormaPagamento] = useState('todos');
+  const [filtroBusca, setFiltroBusca] = useState('');
+
   const { data: leadImpressao } = useQuery({
     queryKey: ['crm-propostas-lead-impressao', propostaImprimindo?.lead_id],
     queryFn: () => crmDataClient.entities.Lead.get(propostaImprimindo.lead_id),
@@ -171,6 +175,21 @@ export default function Propostas() {
     const marca = modelo ? marcaNomePorId[modelo.marca_id] : '';
     return [marca, modelo?.nome, veiculo.chassi].filter(Boolean).join(' ');
   };
+
+  const propostasFiltradas = useMemo(() => {
+    const termo = filtroBusca.trim().toLowerCase();
+    return propostas.filter((proposta) => {
+      if (filtroStatus !== 'todos' && proposta.status !== filtroStatus) return false;
+      if (filtroFormaPagamento !== 'todos' && proposta.forma_pagamento !== filtroFormaPagamento) return false;
+      if (termo) {
+        const veiculoTexto = proposta.veiculo_estoque_id
+          ? veiculoLabel(proposta.veiculo_estoque_id)
+          : (proposta.veiculo_descricao || '');
+        if (!veiculoTexto.toLowerCase().includes(termo)) return false;
+      }
+      return true;
+    });
+  }, [propostas, filtroStatus, filtroFormaPagamento, filtroBusca, veiculoLabel]);
 
   const veiculoSelecionado = useMemo(
     () => veiculos.find((item) => item.id === form.veiculo_estoque_id) || null,
@@ -387,13 +406,64 @@ export default function Propostas() {
         </Button>
       </div>
 
+      {!isLoading && !error && propostas.length > 0 ? (
+        <div className="mb-4 flex flex-wrap items-end gap-3 border bg-white p-3">
+          <div className="space-y-1">
+            <Label className="text-xs font-bold uppercase tracking-wider">Buscar veiculo</Label>
+            <Input
+              value={filtroBusca}
+              onChange={(event) => setFiltroBusca(event.target.value)}
+              placeholder="Marca, modelo ou chassi"
+              className="h-9 w-56 rounded-none"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs font-bold uppercase tracking-wider">Status</Label>
+            <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+              <SelectTrigger className="h-9 w-44 rounded-none text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent className="rounded-none">
+                <SelectItem value="todos">Todos</SelectItem>
+                {Object.entries(STATUS_LABEL).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs font-bold uppercase tracking-wider">Forma de pagamento</Label>
+            <Select value={filtroFormaPagamento} onValueChange={setFiltroFormaPagamento}>
+              <SelectTrigger className="h-9 w-44 rounded-none text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent className="rounded-none">
+                <SelectItem value="todos">Todas</SelectItem>
+                {FORMA_PAGAMENTO_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {(filtroStatus !== 'todos' || filtroFormaPagamento !== 'todos' || filtroBusca) ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-none text-xs"
+              onClick={() => { setFiltroStatus('todos'); setFiltroFormaPagamento('todos'); setFiltroBusca(''); }}
+            >
+              Limpar filtros
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       {isLoading ? <p className="py-10 text-sm text-muted-foreground">Carregando propostas...</p> : null}
       {error ? <p className="py-10 text-sm text-red-600">{error.message}</p> : null}
       {!isLoading && !error && propostas.length === 0 ? (
         <p className="py-10 text-sm text-muted-foreground">Nenhuma proposta cadastrada.</p>
       ) : null}
+      {!isLoading && !error && propostas.length > 0 && propostasFiltradas.length === 0 ? (
+        <p className="py-10 text-sm text-muted-foreground">Nenhuma proposta encontrada com os filtros atuais.</p>
+      ) : null}
 
-      {!isLoading && !error && propostas.length > 0 ? (
+      {!isLoading && !error && propostasFiltradas.length > 0 ? (
         <div className="overflow-x-auto border bg-white">
           <Table>
             <TableHeader className="bg-[#1a1a1a]">
@@ -406,7 +476,7 @@ export default function Propostas() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {propostas.map((proposta) => (
+              {propostasFiltradas.map((proposta) => (
                 <TableRow key={proposta.id}>
                   <TableCell className="text-sm text-slate-700">
                     <div className="flex items-center gap-2">

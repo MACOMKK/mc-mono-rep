@@ -29,6 +29,7 @@ const EXT_BY_MIME: Record<string, string> = {
   'image/png': 'png',
   'image/webp': 'webp',
   'audio/ogg': 'ogg',
+  'audio/ogg; codecs=opus': 'ogg',
   'audio/mpeg': 'mp3',
   'audio/mp4': 'm4a',
   'application/pdf': 'pdf',

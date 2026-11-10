@@ -20,6 +20,7 @@ import {
   type OutgoingMediaTipo,
 } from '../_shared/whatsapp.ts';
 import { uploadMedia, base64ToBytes, tipoFromMime } from '../_shared/whatsappMedia.ts';
+import { remuxWebmOpusParaOggOpus } from '../_shared/webmToOggOpus.ts';
 
 const CRM_SYSTEM_SLUG = 'crm';
 
@@ -298,17 +299,36 @@ const ORDER_FIELD_MAP: Record<string, string> = {
   tipo_evento: 'tipo_atendimento',
 };
 
-const databaseUrl = Deno.env.get('DATABASE_URL');
+// CRM_DATABASE_URL (opcional) e um secret SO desta function, para testar o pooler em transaction
+// mode (:6543) sem alterar o DATABASE_URL compartilhado pelas outras functions. Se nao existir,
+// usa o DATABASE_URL de sempre -- remover o secret CRM_DATABASE_URL desfaz a mudanca.
+const crmDatabaseUrl = Deno.env.get('CRM_DATABASE_URL');
+const databaseUrl = crmDatabaseUrl || Deno.env.get('DATABASE_URL');
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
 const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+// Diagnostico temporario: o painel do Supabase so mostra o hash do secret DATABASE_URL, entao
+// nao da para saber se a function usa o pooler em session mode (:5432), transaction mode (:6543)
+// ou conexao direta. Loga so host e porta (nunca usuario/senha) uma vez por boot da instancia.
+// Remover depois de confirmado.
+if (databaseUrl) {
+  try {
+    const parsed = new URL(databaseUrl);
+    console.log(
+      `[crm-api] banco via ${crmDatabaseUrl ? 'CRM_DATABASE_URL' : 'DATABASE_URL'} host=${parsed.hostname} port=${parsed.port || '5432'}`,
+    );
+  } catch {
+    console.log('[crm-api] DATABASE_URL com formato nao reconhecido');
+  }
+}
 
 const sql = databaseUrl
   ? postgres(databaseUrl, {
       prepare: false,
       max: 3,
       // Mantido em 5s de proposito. Tentamos 20s (2026-11-10) e varias listagens de catalogo
-      // travaram ate o timeout de 20s do front: conexoes ociosas ficam presas por mais tempo no
-      // Supavisor (session mode, poucas vagas para ~12 Edge Functions) ou morrem silenciosas.
+      // travaram ate o timeout de 20s do front. Hipotese (nao confirmada): conexoes ociosas
+      // presas por mais tempo no Supavisor, que tem poucas vagas para ~12 Edge Functions.
       idle_timeout: 5,
       connect_timeout: 15,
     })
@@ -1426,11 +1446,34 @@ Deno.serve(async (request) => {
       if (temMidia) {
         try {
           const tipo = tipoFromMime(midiaMimeType) as OutgoingMediaTipo;
+          let bytes: Uint8Array<ArrayBufferLike> = base64ToBytes(midiaBase64);
+          let mimeType = midiaMimeType;
+
+          // WhatsApp (Meta e Evolution) so aceita audio em aac/mp4/mpeg/amr ou ogg+Opus -- o
+          // MediaRecorder do navegador (gravacao de audio do composer) grava em webm, que a
+          // Meta aceita no POST mas rejeita ao buscar a midia pela url, e a mensagem fica
+          // travada em "enviado" (1 check) sem nunca chegar ao cliente. Remuxar pra Ogg aqui
+          // resolve sem precisar reencodar o audio (ver webmToOggOpus.ts).
+          if (tipo === 'audio' && mimeType.startsWith('audio/webm')) {
+            try {
+              bytes = remuxWebmOpusParaOggOpus(bytes);
+              // "audio/ogg" puro (sem o parametro codecs) e' aceito no POST mas a Meta rejeita
+              // silenciosamente ao buscar a midia pela url -- mesmo sintoma do webm (1 check,
+              // nunca entregue). O Content-Type servido pelo Storage tem que ser exatamente
+              // "audio/ogg; codecs=opus" pra Meta tratar como voice note valido.
+              mimeType = 'audio/ogg; codecs=opus';
+            } catch (remuxError) {
+              const message = remuxError instanceof Error ? remuxError.message : String(remuxError);
+              console.error(`crm-api: falha ao remuxar audio webm->ogg (conversa ${conversaId}):`, message);
+              return json({ error: `Falha ao preparar audio para envio: ${message}` }, 500);
+            }
+          }
+
           uploadedMedia = await uploadMedia(supabaseUrl, supabaseServiceRoleKey, conversaId, {
             tipo,
-            mimeType: midiaMimeType,
+            mimeType,
             nomeArquivo: midiaNomeArquivo,
-            bytes: base64ToBytes(midiaBase64),
+            bytes,
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);

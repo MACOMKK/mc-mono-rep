@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Car, Plus } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
-import { Badge, Button, CarLoader, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@macom/ui';
+import { Badge, Button, CarLoader, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
 import Pagination from '@/components/Pagination';
 import SearchInput from '@/components/SearchInput';
@@ -46,13 +46,27 @@ export default function ChecklistHistorico() {
   const navigate = useNavigate();
   const [busca, setBusca] = useState('');
   const [unidadeFiltro, setUnidadeFiltro] = useState(FILTRO_TODOS);
+  const [statusFiltro, setStatusFiltro] = useState(FILTRO_TODOS);
+  const [dataDe, setDataDe] = useState('');
+  const [dataAte, setDataAte] = useState('');
 
   const unidadeFiltroAtiva = user?.isOficinaGestor && unidadeFiltro !== FILTRO_TODOS ? unidadeFiltro : undefined;
+  const statusFiltroAtivo = statusFiltro !== FILTRO_TODOS ? statusFiltro : undefined;
 
   const { data: checklists = [], isLoading, isError } = useQuery({
-    queryKey: ['oficina', 'checklists', 'historico', unidadeFiltroAtiva],
-    queryFn: () => oficinaApi.checklists.list({ incluirFotos: true, unidadeId: unidadeFiltroAtiva }),
+    queryKey: ['oficina', 'checklists', 'historico', unidadeFiltroAtiva, statusFiltroAtivo],
+    queryFn: () => oficinaApi.checklists.list({ incluirFotos: true, unidadeId: unidadeFiltroAtiva, status: statusFiltroAtivo }),
   });
+
+  const filtrosAtivos = statusFiltro !== FILTRO_TODOS || unidadeFiltro !== FILTRO_TODOS || Boolean(busca) || Boolean(dataDe) || Boolean(dataAte);
+
+  const limparFiltros = () => {
+    setBusca('');
+    setUnidadeFiltro(FILTRO_TODOS);
+    setStatusFiltro(FILTRO_TODOS);
+    setDataDe('');
+    setDataAte('');
+  };
 
   // Lista completa (sem filtro de unidade) so para popular as opcoes do
   // dropdown -- so gestor/admin enxergam todas as unidades mesmo.
@@ -88,13 +102,18 @@ export default function ChecklistHistorico() {
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
-    if (!termo) return checklists;
-    return checklists.filter((item) =>
-      [item.cliente_nome, item.veiculo_placa, item.veiculo_chassi, item.colaborador_nome]
-        .filter(Boolean)
-        .some((campo) => campo.toLowerCase().includes(termo)),
-    );
-  }, [checklists, busca]);
+    return checklists.filter((item) => {
+      if (termo) {
+        const bateBusca = [item.cliente_nome, item.veiculo_placa, item.veiculo_chassi, item.colaborador_nome]
+          .filter(Boolean)
+          .some((campo) => campo.toLowerCase().includes(termo));
+        if (!bateBusca) return false;
+      }
+      if (dataDe && item.data_entrada < dataDe) return false;
+      if (dataAte && item.data_entrada > `${dataAte}T23:59:59`) return false;
+      return true;
+    });
+  }, [checklists, busca, dataDe, dataAte]);
 
   const { page, setPage, pageItems, total, pageSize } = usePagination(filtrados, 15);
 
@@ -118,8 +137,23 @@ export default function ChecklistHistorico() {
         )}
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <SearchInput value={busca} onChange={setBusca} placeholder="Buscar por cliente, placa ou chassi..." className="md:max-w-sm" />
+        <div className="w-full sm:w-44">
+          <Select value={statusFiltro} onValueChange={setStatusFiltro}>
+            <SelectTrigger>
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={FILTRO_TODOS}>Todos os status</SelectItem>
+              {Object.entries(STATUS_LABEL).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         {user?.isOficinaGestor && (
           <div className="w-full sm:w-48">
             <Select value={unidadeFiltro} onValueChange={setUnidadeFiltro}>
@@ -136,6 +170,16 @@ export default function ChecklistHistorico() {
               </SelectContent>
             </Select>
           </div>
+        )}
+        <div className="flex items-center gap-2">
+          <Input type="date" value={dataDe} onChange={(event) => setDataDe(event.target.value)} aria-label="Data de entrada - de" />
+          <span className="text-xs text-muted-foreground">até</span>
+          <Input type="date" value={dataAte} onChange={(event) => setDataAte(event.target.value)} aria-label="Data de entrada - até" />
+        </div>
+        {filtrosAtivos && (
+          <Button variant="outline" size="sm" onClick={limparFiltros}>
+            Limpar filtros
+          </Button>
         )}
       </div>
 

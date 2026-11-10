@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Mic, Paperclip, SendHorizontal, Smile, Sparkles, Zap } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Mic, Paperclip, SendHorizontal, Smile, Sparkles, Square, Trash2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
@@ -40,6 +40,22 @@ function fileParaBase64(file) {
   });
 }
 
+function formatTempoGravacao(segundosTotais) {
+  const minutos = Math.floor(segundosTotais / 60);
+  const segundos = segundosTotais % 60;
+  return `${minutos}:${String(segundos).padStart(2, '0')}`;
+}
+
+// Mesma ordem de preferencia do MDN pra Opus -- webm e' o mais suportado nos navegadores
+// desktop/Android, ogg cobre o que faltar. Sem fallback explicito, o browser usa o mimeType
+// default do MediaRecorder (geralmente webm tambem).
+const MIME_TYPES_AUDIO_GRAVACAO = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+
+function mimeTypeSuportadoParaGravacao() {
+  if (typeof MediaRecorder === 'undefined') return '';
+  return MIME_TYPES_AUDIO_GRAVACAO.find((tipo) => MediaRecorder.isTypeSupported?.(tipo)) || '';
+}
+
 // Cadastro fixo por enquanto -- sem tela de configuracao ainda. Migrar para tabela propria se
 // o uso pegar (ver plano de melhorias do chat de Atendimento).
 const TEMPLATES_RESPOSTA_RAPIDA = [
@@ -52,8 +68,15 @@ const TEMPLATES_RESPOSTA_RAPIDA = [
 export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
   const [value, setValue] = useState('');
   const [enviandoAnexo, setEnviandoAnexo] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingStreamRef = useRef(null);
+  const recordingTimerRef = useRef(null);
+  const recordingCanceladaRef = useRef(false);
 
   const handleTemplateSelect = (texto) => {
     setValue(texto);
@@ -64,6 +87,94 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
     setValue((atual) => atual + emoji);
     textareaRef.current?.focus();
   };
+
+  const encerrarStreamGravacao = () => {
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+  };
+
+  // onstop e' assincrono em relacao ao clique que o disparou -- so assim sabemos se o usuario
+  // pediu "enviar" ou "cancelar" nesse momento, por isso o flag fica numa ref (nao re-renderiza).
+  const handleGravacaoFinalizada = async (mimeType) => {
+    encerrarStreamGravacao();
+    const chunks = audioChunksRef.current;
+    audioChunksRef.current = [];
+    if (recordingCanceladaRef.current || chunks.length === 0) return;
+
+    const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+    if (blob.size === 0) return;
+    if (blob.size > MIDIA_TAMANHO_MAXIMO_BYTES) {
+      toast({
+        title: 'Áudio muito longo',
+        description: 'O limite para anexos é de 25 MB.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const base64 = await fileParaBase64(blob);
+      await onSendMidia({
+        file: blob,
+        base64,
+        mimeType: blob.type || mimeType || 'audio/webm',
+        nomeArquivo: null,
+        tipo: 'audio',
+      }).catch(() => {});
+    } catch {
+      toast({
+        title: 'Falha ao preparar o áudio',
+        description: 'Tente gravar novamente.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const startRecording = async () => {
+    if (disabled || isRecording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = mimeTypeSuportadoParaGravacao();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+      recordingStreamRef.current = stream;
+      recordingCanceladaRef.current = false;
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => handleGravacaoFinalizada(recorder.mimeType || mimeType);
+      mediaRecorderRef.current = recorder;
+
+      recorder.start();
+      setRecordingSeconds(0);
+      setIsRecording(true);
+      recordingTimerRef.current = setInterval(() => setRecordingSeconds((atual) => atual + 1), 1000);
+    } catch {
+      toast({
+        title: 'Não foi possível acessar o microfone',
+        description: 'Verifique a permissão do navegador para este site.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const pararGravacao = ({ cancelar }) => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    recordingCanceladaRef.current = cancelar;
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      encerrarStreamGravacao();
+    };
+  }, []);
 
   const handleSend = () => {
     const trimmed = value.trim();
@@ -117,7 +228,6 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
   return (
     <div className="flex items-center gap-2 border-t border-border bg-card p-3">
       <div className="flex min-h-11 flex-1 items-center gap-1 rounded-full bg-muted pl-1.5 pr-3">
-        {/* Emoji/acao rapida: visual, sem funcionalidade ainda. */}
         <input
           ref={fileInputRef}
           type="file"
@@ -130,7 +240,7 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
           variant="ghost"
           size="icon"
           className="h-8 w-8 shrink-0 text-muted-foreground"
-          disabled={disabled || enviandoAnexo}
+          disabled={disabled || enviandoAnexo || isRecording}
           aria-label="Anexar arquivo"
           onClick={() => fileInputRef.current?.click()}
         >
@@ -143,7 +253,7 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
               variant="ghost"
               size="icon"
               className="h-8 w-8 shrink-0 text-muted-foreground"
-              disabled={disabled}
+              disabled={disabled || isRecording}
               aria-label="Emoji"
             >
               <Smile className="h-4 w-4" />
@@ -171,7 +281,7 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
               variant="ghost"
               size="icon"
               className="h-8 w-8 shrink-0 text-muted-foreground"
-              disabled={disabled}
+              disabled={disabled || isRecording}
               aria-label="Respostas rápidas"
             >
               <Zap className="h-4 w-4" />
@@ -190,29 +300,60 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Digite uma mensagem..."
-          rows={1}
-          className="min-h-0 flex-1 resize-none border-none bg-transparent py-1.5 shadow-none focus-visible:ring-0"
-          disabled={disabled}
-        />
+        {isRecording ? (
+          <div className="flex flex-1 items-center gap-2 py-1.5 text-sm text-muted-foreground">
+            <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" />
+            <span>Gravando áudio... {formatTempoGravacao(recordingSeconds)}</span>
+          </div>
+        ) : (
+          <Textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Digite uma mensagem..."
+            rows={1}
+            className="min-h-0 flex-1 resize-none border-none bg-transparent py-1.5 shadow-none focus-visible:ring-0"
+            disabled={disabled}
+          />
+        )}
       </div>
       {/* Sugestao de resposta por IA: visual, sem funcionalidade ainda. */}
       <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-red-500" disabled aria-label="Sugestao de IA (em breve)">
         <Sparkles className="h-4 w-4" />
       </Button>
+      {isRecording && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0 text-muted-foreground"
+          aria-label="Cancelar gravação"
+          onClick={() => pararGravacao({ cancelar: true })}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      )}
       <Button
-        className="h-9 w-9 shrink-0 rounded-full bg-foreground text-background hover:bg-foreground/90"
+        className={`h-9 w-9 shrink-0 rounded-full ${
+          isRecording ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-foreground text-background hover:bg-foreground/90'
+        }`}
         size="icon"
-        onClick={handleSend}
-        disabled={disabled || !value.trim()}
-        aria-label="Enviar"
+        onClick={() => {
+          if (isRecording) pararGravacao({ cancelar: false });
+          else if (value.trim()) handleSend();
+          else startRecording();
+        }}
+        disabled={disabled}
+        aria-label={isRecording ? 'Parar e enviar áudio' : value.trim() ? 'Enviar' : 'Gravar áudio'}
       >
-        {value.trim() ? <SendHorizontal className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+        {isRecording ? (
+          <Square className="h-4 w-4 fill-current" />
+        ) : value.trim() ? (
+          <SendHorizontal className="h-4 w-4" />
+        ) : (
+          <Mic className="h-4 w-4" />
+        )}
       </Button>
     </div>
   );
