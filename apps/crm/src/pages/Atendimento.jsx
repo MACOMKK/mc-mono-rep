@@ -261,7 +261,7 @@ export default function Atendimento() {
     queryClient.setQueryData(['mensagens-atendimento', conversaId], (old = []) =>
       old.filter((item) => item.id !== mensagemComErro.id),
     );
-    enviarMutation.mutate(mensagemComErro.conteudo);
+    enviarMutation.mutate({ texto: mensagemComErro.conteudo, midia: mensagemComErro._midiaRetry || null });
   };
 
   const handleJumpToBottom = () => {
@@ -279,15 +279,15 @@ export default function Atendimento() {
     // enviarComRetry tenta de novo (com backoff) falhas transitorias antes de desistir, e o
     // .then(() => aguardar(...)) so' libera o proximo item da fila depois do intervalo minimo --
     // as duas coisas juntas absorvem a instabilidade da Evolution API local sob rajada.
-    mutationFn: (texto) => {
+    mutationFn: ({ texto, midia }) => {
       const envio = envioEmFilaRef.current.then(
-        () => enviarComRetry({ conversaId, texto }),
-        () => enviarComRetry({ conversaId, texto }),
+        () => enviarComRetry({ conversaId, texto, midia }),
+        () => enviarComRetry({ conversaId, texto, midia }),
       );
       envioEmFilaRef.current = envio.catch(() => {}).then(() => aguardar(INTERVALO_MINIMO_FILA_MS));
       return envio;
     },
-    onMutate: (texto) => {
+    onMutate: ({ texto, midia }) => {
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
       // Insere a bolha otimista sincronamente, antes de qualquer coisa assincrona: um onMutate
@@ -306,6 +306,12 @@ export default function Atendimento() {
           direcao: 'saida',
           autor: 'humano',
           conteudo: texto,
+          // Preview local (blob) ate a confirmacao do servidor trocar pela url real do Storage --
+          // so pra dar feedback imediato de que o anexo certo foi selecionado, antes do upload.
+          tipo_conteudo: midia?.tipo || 'texto',
+          midia_url: midia?.file ? URL.createObjectURL(midia.file) : '',
+          midia_nome_arquivo: midia?.nomeArquivo || '',
+          _midiaRetry: midia || null,
           created_date: new Date().toISOString(),
           pending: true,
         },
@@ -314,7 +320,7 @@ export default function Atendimento() {
 
       return { tempId };
     },
-    onError: (error, _texto, context) => {
+    onError: (error, _payload, context) => {
       // Nao faz rollback completo (remover a bolha) -- ela fica visivel marcada como erro, com
       // botao de reenvio, senao a mensagem que falhou desaparece sem deixar rastro pro atendente.
       if (context?.tempId) {
@@ -324,7 +330,7 @@ export default function Atendimento() {
       }
       toast({ title: 'Erro ao enviar mensagem', description: error?.message, variant: 'destructive' });
     },
-    onSuccess: (mensagemEnviada, _texto, context) => {
+    onSuccess: (mensagemEnviada, _payload, context) => {
       // Nao usar invalidateQueries aqui: o refetch e assincrono e pode chegar do servidor antes
       // de envios seguintes (ainda em voo) terem sido persistidos, substituindo o array inteiro
       // do cache e apagando as bolhas otimistas (pending/erro) deles por baixo dos pes. Como o
@@ -560,7 +566,8 @@ export default function Atendimento() {
             </div>
 
             <MensagemComposer
-              onSend={(texto) => enviarMutation.mutateAsync(texto)}
+              onSend={(texto) => enviarMutation.mutateAsync({ texto, midia: null })}
+              onSendMidia={(midia) => enviarMutation.mutateAsync({ texto: '', midia })}
               disabled={conversaAtiva.status === 'encerrada'}
             />
           </>

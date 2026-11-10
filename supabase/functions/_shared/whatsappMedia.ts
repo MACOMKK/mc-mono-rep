@@ -1,9 +1,10 @@
 // Download de mídia recebida via webhook (Meta ou Evolution) e upload no bucket
-// crm-atendimento-midia (ver migration 20261109120000_add_crm_atendimento_midia.sql).
-// Formato do payload de mídia da Evolution foi revalidado em 2026-11-09 via instância real
-// (chat teste): quando a instância está com webhookBase64 desligado (padrão), a Evolution não
-// embute o binário no próprio evento messages.upsert -- é preciso chamar
-// POST /chat/getBase64FromMediaMessage/{instance} com { message: { key } } pra obter o base64.
+// crm-atendimento-midia (ver migration 20261109140000_add_crm_atendimento_midia.sql).
+// Formato do payload de mídia da Evolution ainda não foi validado contra uma instância real --
+// a suposição (a confirmar no primeiro teste via GUIA_TESTE_WHATSAPP_EVOLUTION_LOCAL.md) é que,
+// com a instância com webhookBase64 desligado (padrão), a Evolution não embute o binário no
+// próprio evento messages.upsert, exigindo POST /chat/getBase64FromMediaMessage/{instance} com
+// { message: { key } } pra obter o base64.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
@@ -38,11 +39,20 @@ function extensionFor(mimeType: string, nomeArquivo: string | null) {
   return EXT_BY_MIME[mimeType] || 'bin';
 }
 
-function base64ToBytes(base64: string) {
+export function base64ToBytes(base64: string) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+// Usado no envio de midia (card "Enviar mídia") pra classificar o anexo escolhido pelo
+// atendente a partir do mime type do arquivo -- o recebimento usa message.type do provedor
+// (ver whatsapp-api/index.ts), aqui nao ha isso, so o File do navegador.
+export function tipoFromMime(mimeType: string): MediaTipo {
+  if (mimeType.startsWith('image/')) return 'imagem';
+  if (mimeType.startsWith('audio/')) return 'audio';
+  return 'documento';
 }
 
 // --- Meta Cloud API -------------------------------------------------------

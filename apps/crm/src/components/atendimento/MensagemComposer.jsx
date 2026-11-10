@@ -2,12 +2,33 @@ import { useRef, useState } from 'react';
 import { Mic, Paperclip, SendHorizontal, Smile, Sparkles, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/components/ui/use-toast';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+
+// Mesmo limite do bucket crm-atendimento-midia (storage.buckets.file_size_limit, ver migration
+// 20261109140000_add_crm_atendimento_midia.sql) -- falhar aqui evita gastar o upload so pra
+// descobrir no servidor que o arquivo nao cabe.
+const MIDIA_TAMANHO_MAXIMO_BYTES = 25 * 1024 * 1024;
+
+function tipoFromMime(mimeType) {
+  if (mimeType?.startsWith('image/')) return 'imagem';
+  if (mimeType?.startsWith('audio/')) return 'audio';
+  return 'documento';
+}
+
+function fileParaBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(reader.error || new Error('Falha ao ler o arquivo.'));
+    reader.readAsDataURL(file);
+  });
+}
 
 // Cadastro fixo por enquanto -- sem tela de configuracao ainda. Migrar para tabela propria se
 // o uso pegar (ver plano de melhorias do chat de Atendimento).
@@ -18,9 +39,11 @@ const TEMPLATES_RESPOSTA_RAPIDA = [
   { titulo: 'Encerramento', texto: 'Fico à disposição! Qualquer outra dúvida, é só chamar por aqui.' },
 ];
 
-export default function MensagemComposer({ onSend, disabled }) {
+export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
   const [value, setValue] = useState('');
+  const [enviandoAnexo, setEnviandoAnexo] = useState(false);
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const handleTemplateSelect = (texto) => {
     setValue(texto);
@@ -38,6 +61,37 @@ export default function MensagemComposer({ onSend, disabled }) {
     onSend(trimmed).catch(() => {});
   };
 
+  const handleAnexoSelecionado = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || disabled) return;
+
+    if (file.size > MIDIA_TAMANHO_MAXIMO_BYTES) {
+      toast({
+        title: 'Arquivo muito grande',
+        description: 'O limite para anexos é de 25 MB.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setEnviandoAnexo(true);
+    try {
+      const base64 = await fileParaBase64(file);
+      // onSendMidia (enviarMutation) tambem ja atualiza a bolha otimista em onMutate -- mesmo
+      // padrao de handleSend, so que aqui espera o FileReader (assincrono) antes de disparar.
+      await onSendMidia({
+        file,
+        base64,
+        mimeType: file.type || 'application/octet-stream',
+        nomeArquivo: file.name,
+        tipo: tipoFromMime(file.type),
+      }).catch(() => {});
+    } finally {
+      setEnviandoAnexo(false);
+    }
+  };
+
   const handleKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -48,8 +102,23 @@ export default function MensagemComposer({ onSend, disabled }) {
   return (
     <div className="flex items-center gap-2 border-t border-border bg-card p-3">
       <div className="flex min-h-11 flex-1 items-center gap-1 rounded-full bg-muted pl-1.5 pr-3">
-        {/* Anexo/emoji/acao rapida: visual, sem funcionalidade ainda -- so o envio de texto existe hoje. */}
-        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground" disabled aria-label="Anexar arquivo (em breve)">
+        {/* Emoji/acao rapida: visual, sem funcionalidade ainda. */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx"
+          className="hidden"
+          onChange={handleAnexoSelecionado}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 text-muted-foreground"
+          disabled={disabled || enviandoAnexo}
+          aria-label="Anexar arquivo"
+          onClick={() => fileInputRef.current?.click()}
+        >
           <Paperclip className="h-4 w-4" />
         </Button>
         <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground" disabled aria-label="Emoji (em breve)">

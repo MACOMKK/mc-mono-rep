@@ -38,6 +38,10 @@ function mapMensagemRow(row = {}) {
     conteudo: row.conteudo || '',
     status: row.status || 'enviado',
     metadados: row.metadados || {},
+    tipo_conteudo: row.tipo_conteudo || 'texto',
+    midia_url: row.midia_url || '',
+    midia_mime_type: row.midia_mime_type || '',
+    midia_nome_arquivo: row.midia_nome_arquivo || '',
     created_date: row.criado_em || null,
   };
 }
@@ -133,14 +137,18 @@ async function adicionarNotaConversa({ conversaId, conteudo }) {
 // Envia de fato pelo WhatsApp (Meta ou Evolution API, conforme integracao ativa -- ver
 // send_atendimento_mensagem em crm-api/index.ts) e so grava a mensagem/atualiza a conversa
 // depois do envio ter sucesso.
-async function enviarMensagemManual({ conversaId, texto }) {
-  if (!conversaId || !texto?.trim()) {
-    throw new Error('Conversa e texto da mensagem sao obrigatorios.');
+// midia (opcional): { base64, mimeType, nomeArquivo, tipo } -- tipo ('imagem'/'audio'/'documento')
+// e' usado so no otimismo da UI (bolha antes da confirmacao), o crm-api reclassifica pelo mimeType.
+async function enviarMensagemManual({ conversaId, texto, midia }) {
+  const textoTrim = texto?.trim() || '';
+  if (!conversaId || (!textoTrim && !midia)) {
+    throw new Error('Conversa e texto ou midia da mensagem sao obrigatorios.');
   }
 
   const row = await crmApi.conversas_atendimento.sendMensagem({
     conversaId,
-    texto: texto.trim(),
+    texto: textoTrim,
+    ...(midia ? { midia: { base64: midia.base64, mimeType: midia.mimeType, nomeArquivo: midia.nomeArquivo || null } } : {}),
   });
 
   return mapMensagemRow(row);

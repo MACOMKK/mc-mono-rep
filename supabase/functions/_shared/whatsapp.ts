@@ -78,6 +78,94 @@ export async function sendWhatsappMessageEvolution(
   return data;
 }
 
+// Envio de midia de saida -- card "Enviar mídia", reaproveita o mesmo bucket/upload de quem
+// recebe (ver _shared/whatsappMedia.ts). Meta so aceita url publica (busca ela mesma); Evolution
+// aceita url ou base64 no campo "media" -- usamos url nos dois casos, mais simples e sem
+// duplicar o binario na requisicao.
+export type OutgoingMediaTipo = 'imagem' | 'audio' | 'documento';
+
+export async function sendWhatsappMediaMeta(
+  phoneNumberId: string,
+  token: string,
+  toPhone: string,
+  tipo: OutgoingMediaTipo,
+  mediaUrl: string,
+  nomeArquivo: string | null,
+  caption: string,
+) {
+  const metaType = tipo === 'imagem' ? 'image' : tipo === 'audio' ? 'audio' : 'document';
+  const mediaPayload: Record<string, unknown> = { link: mediaUrl };
+  if (caption && metaType !== 'audio') mediaPayload.caption = caption;
+  if (metaType === 'document' && nomeArquivo) mediaPayload.filename = nomeArquivo;
+
+  let response: Response;
+  try {
+    response = await fetch(`https://graph.facebook.com/v20.0/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: toPhone,
+        type: metaType,
+        [metaType]: mediaPayload,
+      }),
+      signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error('Tempo limite excedido ao enviar midia via WhatsApp (Meta Cloud API).');
+    }
+    throw error;
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.message || 'Falha ao enviar midia via WhatsApp.');
+  }
+
+  return data;
+}
+
+export async function sendWhatsappMediaEvolution(
+  instanceUrl: string,
+  instanceName: string,
+  apiKey: string,
+  toPhone: string,
+  tipo: OutgoingMediaTipo,
+  mediaUrl: string,
+  nomeArquivo: string | null,
+  caption: string,
+) {
+  const baseUrl = instanceUrl.replace(/\/+$/, '');
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/message/sendMedia/${instanceName}`, {
+      method: 'POST',
+      headers: { apikey: apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        number: toPhone,
+        mediatype: tipo === 'imagem' ? 'image' : tipo === 'audio' ? 'audio' : 'document',
+        media: mediaUrl,
+        ...(nomeArquivo ? { fileName: nomeArquivo } : {}),
+        ...(caption ? { caption } : {}),
+      }),
+      signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error('Tempo limite excedido ao enviar midia via Evolution API.');
+    }
+    throw error;
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || data?.error || 'Falha ao enviar midia via Evolution API.');
+  }
+
+  return data;
+}
+
 // Extrai o id da mensagem enviada do payload de resposta de cada provedor -- usado para casar
 // com os eventos de status (entregue/lido) que chegam depois no webhook, ver status em
 // mensagens_atendimento (migration 20261108100000_add_crm_mensagem_status.sql).

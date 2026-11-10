@@ -11,7 +11,15 @@ import type { EntityName } from './access-scope.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { CLEAR_MUST_CHANGE_PASSWORD_SQL, mapMustChangePassword } from '../_shared/auth.ts';
 import { loadIntegracaoCredenciais } from '../_shared/integracoes.ts';
-import { sendWhatsappMessageMeta, sendWhatsappMessageEvolution, extractWhatsappMessageId } from '../_shared/whatsapp.ts';
+import {
+  sendWhatsappMessageMeta,
+  sendWhatsappMessageEvolution,
+  sendWhatsappMediaMeta,
+  sendWhatsappMediaEvolution,
+  extractWhatsappMessageId,
+  type OutgoingMediaTipo,
+} from '../_shared/whatsapp.ts';
+import { uploadMedia, base64ToBytes, tipoFromMime } from '../_shared/whatsappMedia.ts';
 
 const CRM_SYSTEM_SLUG = 'crm';
 
@@ -1383,8 +1391,17 @@ Deno.serve(async (request) => {
     if (action === 'send_atendimento_mensagem') {
       const conversaId = typeof body.conversaId === 'string' ? body.conversaId : '';
       const texto = typeof body.texto === 'string' ? body.texto.trim() : '';
-      if (!conversaId || !texto) {
-        return json({ error: 'Conversa e texto da mensagem sao obrigatorios.' }, 400);
+      const midiaPayload = body.midia as
+        | { base64?: unknown; mimeType?: unknown; nomeArquivo?: unknown }
+        | undefined;
+      const midiaBase64 = typeof midiaPayload?.base64 === 'string' ? midiaPayload.base64 : '';
+      const midiaMimeType = typeof midiaPayload?.mimeType === 'string' ? midiaPayload.mimeType : '';
+      const midiaNomeArquivo =
+        typeof midiaPayload?.nomeArquivo === 'string' && midiaPayload.nomeArquivo ? midiaPayload.nomeArquivo : null;
+      const temMidia = Boolean(midiaBase64 && midiaMimeType);
+
+      if (!conversaId || (!texto && !temMidia)) {
+        return json({ error: 'Conversa e texto ou midia da mensagem sao obrigatorios.' }, 400);
       }
 
       const conversa = await ensureEntityAccess('conversas_atendimento', conversaId, access, collaborator);
@@ -1395,6 +1412,27 @@ Deno.serve(async (request) => {
 
       if (!supabaseUrl || !supabaseServiceRoleKey) {
         return json({ error: 'Integracao de WhatsApp nao configurada (SUPABASE_SERVICE_ROLE_KEY ausente).' }, 500);
+      }
+
+      // Mídia de saida reaproveita o mesmo bucket/upload de quem recebe (uploadMedia, ver
+      // whatsappMedia.ts) -- precisa da url publica *antes* de enviar porque os dois provedores
+      // (Meta e Evolution, ver sendWhatsappMediaMeta/Evolution) buscam o anexo por url, nenhum
+      // aceita o binario embutido nessa chamada.
+      let uploadedMedia: { tipo: OutgoingMediaTipo; url: string; mimeType: string; nomeArquivo: string | null } | null =
+        null;
+      if (temMidia) {
+        try {
+          const tipo = tipoFromMime(midiaMimeType) as OutgoingMediaTipo;
+          uploadedMedia = await uploadMedia(supabaseUrl, supabaseServiceRoleKey, conversaId, {
+            tipo,
+            mimeType: midiaMimeType,
+            nomeArquivo: midiaNomeArquivo,
+            bytes: base64ToBytes(midiaBase64),
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return json({ error: `Falha ao preparar midia para envio: ${message}` }, 500);
+        }
       }
 
       const evolutionCredenciais = await loadIntegracaoCredenciais('whatsapp_evolution', {
@@ -1417,15 +1455,36 @@ Deno.serve(async (request) => {
       let sendResult: unknown = null;
       try {
         if (evolutionCredenciais) {
-          sendResult = await sendWhatsappMessageEvolution(
-            String(evolutionCredenciais.instance_url || ''),
-            String(evolutionCredenciais.instance_name || ''),
-            String(evolutionCredenciais.api_key || ''),
-            toPhone,
-            texto,
-          );
+          sendResult = uploadedMedia
+            ? await sendWhatsappMediaEvolution(
+                String(evolutionCredenciais.instance_url || ''),
+                String(evolutionCredenciais.instance_name || ''),
+                String(evolutionCredenciais.api_key || ''),
+                toPhone,
+                uploadedMedia.tipo,
+                uploadedMedia.url,
+                uploadedMedia.nomeArquivo,
+                texto,
+              )
+            : await sendWhatsappMessageEvolution(
+                String(evolutionCredenciais.instance_url || ''),
+                String(evolutionCredenciais.instance_name || ''),
+                String(evolutionCredenciais.api_key || ''),
+                toPhone,
+                texto,
+              );
         } else if (whatsappToken && whatsappPhoneNumberId) {
-          sendResult = await sendWhatsappMessageMeta(whatsappPhoneNumberId, whatsappToken, toPhone, texto);
+          sendResult = uploadedMedia
+            ? await sendWhatsappMediaMeta(
+                whatsappPhoneNumberId,
+                whatsappToken,
+                toPhone,
+                uploadedMedia.tipo,
+                uploadedMedia.url,
+                uploadedMedia.nomeArquivo,
+                texto,
+              )
+            : await sendWhatsappMessageMeta(whatsappPhoneNumberId, whatsappToken, toPhone, texto);
         } else {
           return json({ error: 'Nenhum provedor de WhatsApp configurado (Meta ou Evolution API).' }, 400);
         }
@@ -1452,9 +1511,16 @@ Deno.serve(async (request) => {
         // ->>'...' nunca mais encontra a chave depois (bug real: status de entrega/leitura
         // nunca avancava para mensagens enviadas manualmente pelo chat).
         metadados: sentMessageId ? { whatsapp_message_id: sentMessageId } : {},
+        tipo_conteudo: uploadedMedia?.tipo ?? 'texto',
+        midia_url: uploadedMedia?.url ?? null,
+        midia_mime_type: uploadedMedia?.mimeType ?? null,
+        midia_nome_arquivo: uploadedMedia?.nomeArquivo ?? null,
       };
       const insertQuery = buildInsertQuery(CRM_SCHEMA, 'mensagens_atendimento', insertPayload);
-      const preview = texto.length > 140 ? `${texto.slice(0, 139)}…` : texto;
+      const previewBase = uploadedMedia
+        ? `[${uploadedMedia.tipo === 'imagem' ? 'Imagem' : uploadedMedia.tipo === 'audio' ? 'Áudio' : 'Documento'}]${texto ? ` ${texto}` : ''}`
+        : texto;
+      const preview = previewBase.length > 140 ? `${previewBase.slice(0, 139)}…` : previewBase;
 
       // A mensagem ja foi entregue pelo WhatsApp acima -- se o registro na conversa falhar, tenta
       // de novo uma vez antes de desistir. Nao pode propagar o erro daqui pra cima: isso faria o
