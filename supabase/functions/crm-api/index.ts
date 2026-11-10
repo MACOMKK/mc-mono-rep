@@ -306,10 +306,10 @@ const sql = databaseUrl
   ? postgres(databaseUrl, {
       prepare: false,
       max: 3,
-      // 5s derrubava a conexao entre cliques do usuario e cada reconexao (TCP+TLS+auth) custava
-      // varios round-trips ate o banco. 20s mantem a conexao viva entre requisicoes seguidas;
-      // continua limitado por `max: 3` por isolate e pelo pool do Supavisor.
-      idle_timeout: 20,
+      // Mantido em 5s de proposito. Tentamos 20s (2026-11-10) e varias listagens de catalogo
+      // travaram ate o timeout de 20s do front: conexoes ociosas ficam presas por mais tempo no
+      // Supavisor (session mode, poucas vagas para ~12 Edge Functions) ou morrem silenciosas.
+      idle_timeout: 5,
       connect_timeout: 15,
     })
   : null;

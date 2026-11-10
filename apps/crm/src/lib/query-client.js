@@ -36,11 +36,13 @@ const CACHE_POLICIES = [
 
 // Falhas transitorias (rede, timeout, 5xx -- comuns com Edge Function e banco em regioes
 // diferentes) sao repetidas com backoff; erros 4xx (permissao, validacao, sessao) nao, porque
-// repetir nao muda o resultado. Timeout (504) repete so uma vez: ja custou 20s.
+// repetir nao muda o resultado. Timeout (504) NAO repete: ja custou 20s, e repetir dobra a espera
+// (visto em 2026-11-10: tela travada por 40s) sem ajudar quando o servidor esta preso.
 function shouldRetryQuery(failureCount, error) {
 	const status = Number(error?.status) || 0;
+	if (status === 504) return false;
 	if (status >= 400 && status < 500 && status !== 408 && status !== 429) return false;
-	return failureCount < (status === 504 ? 1 : 2);
+	return failureCount < 2;
 }
 
 export const queryClientInstance = new QueryClient({
