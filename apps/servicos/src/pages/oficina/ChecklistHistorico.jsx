@@ -4,9 +4,24 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Car, Plus } from 'lucide-react';
 
 import { oficinaApi } from '@macom/api-client/oficinaApi';
-import { Badge, Button, CarLoader, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@macom/ui';
+import {
+  Badge,
+  Button,
+  CarLoader,
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@macom/ui';
 import { useAuth } from '@/lib/AuthContext';
 import Pagination from '@/components/Pagination';
+import FiltersDrawer from '@/components/FiltersDrawer';
 import SearchInput from '@/components/SearchInput';
 import { usePagination } from '@/hooks/usePagination';
 
@@ -46,26 +61,29 @@ export default function ChecklistHistorico() {
   const navigate = useNavigate();
   const [busca, setBusca] = useState('');
   const [unidadeFiltro, setUnidadeFiltro] = useState(FILTRO_TODOS);
-  const [statusFiltro, setStatusFiltro] = useState(FILTRO_TODOS);
+  const [statusFiltro, setStatusFiltro] = useState([]);
   const [dataDe, setDataDe] = useState('');
   const [dataAte, setDataAte] = useState('');
+  const [kmMin, setKmMin] = useState('');
+  const [kmMax, setKmMax] = useState('');
 
   const unidadeFiltroAtiva = user?.isOficinaGestor && unidadeFiltro !== FILTRO_TODOS ? unidadeFiltro : undefined;
-  const statusFiltroAtivo = statusFiltro !== FILTRO_TODOS ? statusFiltro : undefined;
 
   const { data: checklists = [], isLoading, isError } = useQuery({
-    queryKey: ['oficina', 'checklists', 'historico', unidadeFiltroAtiva, statusFiltroAtivo],
-    queryFn: () => oficinaApi.checklists.list({ incluirFotos: true, unidadeId: unidadeFiltroAtiva, status: statusFiltroAtivo }),
+    queryKey: ['oficina', 'checklists', 'historico', unidadeFiltroAtiva],
+    queryFn: () => oficinaApi.checklists.list({ incluirFotos: true, unidadeId: unidadeFiltroAtiva }),
   });
 
-  const filtrosAtivos = statusFiltro !== FILTRO_TODOS || unidadeFiltro !== FILTRO_TODOS || Boolean(busca) || Boolean(dataDe) || Boolean(dataAte);
+  // Quantos filtros do painel lateral estao ativos (a busca fica de fora, direto na tela).
+  const filtrosAtivos = [statusFiltro.length > 0, unidadeFiltro !== FILTRO_TODOS, Boolean(dataDe || dataAte), Boolean(kmMin || kmMax)].filter(Boolean).length;
 
   const limparFiltros = () => {
-    setBusca('');
     setUnidadeFiltro(FILTRO_TODOS);
-    setStatusFiltro(FILTRO_TODOS);
+    setStatusFiltro([]);
     setDataDe('');
     setDataAte('');
+    setKmMin('');
+    setKmMax('');
   };
 
   // Lista completa (sem filtro de unidade) so para popular as opcoes do
@@ -109,11 +127,18 @@ export default function ChecklistHistorico() {
           .some((campo) => campo.toLowerCase().includes(termo));
         if (!bateBusca) return false;
       }
+      if (statusFiltro.length > 0 && !statusFiltro.includes(item.status)) return false;
       if (dataDe && item.data_entrada < dataDe) return false;
       if (dataAte && item.data_entrada > `${dataAte}T23:59:59`) return false;
+      if (kmMin || kmMax) {
+        if (item.km == null) return false;
+        const km = Number(item.km);
+        if (kmMin && km < Number(kmMin)) return false;
+        if (kmMax && km > Number(kmMax)) return false;
+      }
       return true;
     });
-  }, [checklists, busca, dataDe, dataAte]);
+  }, [checklists, busca, statusFiltro, dataDe, dataAte, kmMin, kmMax]);
 
   const { page, setPage, pageItems, total, pageSize } = usePagination(filtrados, 15);
 
@@ -137,50 +162,86 @@ export default function ChecklistHistorico() {
         )}
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-        <SearchInput value={busca} onChange={setBusca} placeholder="Buscar por cliente, placa ou chassi..." className="md:max-w-sm" />
-        <div className="w-full sm:w-44">
-          <Select value={statusFiltro} onValueChange={setStatusFiltro}>
-            <SelectTrigger>
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={FILTRO_TODOS}>Todos os status</SelectItem>
-              {Object.entries(STATUS_LABEL).map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {user?.isOficinaGestor && (
-          <div className="w-full sm:w-48">
-            <Select value={unidadeFiltro} onValueChange={setUnidadeFiltro}>
-              <SelectTrigger>
-                <SelectValue placeholder="Unidade" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={FILTRO_TODOS}>Todas unidades</SelectItem>
-                {unidades.map((unidade) => (
-                  <SelectItem key={unidade.id} value={unidade.id}>
-                    {unidade.nome}
-                  </SelectItem>
+      <div className="flex flex-wrap items-end gap-3">
+        <SearchInput value={busca} onChange={setBusca} placeholder="Buscar por cliente, placa ou chassi..." className="w-full sm:w-80" />
+
+        <FiltersDrawer activeCount={filtrosAtivos} onClear={limparFiltros}>
+          <div className="space-y-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-full justify-start font-normal">
+                  {statusFiltro.length === 0
+                    ? 'Todos os status'
+                    : statusFiltro.length === 1
+                      ? STATUS_LABEL[statusFiltro[0]] || statusFiltro[0]
+                      : `${statusFiltro.length} status selecionados`}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56">
+                {Object.entries(STATUS_LABEL).map(([value, label]) => (
+                  <DropdownMenuCheckboxItem
+                    key={value}
+                    checked={statusFiltro.includes(value)}
+                    onSelect={(event) => event.preventDefault()}
+                    onCheckedChange={(checked) =>
+                      setStatusFiltro((current) =>
+                        checked ? [...current, value] : current.filter((item) => item !== value),
+                      )
+                    }
+                  >
+                    {label}
+                  </DropdownMenuCheckboxItem>
                 ))}
-              </SelectContent>
-            </Select>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        )}
-        <div className="flex items-center gap-2">
-          <Input type="date" value={dataDe} onChange={(event) => setDataDe(event.target.value)} aria-label="Data de entrada - de" />
-          <span className="text-xs text-muted-foreground">até</span>
-          <Input type="date" value={dataAte} onChange={(event) => setDataAte(event.target.value)} aria-label="Data de entrada - até" />
-        </div>
-        {filtrosAtivos && (
-          <Button variant="outline" size="sm" onClick={limparFiltros}>
-            Limpar filtros
-          </Button>
-        )}
+
+          {user?.isOficinaGestor && (
+            <div className="space-y-1">
+              <Select value={unidadeFiltro} onValueChange={setUnidadeFiltro}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Unidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={FILTRO_TODOS}>Todas as unidades</SelectItem>
+                  {unidades.map((unidade) => (
+                    <SelectItem key={unidade.id} value={unidade.id}>
+                      {unidade.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Input type="date" value={dataDe} onChange={(event) => setDataDe(event.target.value)} aria-label="Data de entrada - de" />
+              <span className="text-xs text-muted-foreground">até</span>
+              <Input type="date" value={dataAte} onChange={(event) => setDataAte(event.target.value)} aria-label="Data de entrada - até" />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min="0"
+              placeholder="Km mínimo"
+              value={kmMin}
+              onChange={(event) => setKmMin(event.target.value)}
+              aria-label="Km mínimo"
+            />
+            <span className="text-xs text-muted-foreground">até</span>
+            <Input
+              type="number"
+              min="0"
+              placeholder="Km máximo"
+              value={kmMax}
+              onChange={(event) => setKmMax(event.target.value)}
+              aria-label="Km máximo"
+            />
+          </div>
+        </FiltersDrawer>
       </div>
 
       {isLoading && <CarLoader inline />}
