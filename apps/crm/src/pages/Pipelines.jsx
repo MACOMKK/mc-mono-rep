@@ -216,6 +216,7 @@ export default function Pipelines() {
     mutationFn: (nome) => crmDataClient.entities.Pipeline.create({ nome }),
     onSuccess: async (pipeline) => {
       await queryClient.invalidateQueries({ queryKey: ['crm-pipelines'] });
+      await queryClient.invalidateQueries({ queryKey: ['crm-leads-catalogos'] });
       setPipelineSelecionadoId(pipeline.id);
       setNovoPipelineAberto(false);
       toast({ title: 'Pipeline criado', variant: 'success' });
@@ -227,6 +228,7 @@ export default function Pipelines() {
     mutationFn: (id) => crmDataClient.entities.Pipeline.delete(id),
     onSuccess: async (_result, id) => {
       await queryClient.invalidateQueries({ queryKey: ['crm-pipelines'] });
+      await queryClient.invalidateQueries({ queryKey: ['crm-leads-catalogos'] });
       if (pipelineSelecionadoId === id) setPipelineSelecionadoId(null);
       setPipelineParaExcluir(null);
       toast({ title: 'Pipeline excluido', variant: 'success' });
@@ -269,6 +271,7 @@ export default function Pipelines() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-etapas-pipeline', pipelineSelecionadoId] });
+      await queryClient.invalidateQueries({ queryKey: ['crm-leads-catalogos'] });
       toast({ title: 'Etapa criada', variant: 'success' });
     },
     onError: (error, _variables, context) => {
@@ -281,6 +284,7 @@ export default function Pipelines() {
     mutationFn: ({ id, ...data }) => crmDataClient.entities.EtapaPipeline.update(id, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-etapas-pipeline', pipelineSelecionadoId] });
+      await queryClient.invalidateQueries({ queryKey: ['crm-leads-catalogos'] });
     },
     onError: (error) => toast({ title: 'Nao foi possivel atualizar a etapa', description: error.message, variant: 'destructive' }),
   });
@@ -296,6 +300,7 @@ export default function Pipelines() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-etapas-pipeline', pipelineSelecionadoId] });
+      await queryClient.invalidateQueries({ queryKey: ['crm-leads-catalogos'] });
       toast({ title: 'Etapa excluida', variant: 'success' });
     },
     onError: (error, _id, context) => {
@@ -311,6 +316,7 @@ export default function Pipelines() {
     mutationFn: ({ id, ...data }) => crmDataClient.entities.Pipeline.update(id, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-pipelines'] });
+      await queryClient.invalidateQueries({ queryKey: ['crm-leads-catalogos'] });
       toast({ title: 'Pipeline atualizado', variant: 'success' });
     },
     onError: (error) => toast({ title: 'Nao foi possivel atualizar o pipeline', description: error.message, variant: 'destructive' }),
@@ -331,6 +337,7 @@ export default function Pipelines() {
       : crmDataClient.entities.PipelineAutomacao.create({ pipeline_id: pipelineSelecionadoId, resultado, etapa_destino_id })),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-pipeline-automacoes', pipelineSelecionadoId] });
+      await queryClient.invalidateQueries({ queryKey: ['crm-leads-catalogos'] });
     },
     onError: (error) => toast({ title: 'Nao foi possivel salvar a automacao', description: error.message, variant: 'destructive' }),
   });
@@ -339,6 +346,7 @@ export default function Pipelines() {
     mutationFn: (id) => crmDataClient.entities.PipelineAutomacao.delete(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['crm-pipeline-automacoes', pipelineSelecionadoId] });
+      await queryClient.invalidateQueries({ queryKey: ['crm-leads-catalogos'] });
     },
     onError: (error) => toast({ title: 'Nao foi possivel remover a automacao', description: error.message, variant: 'destructive' }),
   });
@@ -405,6 +413,7 @@ export default function Pipelines() {
       await atualizarOrdemEtapa(movidaFinal, novoOrdem);
 
       await queryClient.invalidateQueries({ queryKey });
+      await queryClient.invalidateQueries({ queryKey: ['crm-leads-catalogos'] });
     } catch (error) {
       queryClient.setQueryData(queryKey, etapasAnteriores);
       await queryClient.invalidateQueries({ queryKey });

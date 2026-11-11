@@ -38,6 +38,7 @@ import {
   resolveLeadDragAction,
 } from '@/lib/leadStatus';
 import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
+import { useLeadsCatalogos } from '@/hooks/useLeadsCatalogos';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 
 const SLA_STYLES = {
@@ -332,20 +333,10 @@ export default function Leads() {
     },
   });
 
-  const { data: responsaveis = [] } = useQuery({
-    queryKey: ['crm-responsaveis'],
-    queryFn: () => crmDataClient.entities.Responsavel.list(),
-  });
-
-  const { data: origensLead = [] } = useQuery({
-    queryKey: ['crm-origens-lead'],
-    queryFn: () => crmDataClient.entities.OrigemLead.list('nome'),
-  });
-
-  const { data: motivosStatus = [] } = useQuery({
-    queryKey: ['crm-motivos-status'],
-    queryFn: () => crmDataClient.entities.MotivoStatus.list('nome'),
-  });
+  // responsaveis/origensLead/motivosStatus vem do mesmo combo de useLeadsCatalogos consumido
+  // acima por usePipelineEtapas (mesma queryKey crm-leads-catalogos) -- React Query faz dedupe,
+  // entao isso nao dispara uma chamada de rede extra.
+  const { responsaveis, origensLead, motivosStatus } = useLeadsCatalogos();
 
   const { data: activityFormAtendimentos = [] } = useQuery({
     queryKey: ['lead-atividades-planejadas', viewingLead?.id],

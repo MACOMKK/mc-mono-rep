@@ -82,6 +82,10 @@ export default function ChecklistForm() {
   const [os, setOs] = useState('');
   const [km, setKm] = useState('');
   const [ehTeste, setEhTeste] = useState(false);
+  const [statusAtual, setStatusAtual] = useState(null);
+  // Admin pode marcar/desmarcar como teste ao editar um checklist existente (mesmo criado normal),
+  // o que libera a exclusao. So enquanto nao estiver finalizado (o backend tambem valida).
+  const podeMarcarTesteNaEdicao = Boolean(user?.isOficinaAdmin && idParam && statusAtual && statusAtual !== 'finalizado');
   const [nivelCombustivel, setNivelCombustivel] = useState(0.5);
   const [pinturaSuja, setPinturaSuja] = useState(false);
   const [avarias, setAvarias] = useState([]);
@@ -190,6 +194,8 @@ export default function ChecklistForm() {
             : null,
         );
         setUnidadeId(row.unidade_id || '');
+        setEhTeste(Boolean(row.eh_teste));
+        setStatusAtual(row.status || null);
         setOs(row.os || '');
         setKm(row.km ?? '');
         setNivelCombustivel(row.nivel_combustivel ?? 0.5);
@@ -277,7 +283,12 @@ export default function ChecklistForm() {
       setErro(null);
       setEtapa((atual) => atual + 1);
       oficinaApi.checklists
-        .atualizar(avaliacaoId, { os: os || null, km: km ? Number(km) : null, unidade_id: unidadeId || null })
+        .atualizar(avaliacaoId, {
+          os: os || null,
+          km: km ? Number(km) : null,
+          unidade_id: unidadeId || null,
+          ...(podeMarcarTesteNaEdicao ? { eh_teste: ehTeste } : {}),
+        })
         .catch((error) => {
           setErro(error.message || 'Não foi possível salvar os dados do veículo automaticamente. Volte a esta etapa e clique em Avançar novamente.');
         });
@@ -582,7 +593,7 @@ export default function ChecklistForm() {
             <Input placeholder="O.S." className="uppercase" value={os} onChange={(e) => setOs(toUpperText(e.target.value))} />
             <Input placeholder="Km" type="number" value={km} onChange={(e) => setKm(e.target.value)} />
           </div>
-          {!avaliacaoId && user?.isOficinaAdmin && (
+          {user?.isOficinaAdmin && (!avaliacaoId || podeMarcarTesteNaEdicao) && (
             <label htmlFor="ehTeste" className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
               <Checkbox id="ehTeste" checked={ehTeste} onCheckedChange={(checked) => setEhTeste(checked === true)} />
               Marcar como checklist de teste (pode ser excluído depois)

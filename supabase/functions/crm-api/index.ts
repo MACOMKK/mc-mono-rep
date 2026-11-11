@@ -1342,13 +1342,13 @@ async function getCollaboratorWithAccess(user: { id: string; email?: string }) {
         row_to_json(aus) as acesso_row,
         row_to_json(s) as sistema_row
       from colaborador
+      left join public.sistemas s
+        on s.slug = $3
+        and s.ativo = true
       left join public.acessos_usuario_sistema aus
         on aus.colaborador_id = colaborador.id
+        and aus.sistema_id = s.id
         and aus.ativo = true
-      left join public.sistemas s
-        on s.id = aus.sistema_id
-        and s.slug = $3
-        and s.ativo = true
       limit 1;
     `,
     [user.id, user.email || '', CRM_SYSTEM_SLUG],
@@ -1357,8 +1357,11 @@ async function getCollaboratorWithAccess(user: { id: string; email?: string }) {
   const row = rows[0];
   if (!row) return { collaborator: null, access: null };
 
+  // O acesso so vale se for do proprio CRM: a juncao parte do sistema (slug) e so entao busca o
+  // acesso daquele sistema. Antes o filtro de slug ficava no left join de `sistemas`, entao um
+  // acesso ativo de QUALQUER sistema (ex.: admin da intranet) era aceito como acesso ao CRM.
   const { acesso_row, sistema_row, ...collaborator } = row;
-  const access = acesso_row ? { ...acesso_row, sistema: sistema_row } : null;
+  const access = acesso_row && sistema_row ? { ...acesso_row, sistema: sistema_row } : null;
   return { collaborator, access };
 }
 
@@ -1640,6 +1643,82 @@ Deno.serve(async (request) => {
 
       return json({
         row: conversaAtualizada ? { ...conversaAtualizada, atendente_nome: atendenteNome } : null,
+      });
+    }
+
+    if (action === 'list_catalogos_leads') {
+      // A tela de Leads disparava 6 roundtrips em paralelo (pipelines, etapas_pipeline,
+      // pipeline_automacoes, origens_lead, motivos_status, responsaveis) so para montar o
+      // Kanban -- com o pool desta function limitado a max:3 conexoes (de proposito, ver
+      // comentario acima na criacao de `sql`), 5 dessas 6 ficavam na fila do pool e travavam
+      // ate o timeout de 20s do front (2026-11-11). Aqui aplicamos o mesmo padrao de action
+      // composta de list_atividades_contadores/dashboard_metricas: 1 unico round-trip via CTEs,
+      // reservando 1 conexao do pool por um pouco mais de tempo em vez de 6 simultaneas. Mesmos
+      // filtros/orderBy/limit que o front ja usava em cada entidade isolada.
+      const level = getAccessLevel(access);
+      const scopeUnitId = level === 'admin' ? null : (collaborator?.unidade_id || null);
+      const scopeCollaboratorId = level === 'usuario' ? collaborator?.id : null;
+
+      const [row] = await sql.unsafe(
+        `
+          with pipelines_data as (
+            select * from ${CRM_SCHEMA}.pipelines order by nome limit 100
+          ),
+          etapas_data as (
+            select * from ${CRM_SCHEMA}.etapas_pipeline order by ordem limit 500
+          ),
+          automacoes_data as (
+            select * from ${CRM_SCHEMA}.pipeline_automacoes order by criado_em desc limit 500
+          ),
+          origens_data as (
+            select * from ${CRM_SCHEMA}.origens_lead order by nome limit 100
+          ),
+          motivos_data as (
+            select * from ${CRM_SCHEMA}.motivos_status order by nome limit 100
+          ),
+          responsaveis_data as (
+            select distinct
+              c.id,
+              c.nome,
+              c.email,
+              c.unidade_id,
+              u.nome as unidade_nome,
+              aus.nivel_acesso,
+              coalesce(vd.ativo, true) as distribuicao_ativa
+            from public.colaboradores c
+            join public.acessos_usuario_sistema aus
+              on aus.colaborador_id = c.id
+              and aus.ativo = true
+            join public.sistemas s
+              on s.id = aus.sistema_id
+              and s.slug = $1
+              and s.ativo = true
+            left join public.unidades u on u.id = c.unidade_id
+            left join ${CRM_SCHEMA}.vendedores_distribuicao vd
+              on vd.unidade_id = c.unidade_id and vd.colaborador_id = c.id
+            where c.status <> 'inativo'
+              and ($2::uuid is null or c.unidade_id = $2::uuid)
+              and ($3::uuid is null or c.id = $3::uuid)
+            order by c.nome
+          )
+          select
+            coalesce((select jsonb_agg(to_jsonb(pipelines_data)) from pipelines_data), '[]'::jsonb) as pipelines,
+            coalesce((select jsonb_agg(to_jsonb(etapas_data)) from etapas_data), '[]'::jsonb) as etapas_pipeline,
+            coalesce((select jsonb_agg(to_jsonb(automacoes_data)) from automacoes_data), '[]'::jsonb) as pipeline_automacoes,
+            coalesce((select jsonb_agg(to_jsonb(origens_data)) from origens_data), '[]'::jsonb) as origens_lead,
+            coalesce((select jsonb_agg(to_jsonb(motivos_data)) from motivos_data), '[]'::jsonb) as motivos_status,
+            coalesce((select jsonb_agg(to_jsonb(responsaveis_data)) from responsaveis_data), '[]'::jsonb) as responsaveis
+        `,
+        [CRM_SYSTEM_SLUG, scopeUnitId, scopeCollaboratorId],
+      );
+
+      return json({
+        pipelines: row?.pipelines || [],
+        etapasPipeline: row?.etapas_pipeline || [],
+        pipelineAutomacoes: row?.pipeline_automacoes || [],
+        origensLead: row?.origens_lead || [],
+        motivosStatus: row?.motivos_status || [],
+        responsaveis: row?.responsaveis || [],
       });
     }
 

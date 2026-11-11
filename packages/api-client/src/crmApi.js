@@ -283,6 +283,17 @@ export const crmApi = {
     async excluirTeste(id) {
       return invokeCrm({ action: 'lead_excluir_teste', id });
     },
+    async listCatalogos() {
+      const result = await invokeCrm({ action: 'list_catalogos_leads' });
+      return {
+        pipelines: result.pipelines || [],
+        etapasPipeline: result.etapasPipeline || [],
+        pipelineAutomacoes: result.pipelineAutomacoes || [],
+        origensLead: result.origensLead || [],
+        motivosStatus: result.motivosStatus || [],
+        responsaveis: result.responsaveis || [],
+      };
+    },
   },
   atendimentos: {
     ...buildEntity('atendimentos'),

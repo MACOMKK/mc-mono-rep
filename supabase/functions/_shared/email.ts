@@ -42,6 +42,35 @@ function wrapBase64(input: string) {
   return String(input || '').replace(/(.{1,76})/g, '$1\r\n').trim();
 }
 
+// `to` e `filename` entram em cabecalhos RFC 2822 (`To:`/`Content-Disposition:`). Sem isso, um
+// CRLF no valor permite injetar cabecalhos extras (ex.: Bcc) ou campos MIME forjados.
+const EMAIL_FORMAT = /^[^\s@<>()[\]:;,\\"\r\n]+@[^\s@<>()[\]:;,\\"\r\n]+\.[^\s@<>()[\]:;,\\"\r\n]+$/;
+
+function sanitizeHeaderValue(value: string) {
+  return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
+function assertSafeRecipient(to: string) {
+  const sanitized = sanitizeHeaderValue(to);
+  if (!sanitized || sanitized !== to.trim() || !EMAIL_FORMAT.test(sanitized)) {
+    throw new Error('Destinatario de e-mail invalido.');
+  }
+  return sanitized;
+}
+
+function sanitizeFilename(filename: string) {
+  return sanitizeHeaderValue(filename).replace(/["/\\]/g, '_');
+}
+
+function escapeHtml(input: string) {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function getGmailAccessToken(credenciais: Record<string, unknown> | null) {
   const gmailClientId = credenciais?.client_id as string;
   const gmailClientSecret = credenciais?.client_secret as string;
@@ -95,13 +124,16 @@ export async function sendGmail(payload: Record<string, unknown>, ctx: Integraca
     throw new Error('Payload incompleto para envio Gmail.');
   }
 
-  const hasAttachment = Boolean(filename && pdfBase64);
+  const safeTo = assertSafeRecipient(to);
+  const safeFilename = filename ? sanitizeFilename(filename) : '';
+
+  const hasAttachment = Boolean(safeFilename && pdfBase64);
   const accessToken = await getGmailAccessToken(credenciais);
 
   const boundary = 'boundary_macom_termo';
   const altBoundary = 'boundary_macom_alt';
   const rawHtmlBody =
-    bodyHtml || `<pre style="font-family:Arial,Helvetica,sans-serif;white-space:pre-wrap;">${bodyText}</pre>`;
+    bodyHtml || `<pre style="font-family:Arial,Helvetica,sans-serif;white-space:pre-wrap;">${escapeHtml(bodyText)}</pre>`;
   const plainBodyBase64 = toBase64Utf8(bodyText);
   const htmlBodyBase64 = toBase64Utf8(rawHtmlBody);
 
@@ -126,7 +158,7 @@ export async function sendGmail(payload: Record<string, unknown>, ctx: Integraca
   const rawMessage = hasAttachment
     ? [
         `From: ${gmailSender}`,
-        `To: ${to}`,
+        `To: ${safeTo}`,
         `Subject: ${encodeMimeHeaderUtf8(subject)}`,
         'MIME-Version: 1.0',
         `Content-Type: multipart/mixed; boundary="${boundary}"`,
@@ -135,9 +167,9 @@ export async function sendGmail(payload: Record<string, unknown>, ctx: Integraca
         alternativePart,
         '',
         `--${boundary}`,
-        `Content-Type: application/pdf; name="${filename}"`,
+        `Content-Type: application/pdf; name="${safeFilename}"`,
         'Content-Transfer-Encoding: base64',
-        `Content-Disposition: attachment; filename="${filename}"`,
+        `Content-Disposition: attachment; filename="${safeFilename}"`,
         '',
         wrapBase64(pdfBase64),
         '',
@@ -145,7 +177,7 @@ export async function sendGmail(payload: Record<string, unknown>, ctx: Integraca
       ].join('\r\n')
     : [
         `From: ${gmailSender}`,
-        `To: ${to}`,
+        `To: ${safeTo}`,
         `Subject: ${encodeMimeHeaderUtf8(subject)}`,
         'MIME-Version: 1.0',
         alternativePart,

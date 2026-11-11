@@ -28,6 +28,14 @@ Deno.serve(async (request) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  const INTERNAL_INVOKE_SECRET = Deno.env.get('INTERNAL_INVOKE_SECRET');
+  if (!INTERNAL_INVOKE_SECRET || request.headers.get('x-invoke-secret') !== INTERNAL_INVOKE_SECRET) {
+    return new Response(JSON.stringify({ success: false, error: 'Nao autorizado.' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   const databaseUrl = Deno.env.get('DATABASE_URL');
   if (!databaseUrl) {
     return new Response(JSON.stringify({ success: false, error: 'DATABASE_URL nao configurada.' }), {
@@ -122,7 +130,7 @@ Deno.serve(async (request) => {
       alertasEnviados += 1;
     }
 
-    return new Response(JSON.stringify({ success: true, alertas_enviados: alertasEnviados, candidatos }), {
+    return new Response(JSON.stringify({ success: true, alertas_enviados: alertasEnviados }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

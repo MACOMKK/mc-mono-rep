@@ -627,6 +627,17 @@ Deno.serve(async (request) => {
         const novo = body.unidade_id ? String(body.unidade_id) : null;
         if (novo !== (currentRow.unidade_id ?? null)) campos.unidade_id = novo;
       }
+      // Admin pode marcar/desmarcar como teste na edicao (mesmo um checklist criado normal), o
+      // que libera a exclusao (checklist_excluir). So enquanto nao estiver finalizado.
+      if (body.eh_teste !== undefined && Boolean(body.eh_teste) !== Boolean(currentRow.eh_teste)) {
+        if (moduleRole !== 'admin') {
+          throw Object.assign(new Error('Apenas administradores podem marcar um checklist como teste.'), { status: 403 });
+        }
+        if (currentRow.status === 'finalizado') {
+          throw Object.assign(new Error('Checklist finalizado nao pode ser marcado como teste.'), { status: 400 });
+        }
+        campos.eh_teste = Boolean(body.eh_teste);
+      }
 
       const fields = Object.keys(campos);
       if (!fields.length) return json({ row: currentRow });

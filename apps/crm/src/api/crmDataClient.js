@@ -1488,6 +1488,23 @@ const ResponsavelRepository = {
   },
 };
 
+// Combo usado pela tela de Leads para montar o Kanban: pipelines + etapas_pipeline +
+// pipeline_automacoes + origens_lead + motivos_status + responsaveis num unico round-trip
+// (crm-api, action list_catalogos_leads) -- ver supabase/functions/crm-api/index.ts e
+// hooks/useLeadsCatalogos.js. Reaproveita os mesmos mappers usados pelos repositories isolados
+// acima, para o resultado ficar identico ao que cada tela de CRUD de catalogo ja consome.
+async function getLeadsCatalogos() {
+  const result = await crmApi.leads.listCatalogos();
+  return {
+    pipelines: result.pipelines.map(mapPipelineRow),
+    etapasPipeline: result.etapasPipeline.map(mapEtapaPipelineRow),
+    pipelineAutomacoes: result.pipelineAutomacoes.map(mapPipelineAutomacaoRow),
+    origensLead: result.origensLead.map(mapOrigemLeadRow),
+    motivosStatus: result.motivosStatus.map(mapMotivoStatusRow),
+    responsaveis: result.responsaveis,
+  };
+}
+
 const DistribuicaoRepository = {
   async getConfig() {
     return crmApi.distribuicao.getConfig();
@@ -1611,6 +1628,9 @@ export const crmDataClient = {
     async metricas(options) {
       return crmApi.dashboard.metricas(options);
     },
+  },
+  leadsCatalogos: {
+    get: getLeadsCatalogos,
   },
   entities: {
     Cliente: ClienteRepository,

@@ -405,8 +405,8 @@ Deno.serve(async (request) => {
         return json({ error: 'Colaborador nao encontrado.' }, 404);
       }
 
-      if (!isAdmin && collaboratorRow.funcao === 'admin') {
-        return json({ error: 'Apenas administradores podem redefinir senha de colaboradores admin.' }, 403);
+      if (!isAdmin && (collaboratorRow.funcao === 'admin' || collaboratorRow.funcao === 'gestor')) {
+        return json({ error: 'Apenas administradores podem redefinir senha de colaboradores admin ou gestor.' }, 403);
       }
 
       const { error: updatePasswordError } = await adminClient.auth.admin.updateUserById(collaboratorId, {

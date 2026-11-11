@@ -2686,6 +2686,14 @@ Deno.serve(async (request) => {
         }
         if (
           !isGlobalAdmin &&
+          normalized.funcao &&
+          normalized.funcao !== beforeRow?.funcao &&
+          ['admin', 'gestor'].includes(String(beforeRow?.funcao || ''))
+        ) {
+          return json({ error: 'Apenas administradores podem alterar a funcao de colaboradores admin ou gestor.' }, 403);
+        }
+        if (
+          !isGlobalAdmin &&
           normalized.status === 'inativo' &&
           ['admin', 'gestor'].includes(String(beforeRow?.funcao || '')) &&
           beforeRow?.status !== 'inativo'

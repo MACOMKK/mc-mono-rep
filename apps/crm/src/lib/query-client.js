@@ -29,6 +29,10 @@ const CACHE_POLICIES = [
     options: { staleTime: 15 * MINUTE, gcTime: 30 * MINUTE },
   },
   {
+    queryKey: ['crm-leads-catalogos'],
+    options: { staleTime: 15 * MINUTE, gcTime: 30 * MINUTE },
+  },
+  {
     queryKey: ['crm-distribuicao'],
     options: { staleTime: 5 * MINUTE, gcTime: 30 * MINUTE },
   },

@@ -402,6 +402,15 @@ async function updateCollaboratorAccessProfile({
 
   if (
     !isGlobalAdmin(centralAccessTier) &&
+    sanitized.funcao &&
+    sanitized.funcao !== beforeRow.funcao &&
+    ['admin', 'gestor'].includes(String(beforeRow.funcao || ''))
+  ) {
+    return json({ error: 'Apenas administradores podem alterar a funcao de colaboradores admin ou gestor.' }, 403);
+  }
+
+  if (
+    !isGlobalAdmin(centralAccessTier) &&
     sanitized.status === 'inativo' &&
     ['admin', 'gestor'].includes(String(beforeRow.funcao || '')) &&
     beforeRow.status !== 'inativo'
@@ -564,6 +573,16 @@ async function saveSystemAccess({
     return json({ error: 'Apenas administradores podem liberar acesso admin aos sistemas.' }, 403);
   }
 
+  if (!isGlobalAdmin(centralAccessTier)) {
+    const existingRows = await sql!.unsafe(
+      `select nivel_acesso from public.acessos_usuario_sistema where colaborador_id = $1 and sistema_id = $2 limit 1;`,
+      [colaboradorId, sistemaId],
+    );
+    if (existingRows[0]?.nivel_acesso === 'admin') {
+      return json({ error: 'Apenas administradores podem alterar acesso admin de sistemas.' }, 403);
+    }
+  }
+
   const rows = await sql!.unsafe(
     `
       insert into public.acessos_usuario_sistema (
@@ -616,6 +635,13 @@ async function updateSystemAccess({
 
   if (!isGlobalAdmin(centralAccessTier) && sanitized.nivel_acesso === 'admin') {
     return json({ error: 'Apenas administradores podem liberar acesso admin aos sistemas.' }, 403);
+  }
+
+  if (!isGlobalAdmin(centralAccessTier)) {
+    const beforeAccessRow = await fetchRowById('public', 'acessos_usuario_sistema', id);
+    if (beforeAccessRow?.nivel_acesso === 'admin') {
+      return json({ error: 'Apenas administradores podem alterar acesso admin de sistemas.' }, 403);
+    }
   }
 
   const sets = Object.keys(sanitized).map((field, index) => `${field} = $${index + 2}`);

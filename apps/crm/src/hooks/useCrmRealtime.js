@@ -24,6 +24,7 @@ const REALTIME_TABLES = [
   { schema: 'gestao_crm', table: 'notas_conversa' },
   { schema: 'gestao_crm', table: 'pipelines' },
   { schema: 'gestao_crm', table: 'etapas_pipeline' },
+  { schema: 'gestao_crm', table: 'pipeline_automacoes' },
   { schema: 'gestao_crm', table: 'motivos_status' },
 ];
 
@@ -63,7 +64,7 @@ const TABLE_CACHE_CONFIG = {
     queryKeys: [['crm-categorias-veiculo']],
   },
   origens_lead: {
-    queryKeys: [['crm-origens-lead']],
+    queryKeys: [['crm-origens-lead'], ['crm-leads-catalogos']],
   },
   marcas_veiculo: {
     queryKeys: [['crm-marcas-veiculo']],
@@ -97,14 +98,24 @@ const TABLE_CACHE_CONFIG = {
     queryKeys: [['atendimento-notas-conversa']],
   },
   pipelines: {
-    queryKeys: [['crm-pipelines']],
+    // ['crm-pipelines'] e a key da tela de Pipelines (CRUD); ['crm-leads-catalogos'] e o combo
+    // usado pelo Kanban de Leads (usePipelineEtapas, via useLeadsCatalogos).
+    queryKeys: [['crm-pipelines'], ['crm-leads-catalogos']],
   },
   etapas_pipeline: {
-    // casa ['crm-etapas-pipeline', pipelineId] (usePipelineEtapas e tela de Pipelines)
-    queryKeys: [['crm-etapas-pipeline']],
+    // ['crm-etapas-pipeline', pipelineId] e a key da tela de Pipelines (CRUD); antes essa key
+    // generica ['crm-etapas-pipeline'] nao casava com a key real do Kanban de Leads
+    // (bug pre-existente) -- corrigido invalidando tambem ['crm-leads-catalogos'] direto.
+    queryKeys: [['crm-etapas-pipeline'], ['crm-leads-catalogos']],
+  },
+  pipeline_automacoes: {
+    // sem key propria de CRUD listada aqui ainda (Pipelines.jsx usa
+    // ['crm-pipeline-automacoes', pipelineId] nas suas mutations) -- Realtime cobre o combo do
+    // Kanban de Leads.
+    queryKeys: [['crm-leads-catalogos']],
   },
   motivos_status: {
-    queryKeys: [['crm-motivos-status']],
+    queryKeys: [['crm-motivos-status'], ['crm-leads-catalogos']],
   },
 };
 

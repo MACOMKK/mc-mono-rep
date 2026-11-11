@@ -312,6 +312,9 @@ mesmas tabelas usadas pelo CRM, extraídas propositalmente pra esse reuso — ve
   `20260917040000_add_servicos_oficina_checklist_fotos_storage.sql`), upload direto do client
   (RLS gated por `servicos_oficina_pode_editar()`), metadados guardados em `checklist_avaliacoes.fotos`
   (jsonb) via `checklist_foto_registrar`.
+- Checklist de teste (`eh_teste`): só admin marca, na criação (`checklist_iniciar`) ou depois, na
+  edição (`checklist_atualizar` aceita `eh_teste` só de admin e só se o status não for
+  `finalizado`, 2026-11-11). Só checklist de teste pode ser excluído (`checklist_excluir`).
 
 ### Padronização de dados no checklist (2026-10-05)
 
