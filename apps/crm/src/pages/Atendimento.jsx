@@ -122,6 +122,9 @@ export default function Atendimento() {
   const { data: conversas = [], isLoading: isLoadingConversas } = useQuery({
     queryKey: ['conversas-atendimento'],
     queryFn: () => atendimentoApi.listConversas(),
+    // Rede de seguranca para o Realtime: conversa de contato novo (sem lead/cliente) pode nao
+    // gerar evento postgres_changes para o usuario (RLS), e o card so aparecia com F5.
+    refetchInterval: 20000,
   });
 
   const conversaAtiva = conversas.find((item) => item.id === conversaId) || null;
