@@ -1,4 +1,5 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
+import { monitorCall } from './callMonitor';
 
 function toApiError(message, status = 500, code) {
   const error = new Error(message || 'Falha ao consultar auditoria da plataforma.');
@@ -7,7 +8,11 @@ function toApiError(message, status = 500, code) {
   return error;
 }
 
-async function invokePlataformaApi(action, payload = {}) {
+function invokePlataformaApi(action, payload = {}) {
+  return monitorCall('plataforma-api', { action, entity: payload?.entity }, () => invokePlataformaApiRaw(action, payload));
+}
+
+async function invokePlataformaApiRaw(action, payload = {}) {
   assertSupabaseConfigured();
   const { data } = await supabase.auth.getSession();
   const token = data?.session?.access_token;

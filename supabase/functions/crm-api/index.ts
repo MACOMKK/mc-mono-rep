@@ -21,6 +21,7 @@ import {
 } from '../_shared/whatsapp.ts';
 import { uploadMedia, base64ToBytes, tipoFromMime } from '../_shared/whatsappMedia.ts';
 import { remuxWebmOpusParaOggOpus } from '../_shared/webmToOggOpus.ts';
+import { normalizeTelefoneDigitado, telefoneNacionalCandidatos } from '../_shared/phone.ts';
 
 const CRM_SYSTEM_SLUG = 'crm';
 
@@ -1500,6 +1501,29 @@ Deno.serve(async (request) => {
       // _shared/whatsapp.ts nao deu timeout, o atraso e' anterior ao envio (fila do frontend); se
       // bater perto de WHATSAPP_SEND_TIMEOUT_MS, o provedor (ngrok/Evolution local) e' o gargalo.
       const provedor = evolutionCredenciais ? 'evolution' : 'meta';
+
+      // API oficial da Meta: texto livre so vale ate 24h depois da ultima mensagem do cliente;
+      // fora disso (inclusive conversa iniciada pelo CRM, sem mensagem do cliente) exige template
+      // aprovado, que ainda nao suportamos. Barra aqui com mensagem clara em vez do erro cru da Meta.
+      if (provedor === 'meta') {
+        const [janela] = await sql.unsafe(
+          `select exists (
+             select 1 from ${CRM_SCHEMA}.mensagens_atendimento
+             where conversa_id = $1 and direcao = 'entrada' and criado_em > now() - interval '24 hours'
+           ) as aberta;`,
+          [conversaId],
+        );
+        if (!janela?.aberta) {
+          return json(
+            {
+              error:
+                'Na API oficial do WhatsApp (Meta), so e possivel enviar texto livre ate 24h apos a ultima mensagem do cliente. Para iniciar ou retomar a conversa e preciso um template aprovado, que ainda nao e suportado.',
+            },
+            400,
+          );
+        }
+      }
+
       const inicioEnvio = Date.now();
       let sendResult: unknown = null;
       try {
@@ -1598,6 +1622,133 @@ Deno.serve(async (request) => {
       }
 
       return json({ row: rows[0] || null });
+    }
+
+    // Atendente inicia a conversa pelo CRM (botao "Nova conversa" no Atendimento ou "WhatsApp" na
+    // ficha do lead/cliente). Antes disso a conversa so nascia pelo webhook (whatsapp-api), quando
+    // o cliente mandava a primeira mensagem. Aqui so cria/reabre a conversa -- a 1a mensagem sai
+    // pelo send_atendimento_mensagem de sempre (composer da tela).
+    // Regras espelham o webhook: uma conversa por telefone (reaproveita/reabre a existente) e
+    // vinculo lead > cliente. Diferencas deliberadas: nasce 'aguardando_humano' (a IA nao responde
+    // o cliente no lugar do atendente que puxou a conversa) e com atendente_id = quem iniciou
+    // (o trigger da fila nao redistribui, e o escopo de acesso deixa o nao-admin ver a conversa
+    // mesmo sem lead/cliente -- ver access-scope.ts).
+    if (action === 'iniciar_conversa_atendimento') {
+      const leadId = typeof body.leadId === 'string' ? body.leadId.trim() : '';
+      const clienteId = typeof body.clienteId === 'string' ? body.clienteId.trim() : '';
+      const telefoneInformado = typeof body.telefone === 'string' ? body.telefone : '';
+
+      let telefoneOrigem = '';
+      let vinculoLeadId: string | null = null;
+      let vinculoClienteId: string | null = null;
+
+      if (leadId) {
+        await ensureLeadAccessLight(leadId, access, collaborator);
+        const [leadRow] = await sql.unsafe(
+          `select l.id, coalesce(nullif(l.telefone_normalizado, ''), pc.telefone_normalizado) as telefone
+           from ${CRM_SCHEMA}.leads l
+           left join public.clientes pc on pc.id = l.cliente_id
+           where l.id = $1 limit 1;`,
+          [leadId],
+        );
+        telefoneOrigem = String(leadRow?.telefone || '');
+        vinculoLeadId = leadId;
+      } else if (clienteId) {
+        const [clienteRow] = await sql.unsafe(
+          `select id, telefone_normalizado from public.clientes where id = $1 limit 1;`,
+          [clienteId],
+        );
+        if (!clienteRow) {
+          return json({ error: 'Cliente nao encontrado.' }, 404);
+        }
+        telefoneOrigem = String(clienteRow.telefone_normalizado || '');
+        vinculoClienteId = clienteId;
+      } else {
+        telefoneOrigem = telefoneInformado;
+      }
+
+      const telefoneNormalizado = normalizeTelefoneDigitado(telefoneOrigem);
+      if (telefoneNormalizado.length < 12 || telefoneNormalizado.length > 15) {
+        return json(
+          {
+            error: leadId || clienteId
+              ? 'O contato nao tem um telefone valido cadastrado.'
+              : 'Telefone invalido. Informe DDD + numero (ou DDI + DDD + numero).',
+          },
+          400,
+        );
+      }
+
+      // Sem vinculo explicito: procura pelo telefone, mesma prioridade do webhook (lead > cliente).
+      // leads/clientes guardam o numero sem DDI -- ver _shared/phone.ts.
+      if (!vinculoLeadId && !vinculoClienteId) {
+        const candidatos = telefoneNacionalCandidatos(telefoneNormalizado);
+        const [leadMatch] = await sql.unsafe(
+          `select id from ${CRM_SCHEMA}.leads where telefone_normalizado = any(string_to_array($1, ',')) order by criado_em desc limit 1;`,
+          [candidatos.join(',')],
+        );
+        if (leadMatch) {
+          vinculoLeadId = String(leadMatch.id);
+        } else {
+          const [clienteMatch] = await sql.unsafe(
+            `select id from public.clientes where telefone_normalizado = any(string_to_array($1, ',')) limit 1;`,
+            [candidatos.join(',')],
+          );
+          vinculoClienteId = clienteMatch ? String(clienteMatch.id) : null;
+        }
+      }
+
+      const [conversaExistente] = await sql.unsafe(
+        `select id from ${CRM_SCHEMA}.conversas_atendimento
+         where telefone_normalizado = $1
+         order by criado_em desc
+         limit 1;`,
+        [telefoneNormalizado],
+      );
+
+      if (conversaExistente) {
+        try {
+          await ensureEntityAccess('conversas_atendimento', String(conversaExistente.id), access, collaborator);
+        } catch {
+          return json(
+            { error: 'Ja existe uma conversa com este numero, atendida por outra unidade ou atendente.' },
+            409,
+          );
+        }
+        // Atendente iniciou a conversa: pausa a IA (qualquer status), vincula ao lead/cliente
+        // se a conversa ainda nao tiver vinculo e assume se estiver sem atendente.
+        const semVinculo = 'lead_id is null and cliente_id is null';
+        await sql.unsafe(
+          `update ${CRM_SCHEMA}.conversas_atendimento
+           set status = 'aguardando_humano',
+               lead_id = case when ${semVinculo} then $2::uuid else lead_id end,
+               cliente_id = case when ${semVinculo} then $3::uuid else cliente_id end,
+               atendente_id = coalesce(atendente_id, $4::uuid)
+           where id = $1;`,
+          [conversaExistente.id, vinculoLeadId, vinculoClienteId, collaborator?.id ?? null],
+        );
+        const row = await ensureEntityAccess('conversas_atendimento', String(conversaExistente.id), access, collaborator);
+        return json({ row, created: false });
+      }
+
+      const [novaConversa] = await sql.unsafe(
+        `insert into ${CRM_SCHEMA}.conversas_atendimento
+           (telefone_normalizado, lead_id, cliente_id, status, atendente_id)
+         values ($1, $2, $3, 'aguardando_humano', $4)
+         returning id;`,
+        [telefoneNormalizado, vinculoLeadId, vinculoClienteId, collaborator?.id ?? null],
+      );
+
+      const notaQuery = buildInsertQuery(CRM_SCHEMA, 'notas_conversa', {
+        conversa_id: novaConversa.id,
+        colaborador_id: collaborator?.id ?? null,
+        conteudo: `Conversa iniciada por ${String(collaborator?.nome || 'um atendente')}.`,
+        tipo: 'sistema',
+      });
+      await sql.unsafe(notaQuery.text, notaQuery.values);
+
+      const row = await ensureEntityAccess('conversas_atendimento', String(novaConversa.id), access, collaborator);
+      return json({ row, created: true });
     }
 
     // Transferencia de conversa entre atendentes (Fase 1, item 6 do roadmap de Atendimento):

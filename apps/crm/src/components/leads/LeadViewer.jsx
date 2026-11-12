@@ -29,6 +29,7 @@ import {
   Upload,
   Trash2,
   ArrowLeftRight,
+  MessageCircle,
 } from 'lucide-react';
 
 function formatDate(value) {
@@ -104,7 +105,7 @@ function EmptyState({ children }) {
 
 const ATIVIDADES_VISIVEIS = 4;
 
-export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity, onCreateProposta, onExcluirTeste, canExcluirTeste, onMudarPipeline }) {
+export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateActivity, onSelectActivity, onCreateProposta, onIniciarConversa, onExcluirTeste, canExcluirTeste, onMudarPipeline }) {
   const queryClient = useQueryClient();
   const veiculo = lead?.veiculo_interesse || null;
   const { etapas } = usePipelineEtapas({ pipelineId: lead?.pipeline_id || undefined });
@@ -658,6 +659,16 @@ export default function LeadViewer({ open, onOpenChange, lead, onEdit, onCreateA
             Fechar
           </Button>
           <div className="flex items-center gap-2">
+            {onIniciarConversa && lead.telefone ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-none text-xs font-bold uppercase tracking-wider"
+                onClick={onIniciarConversa}
+              >
+                <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> WhatsApp
+              </Button>
+            ) : null}
             {lead.etapa_tipo === 'em_andamento' && onMudarPipeline ? (
               <Button
                 type="button"

@@ -1,4 +1,5 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
+import { monitorCall } from './callMonitor';
 import { removerArquivoAssinatura, uploadAssinatura } from './signatureStorage';
 
 function toError(message, status = 500, code, details, hint) {
@@ -15,7 +16,11 @@ function toError(message, status = 500, code, details, hint) {
   return error;
 }
 
-async function invokeServicos(body = {}, accessTokenOverride) {
+function invokeServicos(body = {}, accessTokenOverride) {
+  return monitorCall('servicos-api', body, () => invokeServicosRaw(body, accessTokenOverride));
+}
+
+async function invokeServicosRaw(body = {}, accessTokenOverride) {
   assertSupabaseConfigured();
 
   const { data } = accessTokenOverride

@@ -1,4 +1,5 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
+import { monitorCall } from './callMonitor';
 
 function toError(message, status = 500, code, details, hint) {
   const normalizedMessage =
@@ -53,7 +54,11 @@ async function fetchComTimeout(url, options, externalSignal, timeoutMs) {
 
 // Chama a edge function servicos-oficina-api -- separada de servicos-api
 // (Financeiro) de proposito, ver apps/servicos/CLAUDE.md.
-async function invokeOficina(body = {}, accessTokenOverride, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+function invokeOficina(body = {}, accessTokenOverride, options) {
+  return monitorCall('servicos-oficina-api', body, () => invokeOficinaRaw(body, accessTokenOverride, options));
+}
+
+async function invokeOficinaRaw(body = {}, accessTokenOverride, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   assertSupabaseConfigured();
 
   const { data } = accessTokenOverride
@@ -100,7 +105,11 @@ async function invokeOficina(body = {}, accessTokenOverride, { signal, timeoutMs
 // o visitante nao tem sessao Supabase, entao autentica no gateway so com a
 // anon key -- a autorizacao de verdade e o token assinado que vai no body,
 // validado dentro da propria action checklist_publico_obter.
-async function invokeOficinaPublico(body = {}, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+function invokeOficinaPublico(body = {}, options) {
+  return monitorCall('servicos-oficina-api', body, () => invokeOficinaPublicoRaw(body, options));
+}
+
+async function invokeOficinaPublicoRaw(body = {}, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   assertSupabaseConfigured();
 
   const response = await fetchComTimeout(

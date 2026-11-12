@@ -1,4 +1,5 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
+import { monitorCall } from './callMonitor';
 
 const COMUNICACAO_ATTACHMENTS_BUCKET = 'comunicacao-anexos';
 const MAX_ANEXO_BYTES = 10 * 1024 * 1024;
@@ -40,7 +41,11 @@ function toError(message, status = 500, code, details, hint) {
   return error;
 }
 
-async function invokeComunicacao(body = {}, accessTokenOverride) {
+function invokeComunicacao(body = {}, accessTokenOverride) {
+  return monitorCall('comunicacao-api', body, () => invokeComunicacaoRaw(body, accessTokenOverride));
+}
+
+async function invokeComunicacaoRaw(body = {}, accessTokenOverride) {
   assertSupabaseConfigured();
 
   const { data } = accessTokenOverride

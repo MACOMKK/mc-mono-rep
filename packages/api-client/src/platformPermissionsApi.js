@@ -1,4 +1,5 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
+import { monitorCall } from './callMonitor';
 import { platformAuditApi } from './platformAuditApi';
 
 function toApiError(message, status = 500, code) {
@@ -8,7 +9,11 @@ function toApiError(message, status = 500, code) {
   return error;
 }
 
-async function invokeSupabaseFunction(functionName, action, payload = {}, accessTokenOverride) {
+function invokeSupabaseFunction(functionName, action, payload = {}, accessTokenOverride) {
+  return monitorCall(functionName, { action, entity: payload?.entity }, () => invokeSupabaseFunctionRaw(functionName, action, payload, accessTokenOverride));
+}
+
+async function invokeSupabaseFunctionRaw(functionName, action, payload = {}, accessTokenOverride) {
   assertSupabaseConfigured();
   const { data } = accessTokenOverride
     ? { data: { session: { access_token: accessTokenOverride } } }

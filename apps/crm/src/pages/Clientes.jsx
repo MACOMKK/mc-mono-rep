@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +17,7 @@ import { useEmpresa } from '@/context/EmpresaContext';
 import { useUnidadesEmpresa } from '@/hooks/useUnidadesEmpresa';
 import { cn } from '@/lib/utils';
 import ListPagination from '@/components/ListPagination';
-import { Ban, Building2, Car, Clock3, History, Mail, MapPin, Paperclip, Pencil, Phone, Plus, Save, Search, Tag, Trash2, UserRound, X } from 'lucide-react';
+import { Ban, Building2, Car, Clock3, History, Mail, MapPin, MessageCircle, Paperclip, Pencil, Phone, Plus, Save, Search, Tag, Trash2, UserRound, X } from 'lucide-react';
 
 import { findEtapaDoLead, getEtapaVisual, getLeadEtapaLabel, isLeadAtivo } from '@/lib/leadStatus';
 import { usePipelineEtapas } from '@/hooks/usePipelineEtapas';
@@ -120,6 +121,7 @@ function sortTimeline(items) {
 }
 
 export default function Clientes() {
+  const navigate = useNavigate();
   const { etapas } = usePipelineEtapas();
   const [busca, setBusca] = useState('');
   const buscaDebounced = useDebouncedValue(busca);
@@ -817,6 +819,17 @@ export default function Clientes() {
                       <span className="flex items-center gap-2"><Building2 className="h-4 w-4" />{selected.empresa}</span>
                     </div>
                   </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                  {selected.telefone && !editing ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
+                      onClick={() => navigate(`/atendimento?cliente=${selected.id}`)}
+                    >
+                      <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> WhatsApp
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant={editing ? 'outline' : 'default'}
@@ -829,6 +842,7 @@ export default function Clientes() {
                     {editing ? <X className="mr-1.5 h-3.5 w-3.5" /> : <Pencil className="mr-1.5 h-3.5 w-3.5" />}
                     {editing ? 'Cancelar' : 'Editar'}
                   </Button>
+                  </div>
                 </div>
               </div>
 

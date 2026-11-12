@@ -81,8 +81,8 @@ export function buildAccessScope(
       case 'conversas_atendimento':
         // Mesma regra da RLS original (crm_can_access_lead/crm_can_access_cliente):
         // visivel se o lead ou cliente vinculado esta na unidade do gestor. Conversa
-        // orfa (lead_id e cliente_id nulos) nao casa com nenhum exists -- fica oculta
-        // para nao-admin, igual a RLS fazia.
+        // orfa (lead_id e cliente_id nulos) so aparece para quem e' o atendente dela
+        // (iniciou pelo botao "Nova conversa" ou recebeu por fila/transferencia).
         return {
           clause: `(
             exists (
@@ -95,8 +95,9 @@ export function buildAccessScope(
               where scope_lead.cliente_id = conversas_atendimento.cliente_id
                 and scope_lead.unidade_id = $${startIndex}
             )
+            or conversas_atendimento.atendente_id = $${startIndex + 1}
           )`,
-          values: [unitId],
+          values: [unitId, collaboratorId],
         };
       case 'mensagens_atendimento':
         return {
@@ -114,9 +115,10 @@ export function buildAccessScope(
                   where scope_lead.cliente_id = scope_conversa.cliente_id
                     and scope_lead.unidade_id = $${startIndex}
                 )
+                or scope_conversa.atendente_id = $${startIndex + 1}
               )
           )`,
-          values: [unitId],
+          values: [unitId, collaboratorId],
         };
       case 'notas_conversa':
         return {
@@ -134,9 +136,10 @@ export function buildAccessScope(
                   where scope_lead.cliente_id = scope_conversa.cliente_id
                     and scope_lead.unidade_id = $${startIndex}
                 )
+                or scope_conversa.atendente_id = $${startIndex + 1}
               )
           )`,
-          values: [unitId],
+          values: [unitId, collaboratorId],
         };
       case 'categorias_veiculo':
       case 'origens_lead':
@@ -218,6 +221,7 @@ export function buildAccessScope(
             where scope_lead.cliente_id = conversas_atendimento.cliente_id
               and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
           )
+          or conversas_atendimento.atendente_id = $${startIndex}
         )`,
         values: [collaboratorId],
       };
@@ -237,6 +241,7 @@ export function buildAccessScope(
                 where scope_lead.cliente_id = scope_conversa.cliente_id
                   and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
               )
+              or scope_conversa.atendente_id = $${startIndex}
             )
         )`,
         values: [collaboratorId],
@@ -257,6 +262,7 @@ export function buildAccessScope(
                 where scope_lead.cliente_id = scope_conversa.cliente_id
                   and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
               )
+              or scope_conversa.atendente_id = $${startIndex}
             )
         )`,
         values: [collaboratorId],

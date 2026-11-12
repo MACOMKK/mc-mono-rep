@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import {
   MessageCircle,
+  MessageSquarePlus,
   Phone,
   Search,
   UserCheck,
@@ -23,6 +25,7 @@ import ConversaListItem, { SlaPendenteBadge } from '@/components/atendimento/Con
 import ConversaPainelLateral from '@/components/atendimento/ConversaPainelLateral';
 import MensagemBubble from '@/components/atendimento/MensagemBubble';
 import MensagemComposer from '@/components/atendimento/MensagemComposer';
+import NovaConversaDialog from '@/components/atendimento/NovaConversaDialog';
 
 const SCROLL_BOTTOM_THRESHOLD = 120;
 
@@ -111,6 +114,8 @@ export default function Atendimento() {
   const [buscaMensagensAberta, setBuscaMensagensAberta] = useState(false);
   const [buscaMensagens, setBuscaMensagens] = useState('');
   const [resultadoAtual, setResultadoAtual] = useState(0);
+  const [novaConversaAberta, setNovaConversaAberta] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
   const bottomRef = useRef(null);
   const scrollAreaRef = useRef(null);
   const stickToBottomRef = useRef(true);
@@ -348,6 +353,52 @@ export default function Atendimento() {
     },
   });
 
+  // Iniciar conversa pelo CRM (botao "Nova conversa" ou ?lead=/?cliente=/?telefone= vindo da ficha
+  // do lead/cliente). A linha devolvida ja entra no cache para a conversa abrir na hora, sem esperar
+  // o Realtime/refetch.
+  const iniciarConversaMutation = useMutation({
+    mutationFn: (payload) => atendimentoApi.iniciarConversa(payload),
+    onSuccess: ({ conversa, created }) => {
+      if (conversa) {
+        queryClient.setQueryData(['conversas-atendimento'], (atual = []) => [
+          conversa,
+          ...atual.filter((item) => item.id !== conversa.id),
+        ]);
+        setFiltro('todas');
+        setBusca('');
+        setConversaId(conversa.id);
+      }
+      queryClient.invalidateQueries({ queryKey: ['conversas-atendimento'] });
+      setNovaConversaAberta(false);
+      toast({
+        title: created ? 'Conversa iniciada' : 'Conversa aberta',
+        description: created
+          ? 'Escreva a primeira mensagem. A IA fica pausada nesta conversa.'
+          : 'Já existia uma conversa com este número.',
+      });
+    },
+    onError: (error) => {
+      toast({ title: 'Erro ao iniciar conversa', description: error?.message, variant: 'destructive' });
+    },
+  });
+
+  const parametroInicioConversa =
+    searchParams.get('lead') || searchParams.get('cliente') || searchParams.get('telefone');
+  // Ref evita o 2o disparo do efeito (StrictMode em dev) criar a conversa duas vezes em paralelo.
+  const inicioConversaDisparadoRef = useRef(null);
+  useEffect(() => {
+    if (!parametroInicioConversa || inicioConversaDisparadoRef.current === parametroInicioConversa) return;
+    inicioConversaDisparadoRef.current = parametroInicioConversa;
+    const payload = {
+      leadId: searchParams.get('lead') || undefined,
+      clienteId: searchParams.get('cliente') || undefined,
+      telefone: searchParams.get('telefone') || undefined,
+    };
+    setSearchParams({}, { replace: true });
+    iniciarConversaMutation.mutate(payload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parametroInicioConversa]);
+
   const assumirMutation = useMutation({
     mutationFn: () => atendimentoApi.assumirConversa(conversaId),
     onSuccess: () => {
@@ -373,14 +424,26 @@ export default function Atendimento() {
   return (
     <div className="flex h-full">
       <div className="flex w-72 shrink-0 flex-col border-r border-border bg-background">
-        <div className="relative border-b border-border px-3 py-2.5">
-          <Search className="pointer-events-none absolute left-6 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={busca}
-            onChange={(event) => setBusca(event.target.value)}
-            placeholder="Buscar nome, telefone ou mensagem..."
-            className="h-9 pl-8 text-sm"
-          />
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={busca}
+              onChange={(event) => setBusca(event.target.value)}
+              placeholder="Buscar nome, telefone ou mensagem..."
+              className="h-9 pl-8 text-sm"
+            />
+          </div>
+          <Button
+            type="button"
+            size="icon"
+            className="h-9 w-9 shrink-0"
+            title="Nova conversa"
+            aria-label="Nova conversa"
+            onClick={() => setNovaConversaAberta(true)}
+          >
+            <MessageSquarePlus className="h-4 w-4" />
+          </Button>
         </div>
         <div className="flex flex-wrap gap-1.5 border-b border-border bg-muted/40 px-3 py-2.5">
           {FILTROS_CONVERSA.map((item) => (
@@ -578,6 +641,12 @@ export default function Atendimento() {
       </div>
 
       {conversaAtiva ? <ConversaPainelLateral conversa={conversaAtiva} /> : null}
+      <NovaConversaDialog
+        open={novaConversaAberta}
+        onOpenChange={setNovaConversaAberta}
+        onIniciar={(payload) => iniciarConversaMutation.mutate(payload)}
+        isPending={iniciarConversaMutation.isPending}
+      />
     </div>
   );
 }

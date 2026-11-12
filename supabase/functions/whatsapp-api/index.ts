@@ -9,6 +9,7 @@ import {
   type WhatsappProvider,
 } from '../_shared/whatsapp.ts';
 import { downloadMediaMeta, downloadMediaEvolution, uploadMedia, type MediaTipo } from '../_shared/whatsappMedia.ts';
+import { normalizePhone, telefoneNacionalCandidatos } from '../_shared/phone.ts';
 
 // gestao_crm nao e' exposto via PostgREST (so acessivel por conexao direta Postgres) --
 // mesmo padrao ja usado em crm-api/index.ts. Nao usar supabase-js .schema(...).from(...)
@@ -46,25 +47,6 @@ function getErrorMessage(error: unknown) {
   }
 }
 
-// O WhatsApp (Meta e Baileys/Evolution) por vezes entrega numeros de celular brasileiros sem o
-// 9o digito (formato anterior a' resolucao Anatel 2016), mesmo quando o numero real do cliente
-// ja tem o 9 -- resultado: o mesmo contato gera telefone_normalizado diferente dependendo de
-// qual mensagem chegou primeiro. Reconstroi o 9o digito quando: DDI 55 + DDD (2) + local (8)
-// comecando em 6-9 (faixa de celular; fixo comeca em 2-5 e nao tem 9o digito, nao mexe).
-function normalizeBrazilianMobile(digits: string) {
-  if (digits.length === 12 && digits.startsWith('55')) {
-    const ddd = digits.slice(2, 4);
-    const local = digits.slice(4);
-    if (/^[6-9]/.test(local)) {
-      return `55${ddd}9${local}`;
-    }
-  }
-  return digits;
-}
-
-function normalizePhone(phone: string) {
-  return normalizeBrazilianMobile(phone.replace(/\D/g, ''));
-}
 
 function truncatePreview(text: string, maxLength = 140) {
   const trimmed = (text || '').trim();
@@ -487,9 +469,13 @@ serve(async (req) => {
         // Lead tem prioridade sobre cliente: um contato que ja e' lead (oportunidade em aberto)
         // nao deve ser rebaixado a vinculo de cliente so porque o telefone tambem bateu la --
         // ver analise em apps/crm/CLAUDE.md, secao "Atendimento (WhatsApp + IA)".
+        // leads/clientes guardam o telefone sem DDI (ver _shared/phone.ts) -- comparar com o
+        // numero da conversa (com 55) direto nunca casava.
+        const candidatos = telefoneNacionalCandidatos(telefoneNormalizado);
         const [lead] = await sql`
           select id from gestao_crm.leads
-          where telefone_normalizado = ${telefoneNormalizado}
+          where telefone_normalizado = any(string_to_array(${candidatos.join(',')}, ','))
+          order by criado_em desc
           limit 1
         `;
 
@@ -500,7 +486,7 @@ serve(async (req) => {
           ? [null]
           : await sql`
               select id from public.clientes
-              where telefone_normalizado = ${telefoneNormalizado}
+              where telefone_normalizado = any(string_to_array(${candidatos.join(',')}, ','))
               limit 1
             `;
 

@@ -101,6 +101,44 @@ async function transferirConversa(conversaId, atendenteId) {
   return row ? mapConversaRow(row) : null;
 }
 
+// Inicia (ou reabre) a conversa pelo CRM -- action iniciar_conversa_atendimento em
+// crm-api/index.ts. Um dos tres: telefone digitado, leadId ou clienteId.
+async function iniciarConversa({ telefone, leadId, clienteId } = {}) {
+  if (!telefone && !leadId && !clienteId) {
+    throw new Error('Informe um telefone, lead ou cliente.');
+  }
+  const { row, created } = await crmApi.conversas_atendimento.iniciar({
+    telefone: telefone || undefined,
+    leadId: leadId || undefined,
+    clienteId: clienteId || undefined,
+  });
+  return { conversa: row ? mapConversaRow(row) : null, created };
+}
+
+// Busca de contato para o dialogo "Nova conversa": leads (escopo do usuario) + clientes.
+async function buscarContatos(termo) {
+  const busca = String(termo || '').trim();
+  if (busca.length < 2) return [];
+  const [leads, clientes] = await Promise.all([
+    crmApi.leads.list({ search: busca, limit: 6 }).catch(() => []),
+    crmApi.clientes.buscar(busca).catch(() => []),
+  ]);
+  return [
+    ...leads.map((row) => ({
+      tipo: 'lead',
+      id: row.id,
+      nome: row.nome || row.cliente?.nome || 'Lead sem nome',
+      telefone: row.telefone || row.telefone_normalizado || '',
+    })),
+    ...clientes.slice(0, 6).map((row) => ({
+      tipo: 'cliente',
+      id: row.id,
+      nome: row.nome || 'Cliente sem nome',
+      telefone: row.telefone || '',
+    })),
+  ];
+}
+
 function mapNotaConversaRow(row = {}) {
   return {
     id: row.id,
@@ -156,6 +194,8 @@ async function enviarMensagemManual({ conversaId, texto, midia }) {
 
 export const atendimentoApi = {
   listConversas,
+  iniciarConversa,
+  buscarContatos,
   listMensagens,
   assumirConversa,
   encerrarConversa,

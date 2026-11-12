@@ -964,6 +964,7 @@ export default function Leads() {
         onCreateActivity={() => { setEditingActivity(null); setActivityFormOpen(true); }}
         onSelectActivity={(atividade) => { setEditingActivity(atividade); setActivityFormOpen(true); }}
         onCreateProposta={() => viewingLeadAtual && navigate(`/propostas?leadId=${viewingLeadAtual.id}`)}
+        onIniciarConversa={() => viewingLeadAtual && navigate(`/atendimento?lead=${viewingLeadAtual.id}`)}
         canExcluirTeste={canConfigure}
         onExcluirTeste={() => setLeadParaExcluirTeste(viewingLeadAtual)}
         onMudarPipeline={() => {

@@ -1,4 +1,5 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
+import { monitorCall } from './callMonitor';
 
 function toError(message, status = 500, code, details, hint) {
   const normalizedMessage =
@@ -27,41 +28,10 @@ const CRM_API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/crm-api${
   CRM_API_REGION ? `?forceFunctionRegion=${encodeURIComponent(CRM_API_REGION)}` : ''
 }`;
 
-// Diagnostico de performance, SO em dev (`vite`): registra cada chamada a crm-api com quando
-// comecou (ms desde o carregamento da pagina) e quanto durou. Chamadas encadeadas aparecem com
-// "inicio" crescente (cascata); paralelas, com "inicio" parecido. No console do navegador:
-//   crmTimings()  -> tabela completa    |    crmTimings.clear() -> zera
-const crmTimingLog = [];
-if (import.meta.env.DEV && typeof window !== 'undefined') {
-  window.crmTimings = () => {
-    console.table(crmTimingLog);
-    return crmTimingLog.length;
-  };
-  window.crmTimings.clear = () => {
-    crmTimingLog.length = 0;
-  };
-}
-
-async function invokeCrm(body = {}, accessTokenOverride) {
-  if (!import.meta.env.DEV) return invokeCrmRaw(body, accessTokenOverride);
-
-  const startedAt = performance.now();
-  const record = (status) => {
-    crmTimingLog.push({
-      chamada: [body.action, body.entity].filter(Boolean).join(':'),
-      inicio_ms: Math.round(startedAt),
-      duracao_ms: Math.round(performance.now() - startedAt),
-      status,
-    });
-  };
-  try {
-    const result = await invokeCrmRaw(body, accessTokenOverride);
-    record('ok');
-    return result;
-  } catch (error) {
-    record(error?.status || 'erro');
-    throw error;
-  }
+// Tempo/status de cada chamada vao para o monitor compartilhado (callMonitor.js):
+// no console do navegador, `macomApiLog()` / `macomApiLog.problemas()`.
+function invokeCrm(body = {}, accessTokenOverride) {
+  return monitorCall('crm-api', body, () => invokeCrmRaw(body, accessTokenOverride));
 }
 
 async function invokeCrmRaw(body = {}, accessTokenOverride) {
@@ -357,6 +327,11 @@ export const crmApi = {
     async transferir(payload) {
       const result = await invokeCrm({ action: 'transferir_atendimento', ...payload });
       return result.row || null;
+    },
+    // payload: { telefone } | { leadId } | { clienteId } -- cria ou reabre a conversa do numero.
+    async iniciar(payload) {
+      const result = await invokeCrm({ action: 'iniciar_conversa_atendimento', ...payload });
+      return { row: result.row || null, created: Boolean(result.created) };
     },
   },
   mensagens_atendimento: buildEntity('mensagens_atendimento'),

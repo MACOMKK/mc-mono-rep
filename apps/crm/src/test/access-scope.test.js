@@ -67,6 +67,25 @@ describe('buildAccessScope', () => {
     expect(buildAccessScope('veiculos_interesse', access, collaborator, 3).values).toEqual(['colab-1']);
   });
 
+  it('gestor ve conversa/mensagens/notas da unidade ou em que e o atendente (conversa sem vinculo)', () => {
+    const access = { nivel_acesso: 'gestor' };
+    for (const entity of ['conversas_atendimento', 'mensagens_atendimento', 'notas_conversa']) {
+      const scope = buildAccessScope(entity, access, collaborator, 4);
+      expect(scope.values).toEqual(['unidade-1', 'colab-1']);
+      expect(scope.clause).toMatch(/atendente_id = \$5/);
+      expect(scope.clause).toMatch(/unidade_id = \$4/);
+    }
+  });
+
+  it('usuario ve conversa/mensagens/notas do lead dele ou em que e o atendente', () => {
+    const access = { nivel_acesso: 'usuario' };
+    for (const entity of ['conversas_atendimento', 'mensagens_atendimento', 'notas_conversa']) {
+      const scope = buildAccessScope(entity, access, collaborator, 3);
+      expect(scope.values).toEqual(['colab-1']);
+      expect(scope.clause).toMatch(/atendente_id = \$3/);
+    }
+  });
+
   it('missing collaborator id throws a 403 regardless of level', () => {
     const access = { nivel_acesso: 'usuario' };
     expect(() => buildAccessScope('leads', access, {}, 2))

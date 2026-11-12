@@ -162,6 +162,22 @@ Não há CI configurado (`.github/`) — validar localmente antes de subir.
     `gestao_servicos.notificacoes`, `insertNotificacao` próprio e uma cópia local dos handlers em
     `src/sw.js`. Migrar quando for conveniente; ele tem particularidades (registro na timeline da
     solicitação, lembretes por cron).
+- **Monitor de chamadas às Edge Functions** (`packages/api-client/src/callMonitor.js`, dev e
+  produção): todo `invoke*` do `@macom/api-client` e do `@macom/notifications` passa por
+  `monitorCall(api, body, run)`. Chamada ≥ 5 s, timeout, 5xx ou falha de rede gera `console.warn`
+  `[macom-api] ...` com API, action, duração e horário (para cruzar com os logs do Supabase).
+  No F12: `macomApiLog()`, `macomApiLog.problemas()`, `macomApiLog.clear()`. Client novo de
+  Edge Function deve envolver o `fetch` com `monitorCall`. Ainda fora do monitor: `@macom/auth`,
+  `@macom/push`, `apps/central/src/lib/*` e `apps/relatorios/src/api/*`.
+- **Alerta de saúde da plataforma** (migration `20261112130000_plataforma_alertas_saude.sql`):
+  cron `plataforma-verificar-saude` (a cada minuto, roda dentro do banco, então funciona com o
+  pool cheio) grava em `gestao_plataforma.alertas_saude` pool ≥ 12/15, conexões ≥ 50/60, query
+  ativa/`idle in transaction` > 15 s, cron com falha, cron HTTP (`net._http_response`) com
+  erro/timeout e e-mail da fila em `erro` — com foto do `pg_stat_activity`. E-mail para
+  `config_alertas_saude.destinatarios` (máx. 1 por tipo a cada 30 min). Limites ficam na mesma
+  tabela de config. No pool, todas as functions aparecem como `postgres | Supavisor`
+  (`application_name` não distingue a function); o texto da query na foto é que mostra o schema.
+  Toda Edge Function deve passar `max` explícito no `postgres()` (padrão da lib = 10 conexões).
 - **Cron → Edge Function (`x-invoke-secret`)**: jobs do pg_cron que chamam uma Edge Function leem o
   segredo do Vault (`select decrypted_secret from vault.decrypted_secrets where name =
   'internal_invoke_secret'`) e a function compara com `INTERNAL_INVOKE_SECRET`. **Nunca** colar o

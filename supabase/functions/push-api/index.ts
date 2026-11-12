@@ -11,7 +11,11 @@ const databaseUrl = Deno.env.get('DATABASE_URL');
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
-const sql = databaseUrl ? postgres(databaseUrl, { prepare: false }) : null;
+// max explicito: sem ele o postgres.js abre ate 10 conexoes por instancia, e o pool do
+// Supavisor (15) e dividido por todas as functions. Mesmo padrao das demais functions.
+const sql = databaseUrl
+  ? postgres(databaseUrl, { prepare: false, max: 2, idle_timeout: 5, connect_timeout: 15 })
+  : null;
 
 function jsonResponse(data: unknown, status: number, headers: Record<string, string>) {
   return new Response(JSON.stringify(data), {

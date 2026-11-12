@@ -113,10 +113,24 @@ bypassa RLS na escrita (mesmo padrão de `processa-fila-email`/`enviar-termo-gma
 de deploy/teste em runtime real — isso ainda está pendente, é a única parte não validada em
 produção.
 
-`conversas_atendimento` vincula a `clientes`/`leads` via `telefone_normalizado` (mesma
-normalização — apenas dígitos — usada em `standardize_crm_contact_fields`); conversas sem
-vínculo (número desconhecido) só são visíveis para admin via RLS até serem associadas a um
-cliente/lead. `mensagens_atendimento.autor` distingue `cliente`/`ia`/`humano`; conversa com
+`conversas_atendimento` vincula a `clientes`/`leads` via `telefone_normalizado`. **Formatos
+diferentes**: a conversa guarda com DDI (13 dígitos, vem do WhatsApp) e `leads`/`public.clientes`
+guardam sem DDI (10/11 dígitos) — o vínculo compara via `telefoneNacionalCandidatos` de
+`supabase/functions/_shared/phone.ts` (até 2026-11-12 o webhook comparava direto e nunca vinculava).
+Conversa sem vínculo (número desconhecido) fica visível para admin e para quem é o
+`atendente_id` dela (`access-scope.ts`); o Realtime dela continua só para admin (RLS), o
+`refetchInterval` de 20s da lista cobre os demais.
+
+**Iniciar conversa pelo CRM** (action `iniciar_conversa_atendimento`, `{ telefone | leadId |
+clienteId }`): botão "Nova conversa" no Atendimento (`NovaConversaDialog.jsx`) e botão "WhatsApp"
+na ficha do lead (`LeadViewer.jsx`) e do cliente (`Clientes.jsx`), que navegam para
+`/atendimento?lead=<id>` / `?cliente=<id>` (também aceita `?telefone=`). Uma conversa por
+telefone: se já existe, reaproveita (reabre se `encerrada`); senão cria com vínculo lead > cliente,
+`status = 'aguardando_humano'` (IA pausada) e `atendente_id` = quem iniciou, mais nota de sistema.
+A 1ª mensagem sai pelo `send_atendimento_mensagem` normal. Com a **Meta** (API oficial), texto
+livre só vale até 24h após a última mensagem do cliente: o `send_atendimento_mensagem` barra fora
+da janela com erro claro — envio de template aprovado ainda não é suportado (backlog). Na
+Evolution não há essa restrição. `mensagens_atendimento.autor` distingue `cliente`/`ia`/`humano`; conversa com
 `status = 'aguardando_humano'` pausa a resposta automática da IA.
 
 `notas_conversa` (`conversa_id`, `colaborador_id`, `conteudo`, `criado_em`,

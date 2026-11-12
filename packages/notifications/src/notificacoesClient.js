@@ -1,4 +1,5 @@
 import { assertSupabaseConfigured, supabase } from '@macom/api-client/supabaseClient';
+import { monitorCall } from '@macom/api-client/callMonitor';
 
 // Client do sino generico (notificacoes in-app) -- qualquer app do monorepo usa passando o slug
 // do proprio sistema (mesmo `sistema` de public.sistemas). Backend correspondente: Edge Function
@@ -11,7 +12,11 @@ function toError(message, status) {
   return error;
 }
 
-async function invokeNotificacoesApi(body) {
+function invokeNotificacoesApi(body) {
+  return monitorCall('notificacoes-api', body, () => invokeNotificacoesApiRaw(body));
+}
+
+async function invokeNotificacoesApiRaw(body) {
   assertSupabaseConfigured();
   const { data } = await supabase.auth.getSession();
   const token = data?.session?.access_token;

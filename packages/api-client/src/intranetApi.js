@@ -1,4 +1,5 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
+import { monitorCall } from './callMonitor';
 
 function toError(message, status = 500, code, details, hint) {
   const normalizedMessage =
@@ -28,7 +29,11 @@ function readTrustedIpAccessEnabled() {
   }
 }
 
-async function invokeIntranet(body = {}, accessTokenOverride, options = {}) {
+function invokeIntranet(body = {}, accessTokenOverride, options = {}) {
+  return monitorCall('intranet-api', body, () => invokeIntranetRaw(body, accessTokenOverride, options));
+}
+
+async function invokeIntranetRaw(body = {}, accessTokenOverride, options = {}) {
   assertSupabaseConfigured();
 
   const { data } = accessTokenOverride
