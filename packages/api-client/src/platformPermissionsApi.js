@@ -1,5 +1,6 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
 import { monitorCall } from './callMonitor';
+import { fetchWithTimeout } from './fetchWithTimeout';
 import { platformAuditApi } from './platformAuditApi';
 
 function toApiError(message, status = 500, code) {
@@ -24,7 +25,7 @@ async function invokeSupabaseFunctionRaw(functionName, action, payload = {}, acc
     throw toApiError('Sessao expirada. Faca login novamente.', 401, 'auth_required');
   }
 
-  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`, {
+  const response = await fetchWithTimeout(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

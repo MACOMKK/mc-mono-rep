@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { coreDispatcherBodySchema, entitySchemas, colaboradorReportsFieldsSchema } from '../_shared/validation.ts';
 import { CLEAR_MUST_CHANGE_PASSWORD_SQL, mapMustChangePassword } from '../_shared/auth.ts';
@@ -247,12 +247,7 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL');
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
 const sql = databaseUrl
-  ? postgres(databaseUrl, {
-      prepare: false,
-      max: 3,
-      idle_timeout: 5,
-      connect_timeout: 15,
-    })
+  ? createSql(databaseUrl, { max: 3 })
   : null;
 
 function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}) {

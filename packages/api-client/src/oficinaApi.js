@@ -1,5 +1,6 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
 import { monitorCall } from './callMonitor';
+import { fetchWithTimeout } from './fetchWithTimeout';
 
 function toError(message, status = 500, code, details, hint) {
   const normalizedMessage =
@@ -17,39 +18,13 @@ function toError(message, status = 500, code, details, hint) {
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
-// Combina um AbortSignal externo (ex.: vindo do React Query, cancelado quando a
-// query fica obsoleta) com um timeout interno -- aborta se qualquer um dos dois
-// disparar primeiro. Sem lib externa: AbortSignal.any() ainda nao tem suporte
-// garantido no target do projeto.
-function createRequestSignal(externalSignal, timeoutMs) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort(new DOMException('Tempo de conexao esgotado.', 'TimeoutError'));
-  }, timeoutMs);
-
-  if (externalSignal) {
-    if (externalSignal.aborted) controller.abort(externalSignal.reason);
-    else externalSignal.addEventListener('abort', () => controller.abort(externalSignal.reason), { once: true });
-  }
-
-  return { signal: controller.signal, cancel: () => clearTimeout(timeoutId) };
-}
-
-async function fetchComTimeout(url, options, externalSignal, timeoutMs) {
-  const { signal, cancel } = createRequestSignal(externalSignal, timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal });
-  } catch (error) {
-    // Cancelamento intencional (ex.: React Query descartou uma busca obsoleta) --
-    // propaga como abort puro, sem mensagem de erro pro usuario.
-    if (externalSignal?.aborted) throw error;
-    if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
-      throw toError('Tempo de conexao esgotado. Verifique sua internet e tente novamente.', 0, 'timeout');
-    }
-    throw error;
-  } finally {
-    cancel();
-  }
+function fetchComTimeout(url, options, signal, timeoutMs) {
+  return fetchWithTimeout(url, options, {
+    signal,
+    timeoutMs,
+    timeoutMessage: 'Tempo de conexao esgotado. Verifique sua internet e tente novamente.',
+    timeoutStatus: 0,
+  });
 }
 
 // Chama a edge function servicos-oficina-api -- separada de servicos-api

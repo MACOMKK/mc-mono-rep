@@ -6,7 +6,7 @@
 // mesmo padrao de processa-fila-email e servicos-lembrete-aprovacoes.
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { enqueueEmail } from '../_shared/email.ts';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql } from '../_shared/db.ts';
 
 const TIPO_EMAIL = 'aniversario_colaborador';
 
@@ -70,7 +70,7 @@ Deno.serve(async (request) => {
     });
   }
 
-  const sql = postgres(databaseUrl, { prepare: false, max: 2, idle_timeout: 5, connect_timeout: 15 });
+  const sql = createSql(databaseUrl, { max: 2 });
 
   try {
     const aniversariantes = await sql.unsafe(

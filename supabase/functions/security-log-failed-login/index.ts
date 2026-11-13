@@ -7,7 +7,7 @@
 // security-alerta-picos-login para detectar picos de tentativas.
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { loginTelemetryBodySchema } from '../_shared/validation.ts';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql } from '../_shared/db.ts';
 
 function normalizeForwardedIp(value: string | null) {
   if (!value) return null;
@@ -58,7 +58,7 @@ Deno.serve(async (request) => {
     const sistemaSlug = typeof body.sistema_slug === 'string' ? body.sistema_slug.trim().slice(0, 60) : '';
     if (!email || !sistemaSlug) return respondOk();
 
-    sql = postgres(databaseUrl, { prepare: false, max: 2, idle_timeout: 5, connect_timeout: 10 });
+    sql = createSql(databaseUrl, { max: 2, connectTimeout: 10 });
 
     await sql.unsafe(
       `

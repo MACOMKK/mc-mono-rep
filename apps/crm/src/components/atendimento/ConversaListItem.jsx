@@ -1,8 +1,38 @@
 import { useEffect, useState } from 'react';
-import { Clock, Headset, Phone } from 'lucide-react';
+import { Clock, Headset, Phone, ShieldCheck, Zap } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+
+// Selo do canal de WhatsApp ativo (Meta API oficial/WABA ou Evolution) -- so' icone pra nao poluir
+// o card, nome completo so' no tooltip. providerWhatsapp vem de uma unica query global em
+// Atendimento.jsx (get_whatsapp_provider), repassada aqui, pois o canal e' o mesmo pra toda a conta.
+function ProviderWhatsappIcone({ providerWhatsapp }) {
+  if (!providerWhatsapp) return null;
+  const isMeta = providerWhatsapp === 'meta';
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className={cn(
+              'flex h-4 w-4 shrink-0 items-center justify-center rounded-full',
+              isMeta ? 'bg-blue-500' : 'bg-amber-500',
+            )}
+          >
+            {isMeta ? (
+              <ShieldCheck className="h-2.5 w-2.5 text-white" />
+            ) : (
+              <Zap className="h-2.5 w-2.5 text-white" />
+            )}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top">{isMeta ? 'Canal: API oficial (WABA)' : 'Canal: Evolution API'}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 const SLA_ALERTA_MINUTOS = 10;
 
@@ -76,7 +106,7 @@ function iniciais(nome = '') {
     .toUpperCase();
 }
 
-export default function ConversaListItem({ conversa, isActive, onClick }) {
+export default function ConversaListItem({ conversa, isActive, onClick, providerWhatsapp }) {
   const titulo = conversa.cliente_nome || formatTelefone(conversa.telefone_normalizado);
   const naoLida = Boolean(conversa.nao_lida);
   const sigla = iniciais(conversa.cliente_nome);
@@ -113,6 +143,7 @@ export default function ConversaListItem({ conversa, isActive, onClick }) {
             {STATUS_LABEL[conversa.status] || conversa.status}
           </Badge>
           {slaPendente ? <SlaPendenteBadge desde={conversa.sla_primeira_resposta_em} /> : null}
+          <ProviderWhatsappIcone providerWhatsapp={providerWhatsapp} />
           {tags.map((tag) => (
             <Badge key={tag} variant="outline" className="rounded-full border-violet-200 bg-violet-50 px-2 py-0 text-[10px] font-semibold text-violet-700">
               {tag}

@@ -6,7 +6,7 @@
 // (veiculos_estoque_historico_reserva) e notifica o vendedor que perdeu a reserva, na mesma
 // transacao do update -- mantem a logica de negocio de reserva centralizada (nunca via trigger
 // generica), igual a action veiculo_estoque_reserva do crm-api.
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql, withTransaction } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { notificar } from '../_shared/notificacoes.ts';
 
@@ -42,7 +42,7 @@ Deno.serve(async (request) => {
     });
   }
 
-  const sql = postgres(databaseUrl, { prepare: false, max: 2, idle_timeout: 5, connect_timeout: 15 });
+  const sql = createSql(databaseUrl, { max: 2 });
 
   try {
     const expiradas = await sql.unsafe(
@@ -58,7 +58,7 @@ Deno.serve(async (request) => {
     const processadas: string[] = [];
 
     for (const veiculo of expiradas) {
-      await sql.begin(async (transaction) => {
+      await withTransaction(sql, async (transaction) => {
         await transaction.unsafe(
           `update gestao_crm.veiculos_estoque set status = 'disponivel' where id = $1;`,
           [veiculo.id],

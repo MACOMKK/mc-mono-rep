@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql, withTransaction } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { CLEAR_MUST_CHANGE_PASSWORD_SQL, mapMustChangePassword } from '../_shared/auth.ts';
 
@@ -16,12 +16,7 @@ const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
 const sql = databaseUrl
-  ? postgres(databaseUrl, {
-      prepare: false,
-      max: 3,
-      idle_timeout: 5,
-      connect_timeout: 15,
-    })
+  ? createSql(databaseUrl, { max: 3 })
   : null;
 
 function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}) {
@@ -344,7 +339,7 @@ Deno.serve(async (request) => {
       }
 
       const slug = await generateUniqueCanalSlug(nome);
-      const row = await sql.begin(async (trx) => {
+      const row = await withTransaction(sql, async (trx) => {
         const [canal] = await trx.unsafe(
           `
             insert into ${SCHEMA}.canais (slug, nome, descricao, icone, ordem, criado_por)
@@ -508,7 +503,7 @@ Deno.serve(async (request) => {
         respostaA = parent;
       }
 
-      const row = await sql.begin(async (trx) => {
+      const row = await withTransaction(sql, async (trx) => {
         const [mensagem] = await trx.unsafe(
           `
             insert into ${SCHEMA}.mensagens (canal_id, autor_id, conteudo, resposta_a_id, mencoes)
@@ -575,7 +570,7 @@ Deno.serve(async (request) => {
       if (!id) return json({ error: 'id obrigatorio.' }, 400);
 
       const isAdmin = access?.nivel_acesso === 'admin';
-      const { row, anexoPaths } = await sql.begin(async (trx) => {
+      const { row, anexoPaths } = await withTransaction(sql, async (trx) => {
         const [updated] = await trx.unsafe(
           `
             update ${SCHEMA}.mensagens
@@ -710,7 +705,7 @@ Deno.serve(async (request) => {
         return json({ row: { id: existing[0].conversa_id }, created: false });
       }
 
-      const row = await sql.begin(async (trx) => {
+      const row = await withTransaction(sql, async (trx) => {
         const [conversa] = await trx.unsafe(
           `insert into ${SCHEMA}.conversas_diretas default values returning id;`,
         );
@@ -815,7 +810,7 @@ Deno.serve(async (request) => {
         respostaA = parent;
       }
 
-      const row = await sql.begin(async (trx) => {
+      const row = await withTransaction(sql, async (trx) => {
         const [mensagem] = await trx.unsafe(
           `
             insert into ${SCHEMA}.mensagens_diretas (conversa_id, autor_id, conteudo, resposta_a_id, mencoes)
@@ -881,7 +876,7 @@ Deno.serve(async (request) => {
       const id = String(body.id || '');
       if (!id) return json({ error: 'id obrigatorio.' }, 400);
 
-      const { row, anexoPaths } = await sql.begin(async (trx) => {
+      const { row, anexoPaths } = await withTransaction(sql, async (trx) => {
         const [updated] = await trx.unsafe(
           `
             update ${SCHEMA}.mensagens_diretas
@@ -943,7 +938,7 @@ Deno.serve(async (request) => {
         await ensureCanAccessConversa(mensagem.conversa_id, collaborator.id);
       }
 
-      const result = await sql.begin(async (trx) => {
+      const result = await withTransaction(sql, async (trx) => {
         const deleted = await trx.unsafe(
           `
             delete from ${SCHEMA}.reacoes_mensagem

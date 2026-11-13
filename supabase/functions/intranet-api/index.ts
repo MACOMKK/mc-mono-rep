@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { updateColaboradorSignature } from '../_shared/signature.ts';
 import { notificar } from '../_shared/notificacoes.ts';
@@ -10,16 +10,7 @@ const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
 const sql = databaseUrl
-  ? postgres(databaseUrl, {
-      prepare: false,
-      max: 6,
-      idle_timeout: 5,
-      connect_timeout: 15,
-      max_lifetime: 1800,
-      connection: {
-        statement_timeout: 15000,
-      },
-    })
+  ? createSql(databaseUrl, { max: 6, extra: { max_lifetime: 1800, connection: { statement_timeout: 15000 } } })
   : null;
 
 const INTRANET_SCHEMA = 'gestao_intranet';

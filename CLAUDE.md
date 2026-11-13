@@ -177,7 +177,13 @@ Não há CI configurado (`.github/`) — validar localmente antes de subir.
   `config_alertas_saude.destinatarios` (máx. 1 por tipo a cada 30 min). Limites ficam na mesma
   tabela de config. No pool, todas as functions aparecem como `postgres | Supavisor`
   (`application_name` não distingue a function); o texto da query na foto é que mostra o schema.
-  Toda Edge Function deve passar `max` explícito no `postgres()` (padrão da lib = 10 conexões).
+- **Cliente Postgres das Edge Functions: sempre `createSql()` de `_shared/db.ts`**, nunca `postgres()`
+  direto; transação sempre `withTransaction(sql, async (tx) => …)`, nunca `sql.begin()`. Motivo
+  (medido em 2026-11-13): o postgres.js faz pipelining por padrão e, pelo pooler em transaction mode
+  (:6543), isso trava queries (`active / ClientRead`, `invalid frontend message type`) até a function
+  morrer em ~150 s (546) — as listas que "só carregam com F5". `createSql` fixa `max_pipeline: 0`,
+  que quebra o `sql.begin` (bug upstream porsager/postgres#1189); `withTransaction` usa `sql.reserve()`.
+  Passe `max` explícito (padrão do helper = 3).
 - **Cron → Edge Function (`x-invoke-secret`)**: jobs do pg_cron que chamam uma Edge Function leem o
   segredo do Vault (`select decrypted_secret from vault.decrypted_secrets where name =
   'internal_invoke_secret'`) e a function compara com `INTERNAL_INVOKE_SECRET`. **Nunca** colar o

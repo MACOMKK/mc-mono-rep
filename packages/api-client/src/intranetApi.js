@@ -1,5 +1,6 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
 import { monitorCall } from './callMonitor';
+import { fetchWithTimeout } from './fetchWithTimeout';
 
 function toError(message, status = 500, code, details, hint) {
   const normalizedMessage =
@@ -46,7 +47,7 @@ async function invokeIntranetRaw(body = {}, accessTokenOverride, options = {}) {
     throw toError('Sessao expirada. Faca login novamente.', 401, 'auth_required');
   }
 
-  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/intranet-api`, {
+  const response = await fetchWithTimeout(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/intranet-api`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

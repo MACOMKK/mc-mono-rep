@@ -4,17 +4,15 @@
 // dentro da `-api` de cada app (ver `servicos-api` -> `insertNotificacao`), nao daqui -- esta
 // function nao sabe nada de regra de negocio de nenhum app.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 
 const databaseUrl = Deno.env.get('DATABASE_URL');
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
-// max explicito: sem ele o postgres.js abre ate 10 conexoes por instancia, e o pool do
-// Supavisor (15) e dividido por todas as functions. Mesmo padrao das demais functions.
 const sql = databaseUrl
-  ? postgres(databaseUrl, { prepare: false, max: 2, idle_timeout: 5, connect_timeout: 15 })
+  ? createSql(databaseUrl, { max: 2 })
   : null;
 
 function jsonResponse(data: unknown, status: number, headers: Record<string, string>) {

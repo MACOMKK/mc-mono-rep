@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { loadIntegracaoCredenciais } from '../_shared/integracoes.ts';
 import {
@@ -16,12 +16,7 @@ import { normalizePhone, telefoneNacionalCandidatos } from '../_shared/phone.ts'
 // aqui, da erro "Invalid schema: gestao_crm" (schema nao esta na lista exposta do gateway).
 const databaseUrl = Deno.env.get('DATABASE_URL');
 const sql = databaseUrl
-  ? postgres(databaseUrl, {
-      prepare: false,
-      max: 3,
-      idle_timeout: 5,
-      connect_timeout: 15,
-    })
+  ? createSql(databaseUrl, { max: 3 })
   : null;
 
 // Edge Function desacoplada do crm-api: nao exige JWT de usuario do CRM.

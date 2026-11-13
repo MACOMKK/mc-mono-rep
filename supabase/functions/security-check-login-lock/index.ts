@@ -15,7 +15,7 @@
 // limiares do hook nativo (nao usado ainda): 5 -> 1min, 10 -> 5min, 15 -> 30min, 20+ -> 1h.
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { loginTelemetryBodySchema } from '../_shared/validation.ts';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql } from '../_shared/db.ts';
 
 const JANELA_MINUTOS = 30;
 
@@ -51,7 +51,7 @@ Deno.serve(async (request) => {
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase().slice(0, 320) : '';
     if (!email) return respondNaoTravado();
 
-    sql = postgres(databaseUrl, { prepare: false, max: 2, idle_timeout: 5, connect_timeout: 10 });
+    sql = createSql(databaseUrl, { max: 2, connectTimeout: 10 });
 
     const rows = await sql.unsafe(
       `

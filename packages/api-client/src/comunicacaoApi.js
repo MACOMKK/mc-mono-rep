@@ -1,5 +1,6 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
 import { monitorCall } from './callMonitor';
+import { fetchWithTimeout } from './fetchWithTimeout';
 
 const COMUNICACAO_ATTACHMENTS_BUCKET = 'comunicacao-anexos';
 const MAX_ANEXO_BYTES = 10 * 1024 * 1024;
@@ -57,7 +58,7 @@ async function invokeComunicacaoRaw(body = {}, accessTokenOverride) {
     throw toError('Sessao expirada. Faca login novamente.', 401, 'auth_required');
   }
 
-  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/comunicacao-api`, {
+  const response = await fetchWithTimeout(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/comunicacao-api`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

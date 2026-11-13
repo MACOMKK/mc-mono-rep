@@ -4,7 +4,7 @@
 // horario marcado. Function dedicada (nao action de crm-api) porque quem chama e o pg_cron via
 // net.http_post, sem JWT de usuario -- mesmo padrao de crm-veiculos-estoque-expira-reserva. Dedupe
 // de reenvio via lembrete_ligacao_enviado_em (zerado pelo trigger quando a atividade e remarcada).
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { notificar } from '../_shared/notificacoes.ts';
 
@@ -42,7 +42,7 @@ Deno.serve(async (request) => {
     });
   }
 
-  const sql = postgres(databaseUrl, { prepare: false, max: 2, idle_timeout: 5, connect_timeout: 15 });
+  const sql = createSql(databaseUrl, { max: 2 });
 
   try {
     const pendentes = await sql.unsafe(

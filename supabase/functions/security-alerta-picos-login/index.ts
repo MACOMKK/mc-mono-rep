@@ -5,7 +5,7 @@
 // ja existente (notificacoes.fila_emails / processa-fila-email), sem criar um novo pipeline de
 // envio. Chamado sem JWT de usuario -- mesmo padrao de servicos-lembrete-aprovacoes.
 import { buildCorsHeaders } from '../_shared/cors.ts';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql } from '../_shared/db.ts';
 
 const JANELA_MINUTOS = 15;
 const LIMITE_POR_IP = 8;
@@ -44,7 +44,7 @@ Deno.serve(async (request) => {
     });
   }
 
-  const sql = postgres(databaseUrl, { prepare: false, max: 2, idle_timeout: 5, connect_timeout: 15 });
+  const sql = createSql(databaseUrl, { max: 2 });
 
   try {
     const porIp = await sql.unsafe(

@@ -4,7 +4,7 @@
 // Financeiro, ja em producao. Ver apps/servicos/CLAUDE.md para o raciocinio
 // completo dessa decisao e a divida tecnica de auth compartilhada.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql, withTransaction } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { getServicosAuthContext } from '../_shared/servicos-auth.ts';
 import {
@@ -29,12 +29,7 @@ const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const checklistShareSecret = Deno.env.get('CHECKLIST_SHARE_SECRET');
 
 const sql = databaseUrl
-  ? postgres(databaseUrl, {
-      prepare: false,
-      max: 3,
-      idle_timeout: 5,
-      connect_timeout: 15,
-    })
+  ? createSql(databaseUrl, { max: 3 })
   : null;
 
 function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}) {
@@ -522,7 +517,7 @@ Deno.serve(async (request) => {
       // entra aqui (era 1 round-trip sequencial antes da transacao) --
       // mesma lógica, so que agora paga o custo de rede junto com o resto.
       let avisoDonoDiferente: { atual_id: unknown; atual_nome: unknown } | null = null;
-      const rows = await sql.begin(async (trx) => {
+      const rows = await withTransaction(sql, async (trx) => {
         if (clienteId) {
           const veiculoRows = await trx.unsafe(
             `
@@ -771,7 +766,7 @@ Deno.serve(async (request) => {
         return json({ rows: itensAtuais });
       }
 
-      await sql.begin(async (trx) => {
+      await withTransaction(sql, async (trx) => {
         await trx.unsafe(
           `delete from ${SERVICOS_SCHEMA}.checklist_itens where avaliacao_id = $1 and categoria = $2;`,
           [avaliacaoId, categoria],
@@ -1286,7 +1281,7 @@ Deno.serve(async (request) => {
       const clienteId = String(body.cliente_id || '');
       if (!veiculoId || !clienteId) return json({ error: 'veiculo_id e cliente_id sao obrigatorios.' }, 400);
 
-      const row = await sql.begin(async (trx) => {
+      const row = await withTransaction(sql, async (trx) => {
         await trx.unsafe(
           `update public.veiculos_proprietarios set ate = now() where veiculo_id = $1 and ate is null;`,
           [veiculoId],
@@ -1347,7 +1342,7 @@ Deno.serve(async (request) => {
       // Se vier cliente_id (veiculo cadastrado com o cliente ja selecionado no picker), o
       // veiculo ja nasce com dono -- mesmo padrao de veiculo_transferir, so que na mesma
       // transacao do insert em vez de uma chamada separada depois.
-      const row = await sql.begin(async (trx) => {
+      const row = await withTransaction(sql, async (trx) => {
         const rows = await trx.unsafe(
           `
             insert into public.veiculos (modelo_id, versao_id, chassi, placa, cor_id, km, eh_teste, origem_cadastro, cliente_atual_id)
@@ -1432,7 +1427,7 @@ Deno.serve(async (request) => {
       const veiculoId = String(body.veiculo_id || '');
       if (!veiculoId) return json({ error: 'veiculo_id e obrigatorio.' }, 400);
 
-      await sql.begin(async (trx) => {
+      await withTransaction(sql, async (trx) => {
         await trx.unsafe(`delete from ${SERVICOS_SCHEMA}.checklist_avaliacoes where veiculo_id = $1;`, [veiculoId]);
         await trx.unsafe(`delete from gestao_crm.veiculos_estoque where veiculo_id = $1;`, [veiculoId]);
         const rows = await trx.unsafe(`delete from public.veiculos where id = $1 returning id;`, [veiculoId]);

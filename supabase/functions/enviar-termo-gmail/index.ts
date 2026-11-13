@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { sendGmail } from '../_shared/email.ts';
 
@@ -9,7 +9,7 @@ const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const databaseUrl = Deno.env.get('DATABASE_URL');
 
-const sql = databaseUrl ? postgres(databaseUrl, { prepare: false, max: 2, idle_timeout: 5, connect_timeout: 15 }) : null;
+const sql = databaseUrl ? createSql(databaseUrl, { max: 2 }) : null;
 
 async function getAuthenticatedUser(request: Request) {
   if (!supabaseUrl || !supabaseAnonKey) {

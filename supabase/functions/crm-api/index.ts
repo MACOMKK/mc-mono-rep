@@ -1,4 +1,4 @@
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql, withTransaction } from '../_shared/db.ts';
 import {
   CRM_SCHEMA,
   buildAccessScope,
@@ -327,15 +327,10 @@ if (databaseUrl) {
 }
 
 const sql = databaseUrl
-  ? postgres(databaseUrl, {
-      prepare: false,
-      max: 3,
-      // Mantido em 5s de proposito. Tentamos 20s (2026-11-10) e varias listagens de catalogo
-      // travaram ate o timeout de 20s do front. Hipotese (nao confirmada): conexoes ociosas
-      // presas por mais tempo no Supavisor, que tem poucas vagas para ~12 Edge Functions.
-      idle_timeout: 5,
-      connect_timeout: 15,
-    })
+  ? // idle_timeout fica em 5s (fixo no createSql). Em 2026-11-10 tentamos 20s e listagens travaram
+    // ate o timeout de 20s do front -- na epoca atribuido ao idle_timeout; o diagnostico de
+    // 2026-11-13 mostrou que a causa era o pipelining do postgres.js no pooler (ver _shared/db.ts).
+    createSql(databaseUrl, { max: 3 })
   : null;
 
 function jsonResponse(data: unknown, status = 200, headers: Record<string, string> = {}) {
@@ -2351,7 +2346,7 @@ Deno.serve(async (request) => {
         return json({ error: 'O alerta de SLA deve ser zero ou maior.' }, 400);
       }
 
-      await sql.begin(async (transaction) => {
+      await withTransaction(sql, async (transaction) => {
         await transaction.unsafe(`
           insert into ${CRM_SCHEMA}.configuracoes_distribuicao
             (unidade_id, ativa, estrategia, limite_padrao_leads_ativos, sla_primeiro_contato_minutos, sla_alerta_minutos)
@@ -2549,7 +2544,7 @@ Deno.serve(async (request) => {
         );
       }
 
-      const counts = await sql.begin(async (transaction) => {
+      const counts = await withTransaction(sql, async (transaction) => {
         const leadFilter = scopeUnitId ? `where unidade_id = $1` : '';
         const leadFilterValues = scopeUnitId ? [scopeUnitId] : [];
 
@@ -2722,7 +2717,7 @@ Deno.serve(async (request) => {
 
       const { identidade: clienteIdentidadeRaw, extensao: clienteExtensaoRaw } = splitClientePayload(clientePayloadRaw);
 
-      const result = await sql.begin(async (transaction) => {
+      const result = await withTransaction(sql, async (transaction) => {
         // Cliente escolhido explicitamente via busca (ClienteLeadPicker): usa a
         // identidade ja existente em public.clientes direto por id, sem passar pelo
         // dedup por telefone/email abaixo -- o usuario ja confirmou que e esse cliente.
@@ -2866,7 +2861,7 @@ Deno.serve(async (request) => {
         return json({ error: 'Atividade deve estar vinculada a um lead.' }, 400);
       }
 
-      const result = await sql.begin(async (transaction) => {
+      const result = await withTransaction(sql, async (transaction) => {
         let eventoRow;
         if (eventoId) {
           const updateQuery = buildUpdateQuery(CRM_SCHEMA, 'atendimentos', eventoId, payloadRaw);
@@ -2937,7 +2932,7 @@ Deno.serve(async (request) => {
       const veiculoPayloadRaw = sanitizeVeiculoPayload(body.veiculoPayload || {});
       const estoquePayloadRaw = sanitizePayload('veiculos_estoque', body.estoquePayload || {});
 
-      const result = await sql.begin(async (transaction) => {
+      const result = await withTransaction(sql, async (transaction) => {
         let veiculoRow;
         if (estoqueId) {
           const existing = await transaction.unsafe(
@@ -3011,7 +3006,7 @@ Deno.serve(async (request) => {
         return json({ error: 'Selecione vendedor e cliente da reserva.' }, 400);
       }
 
-      const estoqueRow = await sql.begin(async (transaction) => {
+      const estoqueRow = await withTransaction(sql, async (transaction) => {
         const existingRows = await transaction.unsafe(
           `select status, situacao, vendedor_reserva_id, cliente_reserva_id
            from ${CRM_SCHEMA}.veiculos_estoque where id = $1 limit 1 for update;`,
@@ -3128,7 +3123,7 @@ Deno.serve(async (request) => {
       const vendaValidationError = validateVendaPayload(vendaPayloadRaw);
       if (vendaValidationError) return json({ error: vendaValidationError }, 400);
 
-      const result = await sql.begin(async (transaction) => {
+      const result = await withTransaction(sql, async (transaction) => {
         const updateProposta = buildUpdateQuery(CRM_SCHEMA, 'propostas', propostaId, { status: 'aceita' });
         const propostaRows = await transaction.unsafe(updateProposta.text, updateProposta.values);
 
@@ -3186,7 +3181,7 @@ Deno.serve(async (request) => {
         return json({ error: 'Esta venda ja foi cancelada.' }, 400);
       }
 
-      const result = await sql.begin(async (transaction) => {
+      const result = await withTransaction(sql, async (transaction) => {
         const vendaRows = await transaction.unsafe(
           `update ${CRM_SCHEMA}.vendas
            set status = 'cancelada', cancelada_em = now(), motivo_cancelamento = $1, cancelada_por = $2
@@ -3468,7 +3463,7 @@ Deno.serve(async (request) => {
         if (!identidade.nome || !identidade.telefone) {
           return json({ error: 'Nome e telefone sao obrigatorios.' }, 400);
         }
-        const row = await sql.begin(async (transaction) => {
+        const row = await withTransaction(sql, async (transaction) => {
           const insertIdentidade = buildInsertQuery('public', 'clientes', { ...identidade, origem_cadastro: 'crm_manual' });
           const identRows = await transaction.unsafe(insertIdentidade.text, insertIdentidade.values);
           const identRow = identRows[0];
@@ -3497,7 +3492,7 @@ Deno.serve(async (request) => {
       await ensureLeadIdScope(entity, payload, access, collaborator);
       if (entity === 'clientes') {
         const { identidade, extensao } = splitClientePayload(payload);
-        const { identidadeRow, extensaoRow } = await sql.begin(async (transaction) => {
+        const { identidadeRow, extensaoRow } = await withTransaction(sql, async (transaction) => {
           let identidadeRow: Record<string, unknown> | null = null;
           let extensaoRow: Record<string, unknown> | null = null;
           if (Object.keys(identidade).length) {

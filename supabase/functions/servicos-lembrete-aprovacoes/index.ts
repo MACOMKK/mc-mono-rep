@@ -6,7 +6,7 @@
 // net.http_post, sem JWT de usuario -- mesmo padrao de processa-fila-email.
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { sendPushToColaborador } from '../_shared/push.ts';
-import postgres from 'https://deno.land/x/postgresjs@v3.4.5/mod.js';
+import { createSql } from '../_shared/db.ts';
 
 const SERVICOS_SCHEMA = 'gestao_servicos';
 const SERVICOS_SYSTEM_SLUG = 'servicos';
@@ -44,7 +44,7 @@ Deno.serve(async (request) => {
     });
   }
 
-  const sql = postgres(databaseUrl, { prepare: false, max: 2, idle_timeout: 5, connect_timeout: 15 });
+  const sql = createSql(databaseUrl, { max: 2 });
 
   try {
     // Pendente ha mais de 24h e (nunca lembrado, ou ultimo lembrete tambem ja passou de 24h) --
