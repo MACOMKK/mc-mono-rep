@@ -177,19 +177,27 @@ async function adicionarNotaConversa({ conversaId, conteudo }) {
 // depois do envio ter sucesso.
 // midia (opcional): { base64, mimeType, nomeArquivo, tipo } -- tipo ('imagem'/'audio'/'documento')
 // e' usado so no otimismo da UI (bolha antes da confirmacao), o crm-api reclassifica pelo mimeType.
-async function enviarMensagemManual({ conversaId, texto, midia }) {
+// template (opcional): { name, language, components, previewTexto } -- montado por
+// EnviarTemplateDialog.jsx a partir de list_whatsapp_templates; usado pra enviar fora da janela
+// de 24h da API oficial (ver gate em send_atendimento_mensagem no crm-api).
+async function enviarMensagemManual({ conversaId, texto, midia, template }) {
   const textoTrim = texto?.trim() || '';
-  if (!conversaId || (!textoTrim && !midia)) {
-    throw new Error('Conversa e texto ou midia da mensagem sao obrigatorios.');
+  if (!conversaId || (!textoTrim && !midia && !template)) {
+    throw new Error('Conversa e texto, midia ou template da mensagem sao obrigatorios.');
   }
 
   const row = await crmApi.conversas_atendimento.sendMensagem({
     conversaId,
     texto: textoTrim,
     ...(midia ? { midia: { base64: midia.base64, mimeType: midia.mimeType, nomeArquivo: midia.nomeArquivo || null } } : {}),
+    ...(template ? { template } : {}),
   });
 
   return mapMensagemRow(row);
+}
+
+async function listTemplatesWhatsapp() {
+  return crmApi.conversas_atendimento.listTemplatesWhatsapp();
 }
 
 export const atendimentoApi = {
@@ -200,6 +208,7 @@ export const atendimentoApi = {
   assumirConversa,
   encerrarConversa,
   enviarMensagemManual,
+  listTemplatesWhatsapp,
   marcarConversaLida,
   vincularLead,
   updateTags,

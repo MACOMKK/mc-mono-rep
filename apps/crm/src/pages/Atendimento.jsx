@@ -38,6 +38,11 @@ const RETRY_MAX_TENTATIVAS = 2;
 const RETRY_DELAY_MS = 1500;
 const INTERVALO_MINIMO_FILA_MS = 1200;
 
+// Janela de atendimento da API oficial da Meta: sem mensagem do cliente ('entrada') nas ultimas
+// 24h, a API so aceita template aprovado -- texto/midia livre e' rejeitado pelo WhatsApp. Ver gate
+// equivalente (usandoTemplate) em send_atendimento_mensagem, supabase/functions/crm-api/index.ts.
+const JANELA_ATENDIMENTO_MS = 24 * 60 * 60 * 1000;
+
 function aguardar(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -139,7 +144,22 @@ export default function Atendimento() {
     queryKey: ['mensagens-atendimento', conversaId],
     queryFn: () => atendimentoApi.listMensagens(conversaId),
     enabled: Boolean(conversaId),
+    // Mesma rede de seguranca do Realtime usada em conversas-atendimento (RLS pode nao entregar
+    // o evento postgres_changes pra esse usuario) -- sem isso, mensagem recebida so aparecia com F5.
+    refetchInterval: 20000,
   });
+
+  // Ultima mensagem recebida do cliente ('entrada') na conversa aberta -- base da janela de 24h.
+  const ultimaMensagemClienteEm = useMemo(() => {
+    for (let i = mensagens.length - 1; i >= 0; i -= 1) {
+      if (mensagens[i].direcao === 'entrada') return mensagens[i].created_date;
+    }
+    return null;
+  }, [mensagens]);
+
+  const foraDaJanelaAtendimento = !(
+    ultimaMensagemClienteEm && Date.now() - new Date(ultimaMensagemClienteEm).getTime() < JANELA_ATENDIMENTO_MS
+  );
 
   const termoBuscaMensagens = useDebouncedValue(buscaMensagens, 300).trim();
 
@@ -269,7 +289,11 @@ export default function Atendimento() {
     queryClient.setQueryData(['mensagens-atendimento', conversaId], (old = []) =>
       old.filter((item) => item.id !== mensagemComErro.id),
     );
-    enviarMutation.mutate({ texto: mensagemComErro.conteudo, midia: mensagemComErro._midiaRetry || null });
+    enviarMutation.mutate({
+      texto: mensagemComErro.conteudo,
+      midia: mensagemComErro._midiaRetry || null,
+      template: mensagemComErro._templateRetry || null,
+    });
   };
 
   const handleJumpToBottom = () => {
@@ -287,15 +311,15 @@ export default function Atendimento() {
     // enviarComRetry tenta de novo (com backoff) falhas transitorias antes de desistir, e o
     // .then(() => aguardar(...)) so' libera o proximo item da fila depois do intervalo minimo --
     // as duas coisas juntas absorvem a instabilidade da Evolution API local sob rajada.
-    mutationFn: ({ texto, midia }) => {
+    mutationFn: ({ texto, midia, template }) => {
       const envio = envioEmFilaRef.current.then(
-        () => enviarComRetry({ conversaId, texto, midia }),
-        () => enviarComRetry({ conversaId, texto, midia }),
+        () => enviarComRetry({ conversaId, texto, midia, template }),
+        () => enviarComRetry({ conversaId, texto, midia, template }),
       );
       envioEmFilaRef.current = envio.catch(() => {}).then(() => aguardar(INTERVALO_MINIMO_FILA_MS));
       return envio;
     },
-    onMutate: ({ texto, midia }) => {
+    onMutate: ({ texto, midia, template }) => {
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
       // Insere a bolha otimista sincronamente, antes de qualquer coisa assincrona: um onMutate
@@ -320,6 +344,7 @@ export default function Atendimento() {
           midia_url: midia?.file ? URL.createObjectURL(midia.file) : '',
           midia_nome_arquivo: midia?.nomeArquivo || '',
           _midiaRetry: midia || null,
+          _templateRetry: template || null,
           created_date: new Date().toISOString(),
           pending: true,
         },
@@ -634,7 +659,11 @@ export default function Atendimento() {
             <MensagemComposer
               onSend={(texto) => enviarMutation.mutateAsync({ texto, midia: null })}
               onSendMidia={(midia) => enviarMutation.mutateAsync({ texto: '', midia })}
+              onSendTemplate={(template) =>
+                enviarMutation.mutateAsync({ texto: template.previewTexto, midia: null, template })
+              }
               disabled={conversaAtiva.status === 'encerrada'}
+              foraDaJanela={foraDaJanelaAtendimento}
             />
           </>
         )}

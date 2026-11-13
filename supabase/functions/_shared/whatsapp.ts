@@ -42,6 +42,83 @@ export async function sendWhatsappMessageMeta(phoneNumberId: string, token: stri
   return data;
 }
 
+// Lista os templates da conta (WhatsApp Manager -> Modelos de mensagem) -- usado pra tela de
+// atendimento oferecer so os ja aprovados, sem precisar codificar nome/estrutura de nenhum
+// template especifico aqui (a Meta devolve o texto com os placeholders {{1}}, {{2}}... e quem
+// monta os parametros a partir disso e' o chamador).
+export async function listWhatsappTemplatesMeta(wabaId: string, token: string) {
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://graph.facebook.com/v20.0/${wabaId}/message_templates?fields=name,language,status,category,components&limit=200`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS),
+      },
+    );
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error('Tempo limite excedido ao buscar templates do WhatsApp (Meta Cloud API).');
+    }
+    throw error;
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.message || 'Falha ao buscar templates do WhatsApp.');
+  }
+
+  return Array.isArray(data?.data) ? data.data : [];
+}
+
+export type WhatsappTemplateComponent = {
+  type: string;
+  parameters?: Array<Record<string, unknown>>;
+};
+
+// Envio generico de template: nome/idioma/components vem inteiramente de quem chama (montados a
+// partir do que listWhatsappTemplatesMeta devolveu + os valores digitados pelo atendente) -- esta
+// funcao nao conhece nenhum template especifico, so repassa pra Meta.
+export async function sendWhatsappTemplateMeta(
+  phoneNumberId: string,
+  token: string,
+  toPhone: string,
+  templateName: string,
+  languageCode: string,
+  components: WhatsappTemplateComponent[],
+) {
+  let response: Response;
+  try {
+    response = await fetch(`https://graph.facebook.com/v20.0/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: toPhone,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: { code: languageCode },
+          ...(components.length ? { components } : {}),
+        },
+      }),
+      signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error('Tempo limite excedido ao enviar template via WhatsApp (Meta Cloud API).');
+    }
+    throw error;
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.message || 'Falha ao enviar template via WhatsApp.');
+  }
+
+  return data;
+}
+
 // instanceUrl e' a base da API Evolution (ex.: http://localhost:8080, sem barra final);
 // instanceName identifica a sessao/QR conectada dentro dela.
 export async function sendWhatsappMessageEvolution(

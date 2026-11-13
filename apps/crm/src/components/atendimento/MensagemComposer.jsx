@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Mic, Paperclip, SendHorizontal, Smile, Sparkles, Square, Trash2, Zap } from 'lucide-react';
+import { FileText, Mic, Paperclip, SendHorizontal, Smile, Sparkles, Square, Trash2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import EnviarTemplateDialog from './EnviarTemplateDialog';
 
 // Conjunto curado (sem lib de picker nova) -- cobre as reacoes/expressoes mais comuns num chat de
 // atendimento. Pode crescer, mas o objetivo aqui e' cobertura pratica, nao o unicode completo.
@@ -65,11 +66,17 @@ const TEMPLATES_RESPOSTA_RAPIDA = [
   { titulo: 'Encerramento', texto: 'Fico à disposição! Qualquer outra dúvida, é só chamar por aqui.' },
 ];
 
-export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
+export default function MensagemComposer({ onSend, onSendMidia, onSendTemplate, disabled, foraDaJanela }) {
+  // foraDaJanela (API oficial Meta, janela de 24h sem mensagem do cliente): bloqueia texto/midia
+  // livre, mas o botao de template (onSendTemplate) continua liberado -- e' o unico tipo de envio
+  // que a Meta aceita fora da janela. disabled (conversa encerrada) bloqueia tudo, inclusive template.
+  const bloqueiaTexto = disabled || foraDaJanela;
   const [value, setValue] = useState('');
   const [enviandoAnexo, setEnviandoAnexo] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [enviandoTemplate, setEnviandoTemplate] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -131,7 +138,7 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
   };
 
   const startRecording = async () => {
-    if (disabled || isRecording) return;
+    if (bloqueiaTexto || isRecording) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = mimeTypeSuportadoParaGravacao();
@@ -178,7 +185,7 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
 
   const handleSend = () => {
     const trimmed = value.trim();
-    if (!trimmed || disabled) return;
+    if (!trimmed || bloqueiaTexto) return;
 
     // onSend (enviarMutation) ja atualiza a lista de mensagens otimisticamente em onMutate --
     // nao esperar a confirmacao do servidor aqui, senao o campo trava entre mensagens em
@@ -190,7 +197,7 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
   const handleAnexoSelecionado = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file || disabled) return;
+    if (!file || bloqueiaTexto) return;
 
     if (file.size > MIDIA_TAMANHO_MAXIMO_BYTES) {
       toast({
@@ -218,6 +225,19 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
     }
   };
 
+  const handleEnviarTemplate = async (template) => {
+    setEnviandoTemplate(true);
+    try {
+      await onSendTemplate(template);
+      setTemplateDialogOpen(false);
+    } catch {
+      // Erro ja e' tratado (toast) no onError da mutation em Atendimento.jsx -- so mantem o
+      // dialogo aberto pra o atendente poder tentar de novo sem reabrir e re-selecionar tudo.
+    } finally {
+      setEnviandoTemplate(false);
+    }
+  };
+
   const handleKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -240,7 +260,7 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
           variant="ghost"
           size="icon"
           className="h-8 w-8 shrink-0 text-muted-foreground"
-          disabled={disabled || enviandoAnexo || isRecording}
+          disabled={bloqueiaTexto || enviandoAnexo || isRecording}
           aria-label="Anexar arquivo"
           onClick={() => fileInputRef.current?.click()}
         >
@@ -253,7 +273,7 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
               variant="ghost"
               size="icon"
               className="h-8 w-8 shrink-0 text-muted-foreground"
-              disabled={disabled || isRecording}
+              disabled={bloqueiaTexto || isRecording}
               aria-label="Emoji"
             >
               <Smile className="h-4 w-4" />
@@ -281,7 +301,7 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
               variant="ghost"
               size="icon"
               className="h-8 w-8 shrink-0 text-muted-foreground"
-              disabled={disabled || isRecording}
+              disabled={bloqueiaTexto || isRecording}
               aria-label="Respostas rápidas"
             >
               <Zap className="h-4 w-4" />
@@ -300,6 +320,19 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        {onSendTemplate ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 text-muted-foreground"
+            disabled={disabled || isRecording}
+            aria-label="Enviar template"
+            onClick={() => setTemplateDialogOpen(true)}
+          >
+            <FileText className="h-4 w-4" />
+          </Button>
+        ) : null}
         {isRecording ? (
           <div className="flex flex-1 items-center gap-2 py-1.5 text-sm text-muted-foreground">
             <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" />
@@ -311,10 +344,14 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
             value={value}
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Digite uma mensagem..."
+            placeholder={
+              foraDaJanela && !disabled
+                ? 'Fora da janela de 24h — use o botão de template para enviar'
+                : 'Digite uma mensagem...'
+            }
             rows={1}
             className="min-h-0 flex-1 resize-none border-none bg-transparent py-1.5 shadow-none focus-visible:ring-0"
-            disabled={disabled}
+            disabled={bloqueiaTexto}
           />
         )}
       </div>
@@ -344,7 +381,7 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
           else if (value.trim()) handleSend();
           else startRecording();
         }}
-        disabled={disabled}
+        disabled={bloqueiaTexto}
         aria-label={isRecording ? 'Parar e enviar áudio' : value.trim() ? 'Enviar' : 'Gravar áudio'}
       >
         {isRecording ? (
@@ -355,6 +392,14 @@ export default function MensagemComposer({ onSend, onSendMidia, disabled }) {
           <Mic className="h-4 w-4" />
         )}
       </Button>
+      {onSendTemplate ? (
+        <EnviarTemplateDialog
+          open={templateDialogOpen}
+          onOpenChange={setTemplateDialogOpen}
+          onEnviar={handleEnviarTemplate}
+          isPending={enviandoTemplate}
+        />
+      ) : null}
     </div>
   );
 }

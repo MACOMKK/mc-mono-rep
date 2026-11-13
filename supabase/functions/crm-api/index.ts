@@ -16,8 +16,11 @@ import {
   sendWhatsappMessageEvolution,
   sendWhatsappMediaMeta,
   sendWhatsappMediaEvolution,
+  sendWhatsappTemplateMeta,
+  listWhatsappTemplatesMeta,
   extractWhatsappMessageId,
   type OutgoingMediaTipo,
+  type WhatsappTemplateComponent,
 } from '../_shared/whatsapp.ts';
 import { uploadMedia, base64ToBytes, tipoFromMime } from '../_shared/whatsappMedia.ts';
 import { remuxWebmOpusParaOggOpus } from '../_shared/webmToOggOpus.ts';
@@ -1412,6 +1415,46 @@ Deno.serve(async (request) => {
       return json({ success: true });
     }
 
+    // Lista os templates aprovados da conta Meta (WhatsApp Manager -> Modelos de mensagem) --
+    // usado pela tela de Atendimento pra oferecer envio de template fora da janela de 24h, sem
+    // precisar codificar nenhum template especifico aqui: nome/idioma/placeholders vem todos da
+    // Meta, o front monta os campos de variavel a partir disso.
+    if (action === 'list_whatsapp_templates') {
+      if (!supabaseUrl || !supabaseServiceRoleKey) {
+        return json({ error: 'Integracao de WhatsApp nao configurada (SUPABASE_SERVICE_ROLE_KEY ausente).' }, 500);
+      }
+      const metaCredenciais = await loadIntegracaoCredenciais('whatsapp_meta', {
+        supabaseUrl,
+        serviceRoleKey: supabaseServiceRoleKey,
+      });
+      const wabaId = typeof metaCredenciais?.business_account_id === 'string' ? metaCredenciais.business_account_id.trim() : '';
+      const token = typeof metaCredenciais?.access_token === 'string' ? metaCredenciais.access_token.trim() : '';
+      if (!wabaId || !token) {
+        return json(
+          {
+            error:
+              'Integracao whatsapp_meta sem business_account_id (WABA ID) ou access_token configurado -- adicione o campo business_account_id no Config da integracao.',
+          },
+          400,
+        );
+      }
+      try {
+        const templates = await listWhatsappTemplatesMeta(wabaId, token);
+        const aprovados = templates
+          .filter((template: Record<string, unknown>) => String(template.status).toUpperCase() === 'APPROVED')
+          .map((template: Record<string, unknown>) => ({
+            name: template.name,
+            language: template.language,
+            category: template.category,
+            components: template.components || [],
+          }));
+        return json({ rows: aprovados });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return json({ error: message }, 502);
+      }
+    }
+
     // Resposta manual do atendente na tela Atendimento -- diferente do create generico de
     // mensagens_atendimento (que so grava no banco), essa action manda de fato pelo WhatsApp
     // antes de gravar, reaproveitando a mesma logica de envio do whatsapp-api (resposta da IA).
@@ -1427,8 +1470,24 @@ Deno.serve(async (request) => {
         typeof midiaPayload?.nomeArquivo === 'string' && midiaPayload.nomeArquivo ? midiaPayload.nomeArquivo : null;
       const temMidia = Boolean(midiaBase64 && midiaMimeType);
 
-      if (!conversaId || (!texto && !temMidia)) {
-        return json({ error: 'Conversa e texto ou midia da mensagem sao obrigatorios.' }, 400);
+      // Envio de template (fora da janela de 24h ou pra iniciar conversa) -- nome/idioma/
+      // components vem prontos do front (montados a partir de list_whatsapp_templates + os
+      // valores digitados pelo atendente), essa action so repassa pra Meta.
+      const templatePayload = body.template as
+        | { name?: unknown; language?: unknown; components?: unknown; previewTexto?: unknown }
+        | undefined;
+      const templateName = typeof templatePayload?.name === 'string' ? templatePayload.name : '';
+      const templateLanguage = typeof templatePayload?.language === 'string' ? templatePayload.language : '';
+      const templateComponents: WhatsappTemplateComponent[] = Array.isArray(templatePayload?.components)
+        ? (templatePayload.components as WhatsappTemplateComponent[])
+        : [];
+      const templatePreviewTexto =
+        typeof templatePayload?.previewTexto === 'string' ? templatePayload.previewTexto : '';
+      const usandoTemplate = Boolean(templateName && templateLanguage);
+      const conteudoFinal = texto || templatePreviewTexto;
+
+      if (!conversaId || (!texto && !temMidia && !usandoTemplate)) {
+        return json({ error: 'Conversa e texto, midia ou template da mensagem sao obrigatorios.' }, 400);
       }
 
       const conversa = await ensureEntityAccess('conversas_atendimento', conversaId, access, collaborator);
@@ -1492,9 +1551,9 @@ Deno.serve(async (request) => {
       const metaCredenciais = evolutionCredenciais
         ? null
         : await loadIntegracaoCredenciais('whatsapp_meta', { supabaseUrl, serviceRoleKey: supabaseServiceRoleKey });
-      const whatsappToken = typeof metaCredenciais?.access_token === 'string' ? metaCredenciais.access_token : null;
+      const whatsappToken = typeof metaCredenciais?.access_token === 'string' ? metaCredenciais.access_token.trim() : null;
       const whatsappPhoneNumberId =
-        typeof metaCredenciais?.phone_number_id === 'string' ? metaCredenciais.phone_number_id : null;
+        typeof metaCredenciais?.phone_number_id === 'string' ? metaCredenciais.phone_number_id.trim() : null;
 
       // Log de tempo decorrido por envio -- pensado pra diagnosticar hangs da Evolution API local
       // (ver GUIA_TESTE_WHATSAPP_EVOLUTION_LOCAL.md): se o tempo aqui for alto mas o fetch em
@@ -1504,8 +1563,8 @@ Deno.serve(async (request) => {
 
       // API oficial da Meta: texto livre so vale ate 24h depois da ultima mensagem do cliente;
       // fora disso (inclusive conversa iniciada pelo CRM, sem mensagem do cliente) exige template
-      // aprovado, que ainda nao suportamos. Barra aqui com mensagem clara em vez do erro cru da Meta.
-      if (provedor === 'meta') {
+      // aprovado (usandoTemplate) -- barra aqui com mensagem clara em vez do erro cru da Meta.
+      if (provedor === 'meta' && !usandoTemplate) {
         const [janela] = await sql.unsafe(
           `select exists (
              select 1 from ${CRM_SCHEMA}.mensagens_atendimento
@@ -1517,7 +1576,7 @@ Deno.serve(async (request) => {
           return json(
             {
               error:
-                'Na API oficial do WhatsApp (Meta), so e possivel enviar texto livre ate 24h apos a ultima mensagem do cliente. Para iniciar ou retomar a conversa e preciso um template aprovado, que ainda nao e suportado.',
+                'Na API oficial do WhatsApp (Meta), so e possivel enviar texto livre ate 24h apos a ultima mensagem do cliente. Para iniciar ou retomar a conversa, use o botao de template.',
             },
             400,
           );
@@ -1546,6 +1605,15 @@ Deno.serve(async (request) => {
                 toPhone,
                 texto,
               );
+        } else if (usandoTemplate && whatsappToken && whatsappPhoneNumberId) {
+          sendResult = await sendWhatsappTemplateMeta(
+            whatsappPhoneNumberId,
+            whatsappToken,
+            toPhone,
+            templateName,
+            templateLanguage,
+            templateComponents,
+          );
         } else if (whatsappToken && whatsappPhoneNumberId) {
           sendResult = uploadedMedia
             ? await sendWhatsappMediaMeta(
@@ -1577,13 +1645,16 @@ Deno.serve(async (request) => {
         direcao: 'saida',
         autor: 'humano',
         colaborador_id: collaborator?.id ?? null,
-        conteudo: texto,
+        conteudo: conteudoFinal,
         // Nao usar JSON.stringify aqui: o driver (postgres.js) ja serializa objetos JS para o
         // "::jsonb" (ver placeholderFor) automaticamente -- stringificar a mao faz o Postgres
         // guardar um JSON *scalar* string (texto duplamente encodado) em vez de um objeto, e
         // ->>'...' nunca mais encontra a chave depois (bug real: status de entrega/leitura
         // nunca avancava para mensagens enviadas manualmente pelo chat).
-        metadados: sentMessageId ? { whatsapp_message_id: sentMessageId } : {},
+        metadados: {
+          ...(sentMessageId ? { whatsapp_message_id: sentMessageId } : {}),
+          ...(usandoTemplate ? { whatsapp_template: templateName } : {}),
+        },
         tipo_conteudo: uploadedMedia?.tipo ?? 'texto',
         midia_url: uploadedMedia?.url ?? null,
         midia_mime_type: uploadedMedia?.mimeType ?? null,
@@ -1592,7 +1663,7 @@ Deno.serve(async (request) => {
       const insertQuery = buildInsertQuery(CRM_SCHEMA, 'mensagens_atendimento', insertPayload);
       const previewBase = uploadedMedia
         ? `[${uploadedMedia.tipo === 'imagem' ? 'Imagem' : uploadedMedia.tipo === 'audio' ? 'Áudio' : 'Documento'}]${texto ? ` ${texto}` : ''}`
-        : texto;
+        : conteudoFinal;
       const preview = previewBase.length > 140 ? `${previewBase.slice(0, 139)}…` : previewBase;
 
       // A mensagem ja foi entregue pelo WhatsApp acima -- se o registro na conversa falhar, tenta

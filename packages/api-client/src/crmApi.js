@@ -328,6 +328,10 @@ export const crmApi = {
       const result = await invokeCrm({ action: 'transferir_atendimento', ...payload });
       return result.row || null;
     },
+    async listTemplatesWhatsapp() {
+      const result = await invokeCrm({ action: 'list_whatsapp_templates' });
+      return result.rows || [];
+    },
     // payload: { telefone } | { leadId } | { clienteId } -- cria ou reabre a conversa do numero.
     async iniciar(payload) {
       const result = await invokeCrm({ action: 'iniciar_conversa_atendimento', ...payload });

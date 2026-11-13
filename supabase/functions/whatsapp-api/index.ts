@@ -561,8 +561,9 @@ serve(async (req) => {
         continue;
       }
 
-      const metaToken = typeof metaCredenciais?.access_token === 'string' ? metaCredenciais.access_token : null;
-      const metaPhoneNumberId = typeof metaCredenciais?.phone_number_id === 'string' ? metaCredenciais.phone_number_id : null;
+      const metaToken = typeof metaCredenciais?.access_token === 'string' ? metaCredenciais.access_token.trim() : null;
+      const metaPhoneNumberId =
+        typeof metaCredenciais?.phone_number_id === 'string' ? metaCredenciais.phone_number_id.trim() : null;
       const canSendViaMeta = provider === 'meta' && Boolean(metaToken) && Boolean(metaPhoneNumberId);
       const canSendViaEvolution =
         provider === 'evolution' &&
