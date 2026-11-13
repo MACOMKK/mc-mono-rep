@@ -1455,6 +1455,25 @@ Deno.serve(async (request) => {
       }
     }
 
+    // Qual canal esta ativo pro envio de WhatsApp agora -- mesma regra de prioridade usada em
+    // send_atendimento_mensagem (evolution tem precedencia se configurada, senao meta). Usado
+    // pela tela de Atendimento pra mostrar um selo (API oficial/Evolution) deixando visivel qual
+    // canal esta conectado, sem expor nenhuma credencial.
+    if (action === 'get_whatsapp_provider') {
+      if (!supabaseUrl || !supabaseServiceRoleKey) {
+        return json({ error: 'Integracao de WhatsApp nao configurada (SUPABASE_SERVICE_ROLE_KEY ausente).' }, 500);
+      }
+      const evolutionCredenciais = await loadIntegracaoCredenciais('whatsapp_evolution', {
+        supabaseUrl,
+        serviceRoleKey: supabaseServiceRoleKey,
+      });
+      const metaCredenciais = evolutionCredenciais
+        ? null
+        : await loadIntegracaoCredenciais('whatsapp_meta', { supabaseUrl, serviceRoleKey: supabaseServiceRoleKey });
+      const provider = evolutionCredenciais ? 'evolution' : metaCredenciais ? 'meta' : null;
+      return json({ provider });
+    }
+
     // Resposta manual do atendente na tela Atendimento -- diferente do create generico de
     // mensagens_atendimento (que so grava no banco), essa action manda de fato pelo WhatsApp
     // antes de gravar, reaproveitando a mesma logica de envio do whatsapp-api (resposta da IA).

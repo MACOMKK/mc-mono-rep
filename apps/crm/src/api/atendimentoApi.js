@@ -200,6 +200,12 @@ async function listTemplatesWhatsapp() {
   return crmApi.conversas_atendimento.listTemplatesWhatsapp();
 }
 
+// Qual canal esta ativo (Meta API oficial ou Evolution) -- usado pra mostrar um selo no cabecalho
+// do Atendimento deixando visivel qual integracao esta conectada hoje.
+async function getProviderWhatsapp() {
+  return crmApi.conversas_atendimento.getProviderWhatsapp();
+}
+
 export const atendimentoApi = {
   listConversas,
   iniciarConversa,
@@ -209,6 +215,7 @@ export const atendimentoApi = {
   encerrarConversa,
   enviarMensagemManual,
   listTemplatesWhatsapp,
+  getProviderWhatsapp,
   marcarConversaLida,
   vincularLead,
   updateTags,

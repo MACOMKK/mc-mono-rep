@@ -332,6 +332,10 @@ export const crmApi = {
       const result = await invokeCrm({ action: 'list_whatsapp_templates' });
       return result.rows || [];
     },
+    async getProviderWhatsapp() {
+      const result = await invokeCrm({ action: 'get_whatsapp_provider' });
+      return result.provider || null;
+    },
     // payload: { telefone } | { leadId } | { clienteId } -- cria ou reabre a conversa do numero.
     async iniciar(payload) {
       const result = await invokeCrm({ action: 'iniciar_conversa_atendimento', ...payload });

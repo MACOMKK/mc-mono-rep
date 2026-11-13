@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { atendimentoApi } from '@/api/atendimentoApi';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -135,6 +136,15 @@ export default function Atendimento() {
     // Rede de seguranca para o Realtime: conversa de contato novo (sem lead/cliente) pode nao
     // gerar evento postgres_changes para o usuario (RLS), e o card so aparecia com F5.
     refetchInterval: 20000,
+  });
+
+  // Canal ativo (Meta API oficial ou Evolution) -- so' muda quando o admin troca a integracao em
+  // Configuracoes, entao staleTime longo evita refetch toda hora; mostrado como selo no cabecalho
+  // do chat pra deixar visivel qual API esta conectada.
+  const { data: providerWhatsapp } = useQuery({
+    queryKey: ['whatsapp-provider-ativo'],
+    queryFn: () => atendimentoApi.getProviderWhatsapp(),
+    staleTime: 5 * 60 * 1000,
   });
 
   const conversaAtiva = conversas.find((item) => item.id === conversaId) || null;
@@ -531,6 +541,18 @@ export default function Atendimento() {
                 </div>
                 {conversaAtiva.sla_primeira_resposta_em && !conversaAtiva.primeira_resposta_humana_em ? (
                   <SlaPendenteBadge desde={conversaAtiva.sla_primeira_resposta_em} className="shrink-0" />
+                ) : null}
+                {providerWhatsapp ? (
+                  <Badge
+                    variant="outline"
+                    className={
+                      providerWhatsapp === 'meta'
+                        ? 'shrink-0 rounded-full border-blue-200 bg-blue-50 px-2 py-0 text-[10px] font-semibold text-blue-700'
+                        : 'shrink-0 rounded-full border-amber-200 bg-amber-50 px-2 py-0 text-[10px] font-semibold text-amber-700'
+                    }
+                  >
+                    {providerWhatsapp === 'meta' ? 'API oficial (Meta)' : 'Evolution API'}
+                  </Badge>
                 ) : null}
               </div>
               <div className="flex shrink-0 gap-2">
