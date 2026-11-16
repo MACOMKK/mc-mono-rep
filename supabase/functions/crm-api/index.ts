@@ -1533,6 +1533,32 @@ Deno.serve(async (request) => {
         return json({ error: 'Integracao de WhatsApp nao configurada (SUPABASE_SERVICE_ROLE_KEY ausente).' }, 500);
       }
 
+      // "Responder" uma mensagem (botao na bolha do chat, MensagemBubble.jsx) -- so aceita id de
+      // mensagem da MESMA conversa (escopo por conversaId, nao confia em nenhum outro dado do
+      // payload) pra nunca deixar citar/expor conteudo de uma conversa que o atendente nao tem
+      // acesso. "responde_a" (conteudo/autor) fica gravado sempre, pra tela mostrar a citacao
+      // independente do provedor; "whatsapp_message_id" (wamid) so existe quando a mensagem
+      // original foi recebida/enviada apos essa coluna existir, e so e' usado com a Meta (ver
+      // sendWhatsapp*Meta em _shared/whatsapp.ts) -- a Evolution API nao tem um "quoted" simples
+      // o bastante pra montar aqui sem o remoteJid/fromMe original, entao fica so' visual nessa
+      // conversa (sem citacao nativa no WhatsApp do cliente).
+      const responderMensagemId = typeof body.responderMensagemId === 'string' ? body.responderMensagemId : '';
+      let respondeA: { id: string; conteudo: string; autor: string } | null = null;
+      let contextMessageId: string | null = null;
+      if (responderMensagemId) {
+        const [mensagemOriginal] = await sql.unsafe(
+          `select id, conteudo, autor, metadados->>'whatsapp_message_id' as whatsapp_message_id
+           from ${CRM_SCHEMA}.mensagens_atendimento
+           where id = $1 and conversa_id = $2
+           limit 1;`,
+          [responderMensagemId, conversaId],
+        );
+        if (mensagemOriginal) {
+          respondeA = { id: mensagemOriginal.id, conteudo: mensagemOriginal.conteudo, autor: mensagemOriginal.autor };
+          contextMessageId = mensagemOriginal.whatsapp_message_id || null;
+        }
+      }
+
       // Mídia de saida reaproveita o mesmo bucket/upload de quem recebe (uploadMedia, ver
       // whatsappMedia.ts) -- precisa da url publica *antes* de enviar porque os dois provedores
       // (Meta e Evolution, ver sendWhatsappMediaMeta/Evolution) buscam o anexo por url, nenhum
@@ -1646,6 +1672,7 @@ Deno.serve(async (request) => {
             templateName,
             templateLanguage,
             templateComponents,
+            contextMessageId,
           );
         } else if (whatsappToken && whatsappPhoneNumberId) {
           sendResult = uploadedMedia
@@ -1657,8 +1684,9 @@ Deno.serve(async (request) => {
                 uploadedMedia.url,
                 uploadedMedia.nomeArquivo,
                 texto,
+                contextMessageId,
               )
-            : await sendWhatsappMessageMeta(whatsappPhoneNumberId, whatsappToken, toPhone, texto);
+            : await sendWhatsappMessageMeta(whatsappPhoneNumberId, whatsappToken, toPhone, texto, contextMessageId);
         } else {
           return json({ error: 'Nenhum provedor de WhatsApp configurado (Meta ou Evolution API).' }, 400);
         }
@@ -1687,6 +1715,7 @@ Deno.serve(async (request) => {
         metadados: {
           ...(sentMessageId ? { whatsapp_message_id: sentMessageId } : {}),
           ...(usandoTemplate ? { whatsapp_template: templateName } : {}),
+          ...(respondeA ? { responde_a: respondeA } : {}),
         },
         tipo_conteudo: uploadedMedia?.tipo ?? 'texto',
         midia_url: uploadedMedia?.url ?? null,

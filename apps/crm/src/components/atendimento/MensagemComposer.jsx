@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { FileText, Mic, Paperclip, SendHorizontal, Smile, Sparkles, Square, Trash2, Zap } from 'lucide-react';
+import { Clock, FileText, Lock, Mic, Paperclip, SendHorizontal, Smile, Sparkles, Square, Trash2, X, Zap } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
@@ -66,13 +67,34 @@ const TEMPLATES_RESPOSTA_RAPIDA = [
   { titulo: 'Encerramento', texto: 'Fico à disposição! Qualquer outra dúvida, é só chamar por aqui.' },
 ];
 
-export default function MensagemComposer({ onSend, onSendMidia, onSendTemplate, disabled, foraDaJanela }) {
+const RESPONDE_A_AUTOR_LABEL = {
+  ia: 'IA',
+  humano: 'Você',
+  cliente: 'Cliente',
+};
+
+export default function MensagemComposer({
+  onSend,
+  onSendMidia,
+  onSendTemplate,
+  disabled,
+  foraDaJanela,
+  providerWhatsapp,
+  respondendoA,
+  onCancelarResposta,
+}) {
   // foraDaJanela (API oficial Meta, janela de 24h sem mensagem do cliente): bloqueia texto/midia
   // livre, mas o botao de template (onSendTemplate) continua liberado -- e' o unico tipo de envio
   // que a Meta aceita fora da janela. disabled (conversa encerrada) bloqueia tudo, inclusive template.
   const bloqueiaTexto = disabled || foraDaJanela;
   const [value, setValue] = useState('');
   const [enviandoAnexo, setEnviandoAnexo] = useState(false);
+  // Imagem selecionada aguardando confirmacao (legenda opcional) antes do envio -- WhatsApp
+  // suporta legenda em imagem (campo "texto" no envio de midia, ver send_atendimento_mensagem
+  // no crm-api), mas so faz sentido pedir pro atendente digitar antes de mandar, nao depois.
+  // Audio/documento continuam enviando direto, sem essa etapa.
+  const [anexoPendente, setAnexoPendente] = useState(null);
+  const [legendaAnexo, setLegendaAnexo] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
@@ -183,6 +205,14 @@ export default function MensagemComposer({ onSend, onSendMidia, onSendTemplate, 
     };
   }, []);
 
+  // Revoga o object URL anterior sempre que troca/some o anexo pendente -- a ordem de cleanup
+  // do React (antes do proximo efeito, e no unmount) garante que isso cobre as duas situacoes.
+  useEffect(() => {
+    return () => {
+      if (anexoPendente?.previewUrl) URL.revokeObjectURL(anexoPendente.previewUrl);
+    };
+  }, [anexoPendente]);
+
   const handleSend = () => {
     const trimmed = value.trim();
     if (!trimmed || bloqueiaTexto) return;
@@ -208,18 +238,55 @@ export default function MensagemComposer({ onSend, onSendMidia, onSendTemplate, 
       return;
     }
 
+    const tipo = tipoFromMime(file.type);
+    const midia = {
+      file,
+      base64: await fileParaBase64(file).catch(() => null),
+      mimeType: file.type || 'application/octet-stream',
+      nomeArquivo: file.name,
+      tipo,
+    };
+    if (midia.base64 === null) {
+      toast({
+        title: 'Falha ao preparar o arquivo',
+        description: 'Tente selecionar o arquivo novamente.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Imagem para' aqui pro atendente poder digitar uma legenda antes de enviar -- ver
+    // handleEnviarAnexoPendente. Audio/documento continuam indo direto, sem essa etapa.
+    if (tipo === 'imagem') {
+      setAnexoPendente({ ...midia, previewUrl: URL.createObjectURL(file) });
+      setLegendaAnexo('');
+      return;
+    }
+
     setEnviandoAnexo(true);
     try {
-      const base64 = await fileParaBase64(file);
       // onSendMidia (enviarMutation) tambem ja atualiza a bolha otimista em onMutate -- mesmo
       // padrao de handleSend, so que aqui espera o FileReader (assincrono) antes de disparar.
-      await onSendMidia({
-        file,
-        base64,
-        mimeType: file.type || 'application/octet-stream',
-        nomeArquivo: file.name,
-        tipo: tipoFromMime(file.type),
-      }).catch(() => {});
+      await onSendMidia(midia, '').catch(() => {});
+    } finally {
+      setEnviandoAnexo(false);
+    }
+  };
+
+  const handleCancelarAnexoPendente = () => {
+    setAnexoPendente(null);
+    setLegendaAnexo('');
+  };
+
+  const handleEnviarAnexoPendente = async () => {
+    if (!anexoPendente) return;
+    const { previewUrl, ...midia } = anexoPendente;
+    const legenda = legendaAnexo.trim();
+    setAnexoPendente(null);
+    setLegendaAnexo('');
+    setEnviandoAnexo(true);
+    try {
+      await onSendMidia(midia, legenda).catch(() => {});
     } finally {
       setEnviandoAnexo(false);
     }
@@ -245,8 +312,86 @@ export default function MensagemComposer({ onSend, onSendMidia, onSendTemplate, 
     }
   };
 
+  useEffect(() => {
+    if (respondendoA) textareaRef.current?.focus();
+  }, [respondendoA]);
+
   return (
-    <div className="flex items-center gap-2 border-t border-border bg-card p-3">
+    <div className="flex flex-col border-t border-border bg-card">
+      {/* Janela de 24h so existe na API oficial (Meta) -- Evolution nao tem essa restricao (ver
+          CLAUDE.md do crm), por isso o aviso so aparece com esse provedor ativo. Antes disso a
+          unica pista de "fechada" era o placeholder do textarea, que ninguem notava; agora fica
+          visivel tambem quando a janela esta ABERTA, pra nao parecer que a informacao desapareceu. */}
+      {providerWhatsapp === 'meta' && !disabled ? (
+        <div
+          className={cn(
+            'flex items-center gap-1.5 border-b px-3 py-1.5 text-[11px] font-medium',
+            foraDaJanela
+              ? 'border-amber-200 bg-amber-50 text-amber-800'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-800',
+          )}
+        >
+          {foraDaJanela ? <Lock className="h-3 w-3 shrink-0" /> : <Clock className="h-3 w-3 shrink-0" />}
+          <span>
+            {foraDaJanela
+              ? 'Janela de 24h fechada — envie um template aprovado para retomar a conversa'
+              : 'Janela de 24h aberta — pode responder normalmente até 24h após a última mensagem do cliente'}
+          </span>
+        </div>
+      ) : null}
+      {anexoPendente ? (
+        <div className="flex items-end gap-3 border-b border-border p-3">
+          <img
+            src={anexoPendente.previewUrl}
+            alt={anexoPendente.nomeArquivo || 'Imagem'}
+            className="h-20 w-20 shrink-0 rounded-md border border-border object-cover"
+          />
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <Textarea
+              value={legendaAnexo}
+              onChange={(event) => setLegendaAnexo(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  handleEnviarAnexoPendente();
+                }
+              }}
+              placeholder="Adicionar uma legenda (opcional)..."
+              rows={1}
+              autoFocus
+              className="min-h-0 resize-none"
+            />
+            <div className="flex items-center justify-end gap-2">
+              <Button type="button" variant="ghost" size="sm" disabled={enviandoAnexo} onClick={handleCancelarAnexoPendente}>
+                Cancelar
+              </Button>
+              <Button type="button" size="sm" disabled={enviandoAnexo} onClick={handleEnviarAnexoPendente}>
+                <SendHorizontal className="mr-1.5 h-3.5 w-3.5" />
+                Enviar
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {respondendoA ? (
+        <div className="flex items-center gap-2 border-b border-border px-3 pt-2.5">
+          <div className="min-w-0 flex-1 rounded-md border-l-2 border-primary bg-muted px-2.5 py-1.5 text-xs">
+            <p className="font-semibold text-primary">{RESPONDE_A_AUTOR_LABEL[respondendoA.autor] || 'Mensagem'}</p>
+            <p className="truncate text-muted-foreground">{respondendoA.conteudo || '[Mídia]'}</p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 text-muted-foreground"
+            aria-label="Cancelar resposta"
+            onClick={onCancelarResposta}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : null}
+      <div className="flex items-center gap-2 p-3">
       <div className="flex min-h-11 flex-1 items-center gap-1 rounded-full bg-muted pl-1.5 pr-3">
         <input
           ref={fileInputRef}
@@ -392,6 +537,7 @@ export default function MensagemComposer({ onSend, onSendMidia, onSendTemplate, 
           <Mic className="h-4 w-4" />
         )}
       </Button>
+      </div>
       {onSendTemplate ? (
         <EnviarTemplateDialog
           open={templateDialogOpen}

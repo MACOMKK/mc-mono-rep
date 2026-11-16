@@ -111,6 +111,10 @@ type IncomingMessage = {
   fromPhone: string;
   text: string;
   media?: IncomingMedia;
+  // Nome do contato tal como o proprio WhatsApp manda (sem edicao nossa) -- Meta: contacts[].profile.name
+  // casado por wa_id; Evolution/Baileys: pushName no proprio objeto da mensagem. Usado so' como
+  // fallback de exibicao pra contato ainda sem lead/cliente vinculado, ver contato_nome na migration.
+  contactName?: string | null;
 };
 
 function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
@@ -122,12 +126,16 @@ function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
     for (const change of changes) {
       const value = change?.value;
       const waMessages = Array.isArray(value?.messages) ? value.messages : [];
+      const waContacts = Array.isArray(value?.contacts) ? value.contacts : [];
       for (const message of waMessages) {
         if (!message?.id || !message?.from) continue;
 
+        const contactName =
+          waContacts.find((contact: any) => contact?.wa_id === message.from)?.profile?.name || null;
+
         const text = message?.text?.body;
         if (typeof text === 'string') {
-          messages.push({ messageId: message.id, fromPhone: message.from, text });
+          messages.push({ messageId: message.id, fromPhone: message.from, text, contactName });
           continue;
         }
 
@@ -139,6 +147,7 @@ function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
             messageId: message.id,
             fromPhone: message.from,
             text: mediaNode?.caption || '',
+            contactName,
             media: {
               tipo: mediaTipo,
               mimeType: mediaNode.mime_type || 'application/octet-stream',
@@ -172,10 +181,11 @@ function extractIncomingMessagesEvolution(payload: any): IncomingMessage[] {
 
     const fromPhone = String(key.remoteJid).split('@')[0];
     const msg = entry?.message;
+    const contactName = typeof entry?.pushName === 'string' && entry.pushName.trim() ? entry.pushName.trim() : null;
 
     const text = msg?.conversation ?? msg?.extendedTextMessage?.text;
     if (typeof text === 'string' && text) {
-      messages.push({ messageId: String(key.id), fromPhone, text });
+      messages.push({ messageId: String(key.id), fromPhone, text, contactName });
       continue;
     }
 
@@ -191,6 +201,7 @@ function extractIncomingMessagesEvolution(payload: any): IncomingMessage[] {
         messageId: String(key.id),
         fromPhone,
         text: mediaNode.node?.caption || '',
+        contactName,
         media: {
           tipo: mediaNode.tipo,
           mimeType: mediaNode.node?.mimetype || 'application/octet-stream',
@@ -441,12 +452,24 @@ serve(async (req) => {
       }
 
       const [conversaExistente] = await sql`
-        select id, status from gestao_crm.conversas_atendimento
+        select id, status, contato_nome from gestao_crm.conversas_atendimento
         where telefone_normalizado = ${telefoneNormalizado}
         order by criado_em desc
         limit 1
       `;
       let conversa = conversaExistente ?? null;
+
+      // Atualiza o nome se a conversa ainda nao tinha (ex.: primeira mensagem veio sem
+      // contacts[]/pushName) ou se o WhatsApp mandou um nome diferente do que tinhamos --
+      // nunca sobrescreve com null quando ja' tinhamos um nome.
+      if (conversa && incoming.contactName && incoming.contactName !== conversa.contato_nome) {
+        await sql`
+          update gestao_crm.conversas_atendimento
+          set contato_nome = ${incoming.contactName}
+          where id = ${conversa.id}
+        `;
+        conversa = { ...conversa, contato_nome: incoming.contactName };
+      }
 
       // Conversa encerrada do mesmo telefone e' reaberta (mesma linha/mesma thread de
       // mensagens) em vez de criar uma conversa nova -- evita duplicar o contato na lista
@@ -486,9 +509,9 @@ serve(async (req) => {
             `;
 
         const [novaConversa] = await sql`
-          insert into gestao_crm.conversas_atendimento (telefone_normalizado, lead_id, cliente_id, status)
-          values (${telefoneNormalizado}, ${lead?.id ?? null}, ${cliente?.id ?? null}, 'aberta')
-          returning id, status
+          insert into gestao_crm.conversas_atendimento (telefone_normalizado, lead_id, cliente_id, status, contato_nome)
+          values (${telefoneNormalizado}, ${lead?.id ?? null}, ${cliente?.id ?? null}, 'aberta', ${incoming.contactName ?? null})
+          returning id, status, contato_nome
         `;
         conversa = novaConversa;
       }

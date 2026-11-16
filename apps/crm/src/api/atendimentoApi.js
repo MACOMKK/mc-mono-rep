@@ -19,7 +19,10 @@ function mapConversaRow(row = {}) {
     ultima_mensagem_preview: row.ultima_mensagem_preview || '',
     nao_lida: Boolean(row.nao_lida),
     tags: row.tags || [],
-    cliente_nome: row.cliente?.nome || '',
+    // Prioridade: nome do cliente/lead vinculado (cadastro nosso) > nome que o proprio
+    // WhatsApp mandou (contato_nome, so' existe quando ainda nao ha vinculo) > nenhum (cai
+    // pro telefone na tela, ver ConversaListItem.jsx/Atendimento.jsx).
+    cliente_nome: row.cliente?.nome || row.lead?.nome || row.contato_nome || '',
     responsavel_id: row.lead?.responsavel_id || '',
     atendente_id: row.atendente_id || '',
     atendente_nome: row.atendente_nome || '',
@@ -38,6 +41,9 @@ function mapMensagemRow(row = {}) {
     conteudo: row.conteudo || '',
     status: row.status || 'enviado',
     metadados: row.metadados || {},
+    // Mensagem que esta sendo respondida (botao "Responder" na bolha, MensagemBubble.jsx) --
+    // gravado pelo crm-api em metadados.responde_a, ver send_atendimento_mensagem.
+    responde_a: row.metadados?.responde_a || null,
     tipo_conteudo: row.tipo_conteudo || 'texto',
     midia_url: row.midia_url || '',
     midia_mime_type: row.midia_mime_type || '',
@@ -180,7 +186,11 @@ async function adicionarNotaConversa({ conversaId, conteudo }) {
 // template (opcional): { name, language, components, previewTexto } -- montado por
 // EnviarTemplateDialog.jsx a partir de list_whatsapp_templates; usado pra enviar fora da janela
 // de 24h da API oficial (ver gate em send_atendimento_mensagem no crm-api).
-async function enviarMensagemManual({ conversaId, texto, midia, template }) {
+// responderMensagemId (opcional): id local (mensagens_atendimento.id) da mensagem que o
+// atendente clicou em "Responder" (botao na bolha, MensagemBubble.jsx) -- o crm-api resolve o
+// conteudo/autor pra gravar a citacao e, se a mensagem original tiver whatsapp_message_id,
+// manda como reply nativo pra Meta (ver send_atendimento_mensagem).
+async function enviarMensagemManual({ conversaId, texto, midia, template, responderMensagemId }) {
   const textoTrim = texto?.trim() || '';
   if (!conversaId || (!textoTrim && !midia && !template)) {
     throw new Error('Conversa e texto, midia ou template da mensagem sao obrigatorios.');
@@ -191,6 +201,7 @@ async function enviarMensagemManual({ conversaId, texto, midia, template }) {
     texto: textoTrim,
     ...(midia ? { midia: { base64: midia.base64, mimeType: midia.mimeType, nomeArquivo: midia.nomeArquivo || null } } : {}),
     ...(template ? { template } : {}),
+    ...(responderMensagemId ? { responderMensagemId } : {}),
   });
 
   return mapMensagemRow(row);

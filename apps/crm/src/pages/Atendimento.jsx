@@ -155,6 +155,9 @@ export default function Atendimento() {
   const [buscaMensagens, setBuscaMensagens] = useState('');
   const [resultadoAtual, setResultadoAtual] = useState(0);
   const [novaConversaAberta, setNovaConversaAberta] = useState(false);
+  // Mensagem selecionada pelo botao "Responder" (MensagemBubble.jsx) -- preview fica no
+  // composer (MensagemComposer.jsx) at o envio ou cancelamento.
+  const [respondendoA, setRespondendoA] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const bottomRef = useRef(null);
   const scrollAreaRef = useRef(null);
@@ -235,6 +238,16 @@ export default function Atendimento() {
       setBuscaMensagens('');
     }
   }, [conversaId, buscaMensagensAberta]);
+
+  useEffect(() => {
+    setRespondendoA(null);
+  }, [conversaId]);
+
+  // Clique na citacao dentro de uma bolha (CitacaoRespondida, MensagemBubble.jsx) -- rola pra
+  // mensagem original se ela ainda estiver carregada na lista (nao pagina/busca no servidor).
+  const focarMensagemPorId = (mensagemId) => {
+    mensagemRefs.current.get(mensagemId)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
 
   useEffect(() => {
     if (!resultadoFocado) return;
@@ -348,6 +361,8 @@ export default function Atendimento() {
       texto: mensagemComErro.conteudo,
       midia: mensagemComErro._midiaRetry || null,
       template: mensagemComErro._templateRetry || null,
+      respondeA: mensagemComErro.responde_a || null,
+      responderMensagemId: mensagemComErro.responde_a?.id || null,
     });
   };
 
@@ -366,15 +381,15 @@ export default function Atendimento() {
     // enviarComRetry tenta de novo (com backoff) falhas transitorias antes de desistir, e o
     // .then(() => aguardar(...)) so' libera o proximo item da fila depois do intervalo minimo --
     // as duas coisas juntas absorvem a instabilidade da Evolution API local sob rajada.
-    mutationFn: ({ texto, midia, template }) => {
+    mutationFn: ({ texto, midia, template, responderMensagemId }) => {
       const envio = envioEmFilaRef.current.then(
-        () => enviarComRetry({ conversaId, texto, midia, template }),
-        () => enviarComRetry({ conversaId, texto, midia, template }),
+        () => enviarComRetry({ conversaId, texto, midia, template, responderMensagemId }),
+        () => enviarComRetry({ conversaId, texto, midia, template, responderMensagemId }),
       );
       envioEmFilaRef.current = envio.catch(() => {}).then(() => aguardar(INTERVALO_MINIMO_FILA_MS));
       return envio;
     },
-    onMutate: ({ texto, midia, template }) => {
+    onMutate: ({ texto, midia, template, respondeA }) => {
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
       // Insere a bolha otimista sincronamente, antes de qualquer coisa assincrona: um onMutate
@@ -398,6 +413,7 @@ export default function Atendimento() {
           tipo_conteudo: midia?.tipo || 'texto',
           midia_url: midia?.file ? URL.createObjectURL(midia.file) : '',
           midia_nome_arquivo: midia?.nomeArquivo || '',
+          responde_a: respondeA || null,
           _midiaRetry: midia || null,
           _templateRetry: template || null,
           created_date: new Date().toISOString(),
@@ -759,6 +775,8 @@ export default function Atendimento() {
                             }}
                             mensagem={mensagem}
                             onRetry={handleRetryMensagem}
+                            onResponder={setRespondendoA}
+                            onFocarMensagem={focarMensagemPorId}
                             termoBusca={termoBuscaMensagens || null}
                             isResultadoAtual={mensagem.id === resultadoFocado?.id}
                           />
@@ -782,13 +800,42 @@ export default function Atendimento() {
             </div>
 
             <MensagemComposer
-              onSend={(texto) => enviarMutation.mutateAsync({ texto, midia: null })}
-              onSendMidia={(midia) => enviarMutation.mutateAsync({ texto: '', midia })}
-              onSendTemplate={(template) =>
-                enviarMutation.mutateAsync({ texto: template.previewTexto, midia: null, template })
-              }
+              onSend={(texto) => {
+                const respondeA = respondendoA;
+                setRespondendoA(null);
+                return enviarMutation.mutateAsync({
+                  texto,
+                  midia: null,
+                  respondeA,
+                  responderMensagemId: respondeA?.id || null,
+                });
+              }}
+              onSendMidia={(midia, legenda) => {
+                const respondeA = respondendoA;
+                setRespondendoA(null);
+                return enviarMutation.mutateAsync({
+                  texto: legenda || '',
+                  midia,
+                  respondeA,
+                  responderMensagemId: respondeA?.id || null,
+                });
+              }}
+              onSendTemplate={(template) => {
+                const respondeA = respondendoA;
+                setRespondendoA(null);
+                return enviarMutation.mutateAsync({
+                  texto: template.previewTexto,
+                  midia: null,
+                  template,
+                  respondeA,
+                  responderMensagemId: respondeA?.id || null,
+                });
+              }}
               disabled={conversaAtiva.status === 'encerrada'}
               foraDaJanela={foraDaJanelaAtendimento}
+              providerWhatsapp={providerWhatsapp?.provider}
+              respondendoA={respondendoA}
+              onCancelarResposta={() => setRespondendoA(null)}
             />
           </>
         )}

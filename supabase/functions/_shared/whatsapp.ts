@@ -49,7 +49,17 @@ export async function checkWhatsappConnectionEvolution(
   }
 }
 
-export async function sendWhatsappMessageMeta(phoneNumberId: string, token: string, toPhone: string, text: string) {
+// contextMessageId (opcional): wamid da mensagem sendo respondida (botao "Responder" no chat do
+// Atendimento) -- a Meta usa isso pra mostrar a citacao nativa no WhatsApp do cliente, igual a
+// um reply normal. So funciona com o wamid de uma mensagem da mesma conversa (ver
+// send_atendimento_mensagem em crm-api/index.ts, que resolve esse id antes de chamar aqui).
+export async function sendWhatsappMessageMeta(
+  phoneNumberId: string,
+  token: string,
+  toPhone: string,
+  text: string,
+  contextMessageId?: string | null,
+) {
   let response: Response;
   try {
     response = await fetch(`https://graph.facebook.com/v20.0/${phoneNumberId}/messages`, {
@@ -63,6 +73,7 @@ export async function sendWhatsappMessageMeta(phoneNumberId: string, token: stri
         to: toPhone,
         type: 'text',
         text: { body: text },
+        ...(contextMessageId ? { context: { message_id: contextMessageId } } : {}),
       }),
       signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS),
     });
@@ -125,6 +136,7 @@ export async function sendWhatsappTemplateMeta(
   templateName: string,
   languageCode: string,
   components: WhatsappTemplateComponent[],
+  contextMessageId?: string | null,
 ) {
   let response: Response;
   try {
@@ -140,6 +152,7 @@ export async function sendWhatsappTemplateMeta(
           language: { code: languageCode },
           ...(components.length ? { components } : {}),
         },
+        ...(contextMessageId ? { context: { message_id: contextMessageId } } : {}),
       }),
       signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS),
     });
@@ -208,6 +221,7 @@ export async function sendWhatsappMediaMeta(
   mediaUrl: string,
   nomeArquivo: string | null,
   caption: string,
+  contextMessageId?: string | null,
 ) {
   const metaType = tipo === 'imagem' ? 'image' : tipo === 'audio' ? 'audio' : 'document';
   const mediaPayload: Record<string, unknown> = { link: mediaUrl };
@@ -224,6 +238,7 @@ export async function sendWhatsappMediaMeta(
         to: toPhone,
         type: metaType,
         [metaType]: mediaPayload,
+        ...(contextMessageId ? { context: { message_id: contextMessageId } } : {}),
       }),
       signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS),
     });
