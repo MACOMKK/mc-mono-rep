@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
+  Info,
   MessageCircle,
   MessageSquarePlus,
   Phone,
@@ -14,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { atendimentoApi } from '@/api/atendimentoApi';
+import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,6 +49,28 @@ function aguardar(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function mesmoDia(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+// Separador de dia entre bolhas, igual ao padrao de apps de chat (WhatsApp/Telegram) -- sem isso
+// a conversa so mostra hora (ver MensagemBubble.jsx/formatHora), ficando impossivel saber em que
+// dia uma mensagem antiga foi trocada.
+function formatSeparadorDia(dataAtual, dataAnterior) {
+  if (!dataAtual) return null;
+  const atual = new Date(dataAtual);
+  if (dataAnterior && mesmoDia(atual, new Date(dataAnterior))) return null;
+
+  const hoje = new Date();
+  if (mesmoDia(atual, hoje)) return 'Hoje';
+
+  const ontem = new Date(hoje);
+  ontem.setDate(ontem.getDate() - 1);
+  if (mesmoDia(atual, ontem)) return 'Ontem';
+
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }).format(atual);
+}
+
 async function enviarComRetry(payload) {
   let ultimoErro;
   for (let tentativa = 0; tentativa <= RETRY_MAX_TENTATIVAS; tentativa += 1) {
@@ -65,8 +89,17 @@ async function enviarComRetry(payload) {
 const FILTROS_CONVERSA = [
   { value: 'todas', label: 'Todas' },
   { value: 'nao_lidas', label: 'Não lidas' },
-  { value: 'minhas', label: 'Minhas' },
+  { value: 'minhas', label: 'Atribuídas a mim' },
   { value: 'sem_responsavel', label: 'Sem responsável' },
+];
+
+// Abas por status da conversa (conversas_atendimento.status) -- "Em atendimento" e "Aguardando"
+// usam os mesmos valores/rotulos ja exibidos no badge de status de cada card (ConversaListItem.jsx).
+const ABAS_STATUS = [
+  { value: 'todas', label: 'Todas', status: null },
+  { value: 'em_atendimento', label: 'Em atendimento', status: 'aberta' },
+  { value: 'aguardando', label: 'Aguardando', status: 'aguardando_humano' },
+  { value: 'finalizados', label: 'Finalizados', status: 'encerrada' },
 ];
 
 function iniciais(nome = '') {
@@ -114,9 +147,11 @@ export default function Atendimento() {
   const { user } = useAuth();
   const [conversaId, setConversaId] = useState(null);
   const [filtro, setFiltro] = useState('todas');
+  const [abaStatus, setAbaStatus] = useState('todas');
   const [busca, setBusca] = useState('');
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [buscaMensagensAberta, setBuscaMensagensAberta] = useState(false);
+  const [painelDetalhesAberto, setPainelDetalhesAberto] = useState(false);
   const [buscaMensagens, setBuscaMensagens] = useState('');
   const [resultadoAtual, setResultadoAtual] = useState(0);
   const [novaConversaAberta, setNovaConversaAberta] = useState(false);
@@ -137,17 +172,28 @@ export default function Atendimento() {
     refetchInterval: 20000,
   });
 
-  // Canal ativo (Meta API oficial ou Evolution) -- so' muda quando o admin troca a integracao em
-  // Configuracoes, entao staleTime longo evita refetch toda hora; mostrado como selo no cabecalho
-  // do chat pra deixar visivel qual API esta conectada.
+  // Canal ativo (Meta API oficial ou Evolution) + checagem ativa de conexao (nao so' "tem
+  // credencial cadastrada" -- ver checkWhatsappConnection* em _shared/whatsapp.ts). Refetch
+  // periodico porque, diferente do provedor (que so' muda quando o admin troca a integracao), a
+  // conexao pode cair sem nenhuma acao no CRM (token expirado, instancia Evolution desconectada).
   const { data: providerWhatsapp } = useQuery({
     queryKey: ['whatsapp-provider-ativo'],
     queryFn: () => atendimentoApi.getProviderWhatsapp(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchInterval: 30 * 1000,
   });
 
   const conversaAtiva = conversas.find((item) => item.id === conversaId) || null;
-  const conversasFiltradas = buscarConversas(filtrarConversas(conversas, filtro, user?.id), busca);
+  const conversasPreFiltradas = buscarConversas(filtrarConversas(conversas, filtro, user?.id), busca);
+  const contagemPorStatus = {
+    aberta: conversasPreFiltradas.filter((conversa) => conversa.status === 'aberta').length,
+    aguardando_humano: conversasPreFiltradas.filter((conversa) => conversa.status === 'aguardando_humano').length,
+    encerrada: conversasPreFiltradas.filter((conversa) => conversa.status === 'encerrada').length,
+  };
+  const abaAtiva = ABAS_STATUS.find((item) => item.value === abaStatus) || ABAS_STATUS[0];
+  const conversasFiltradas = abaAtiva.status
+    ? conversasPreFiltradas.filter((conversa) => conversa.status === abaAtiva.status)
+    : conversasPreFiltradas;
 
   const { data: mensagens = [], isLoading: isLoadingMensagens } = useQuery({
     queryKey: ['mensagens-atendimento', conversaId],
@@ -457,8 +503,8 @@ export default function Atendimento() {
 
   return (
     <div className="flex h-full">
-      <div className="flex w-72 shrink-0 flex-col border-r border-border bg-background">
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+      <div className="flex w-96 shrink-0 flex-col border-r border-border bg-background">
+        <div className="flex items-center gap-2 px-3 py-2.5">
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -478,20 +524,68 @@ export default function Atendimento() {
           >
             <MessageSquarePlus className="h-4 w-4" />
           </Button>
+          {providerWhatsapp?.provider ? (
+            <span
+              className="relative flex h-2.5 w-2.5 shrink-0"
+              title={`${providerWhatsapp.provider === 'meta' ? 'API oficial (Meta)' : 'Evolution API'} · ${
+                providerWhatsapp.connected ? 'Conectado' : 'Desconectado'
+              }`}
+            >
+              <span
+                className={cn(
+                  'h-full w-full rounded-full',
+                  providerWhatsapp.connected ? 'bg-emerald-500' : 'bg-destructive',
+                )}
+              />
+            </span>
+          ) : null}
         </div>
-        <div className="flex flex-wrap gap-1.5 border-b border-border bg-muted/40 px-3 py-2.5">
+        <div className="flex flex-wrap gap-1.5 px-3 pb-2.5">
           {FILTROS_CONVERSA.map((item) => (
             <Button
               key={item.value}
               type="button"
               size="sm"
               variant={filtro === item.value ? 'default' : 'outline'}
-              className="h-7 rounded-full px-3 text-[11px] font-semibold"
+              className="h-6 whitespace-nowrap rounded-full px-2.5 text-[10.5px] font-semibold"
               onClick={() => setFiltro(item.value)}
             >
               {item.label}
             </Button>
           ))}
+        </div>
+        <div className="flex items-stretch border-y border-border">
+          <div className="flex min-w-0 flex-1 overflow-x-auto">
+            {ABAS_STATUS.map((item) => {
+              const contagem = item.status ? contagemPorStatus[item.status] : null;
+              const ativa = abaStatus === item.value;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setAbaStatus(item.value)}
+                  className={cn(
+                    'flex flex-1 items-center justify-center gap-1 whitespace-nowrap border-b-2 px-1.5 py-2 text-[11px] font-semibold transition-colors',
+                    ativa
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {item.label}
+                  {contagem ? (
+                    <span
+                      className={cn(
+                        'flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full px-1 text-[9px] font-bold',
+                        ativa ? 'bg-primary text-primary-foreground' : 'bg-muted-foreground/20 text-muted-foreground',
+                      )}
+                    >
+                      {contagem}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <ScrollArea className="min-h-0 flex-1">
           {isLoadingConversas ? (
@@ -511,7 +605,7 @@ export default function Atendimento() {
                 conversa={conversa}
                 isActive={conversa.id === conversaId}
                 onClick={() => setConversaId(conversa.id)}
-                providerWhatsapp={providerWhatsapp}
+                providerWhatsapp={providerWhatsapp?.provider}
               />
             ))
           )}
@@ -544,6 +638,16 @@ export default function Atendimento() {
                 ) : null}
               </div>
               <div className="flex shrink-0 gap-2">
+                <Button
+                  variant={painelDetalhesAberto ? 'default' : 'outline'}
+                  size="sm"
+                  className="rounded-full"
+                  title="Detalhes do contato"
+                  aria-label="Detalhes do contato"
+                  onClick={() => setPainelDetalhesAberto((aberto) => !aberto)}
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -634,22 +738,33 @@ export default function Atendimento() {
                   ) : mensagens.length === 0 ? (
                     <p className="py-6 text-center text-sm text-muted-foreground">Nenhuma mensagem nesta conversa ainda.</p>
                   ) : (
-                    mensagens.map((mensagem) => (
-                      <MensagemBubble
-                        key={mensagem.id}
-                        ref={(elemento) => {
-                          if (elemento) {
-                            mensagemRefs.current.set(mensagem.id, elemento);
-                          } else {
-                            mensagemRefs.current.delete(mensagem.id);
-                          }
-                        }}
-                        mensagem={mensagem}
-                        onRetry={handleRetryMensagem}
-                        termoBusca={termoBuscaMensagens || null}
-                        isResultadoAtual={mensagem.id === resultadoFocado?.id}
-                      />
-                    ))
+                    mensagens.map((mensagem, index) => {
+                      const separador = formatSeparadorDia(mensagem.created_date, mensagens[index - 1]?.created_date);
+                      return (
+                        <div key={mensagem.id} className="flex flex-col gap-3">
+                          {separador ? (
+                            <div className="sticky top-0 z-10 flex justify-center py-1">
+                              <span className="rounded-full bg-background/90 px-3 py-1 text-[11px] font-medium text-muted-foreground shadow-sm">
+                                {separador}
+                              </span>
+                            </div>
+                          ) : null}
+                          <MensagemBubble
+                            ref={(elemento) => {
+                              if (elemento) {
+                                mensagemRefs.current.set(mensagem.id, elemento);
+                              } else {
+                                mensagemRefs.current.delete(mensagem.id);
+                              }
+                            }}
+                            mensagem={mensagem}
+                            onRetry={handleRetryMensagem}
+                            termoBusca={termoBuscaMensagens || null}
+                            isResultadoAtual={mensagem.id === resultadoFocado?.id}
+                          />
+                        </div>
+                      );
+                    })
                   )}
                   <div ref={bottomRef} />
                 </div>
@@ -679,7 +794,7 @@ export default function Atendimento() {
         )}
       </div>
 
-      {conversaAtiva ? <ConversaPainelLateral conversa={conversaAtiva} /> : null}
+      {conversaAtiva && painelDetalhesAberto ? <ConversaPainelLateral conversa={conversaAtiva} /> : null}
       <NovaConversaDialog
         open={novaConversaAberta}
         onOpenChange={setNovaConversaAberta}

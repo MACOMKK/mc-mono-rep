@@ -48,7 +48,7 @@ export default function EnviarTemplateDialog({ open, onOpenChange, onEnviar, isP
   const [templateSelecionado, setTemplateSelecionado] = useState(null);
   const [valores, setValores] = useState({});
 
-  const { data: templates = [], isFetching, isError } = useQuery({
+  const { data: templates = [], isFetching, isError, error } = useQuery({
     queryKey: ['whatsapp-templates-aprovados'],
     queryFn: () => atendimentoApi.listTemplatesWhatsapp(),
     enabled: open,
@@ -129,7 +129,7 @@ export default function EnviarTemplateDialog({ open, onOpenChange, onEnviar, isP
               </div>
             ) : isError ? (
               <p className="px-1 py-2 text-sm text-destructive">
-                Falha ao buscar templates. Confira a integração whatsapp_meta (business_account_id e access_token).
+                {error?.message || 'Falha ao buscar templates. Confira a integração whatsapp_meta (business_account_id e access_token).'}
               </p>
             ) : templates.length === 0 ? (
               <p className="px-1 py-2 text-sm text-muted-foreground">

@@ -19,6 +19,8 @@ import {
   sendWhatsappTemplateMeta,
   listWhatsappTemplatesMeta,
   extractWhatsappMessageId,
+  checkWhatsappConnectionMeta,
+  checkWhatsappConnectionEvolution,
   type OutgoingMediaTipo,
   type WhatsappTemplateComponent,
 } from '../_shared/whatsapp.ts';
@@ -1466,7 +1468,24 @@ Deno.serve(async (request) => {
         ? null
         : await loadIntegracaoCredenciais('whatsapp_meta', { supabaseUrl, serviceRoleKey: supabaseServiceRoleKey });
       const provider = evolutionCredenciais ? 'evolution' : metaCredenciais ? 'meta' : null;
-      return json({ provider });
+
+      // Checagem ativa (nao so' "tem credencial cadastrada") -- ver checkWhatsappConnection* em
+      // _shared/whatsapp.ts. Reflete de fato se o canal esta respondendo agora.
+      let connected = false;
+      if (evolutionCredenciais) {
+        connected = await checkWhatsappConnectionEvolution(
+          String(evolutionCredenciais.instance_url || ''),
+          String(evolutionCredenciais.instance_name || ''),
+          String(evolutionCredenciais.api_key || ''),
+        );
+      } else if (metaCredenciais) {
+        connected = await checkWhatsappConnectionMeta(
+          typeof metaCredenciais.phone_number_id === 'string' ? metaCredenciais.phone_number_id.trim() : '',
+          typeof metaCredenciais.access_token === 'string' ? metaCredenciais.access_token.trim() : '',
+        );
+      }
+
+      return json({ provider, connected });
     }
 
     // Resposta manual do atendente na tela Atendimento -- diferente do create generico de

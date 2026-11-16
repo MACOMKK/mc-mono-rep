@@ -10,6 +10,45 @@ export type WhatsappProvider = 'meta' | 'evolution';
 // fica presa bem mais tempo do que o necessario). Falhar rapido aqui da um erro claro e mais cedo.
 const WHATSAPP_SEND_TIMEOUT_MS = 20_000;
 
+// Checagem ativa de conexao -- diferente de so' ver se a integracao tem credenciais cadastradas
+// (isso so diz "configurada", nao "funcionando agora"). Usado pelo selo Conectado/Desconectado
+// na tela de Atendimento. Timeout curto proposital: e' so' um ping, nao pode travar a tela.
+const WHATSAPP_STATUS_TIMEOUT_MS = 8_000;
+
+export async function checkWhatsappConnectionMeta(phoneNumberId: string, token: string): Promise<boolean> {
+  if (!phoneNumberId || !token) return false;
+  try {
+    const response = await fetch(`https://graph.facebook.com/v20.0/${phoneNumberId}?fields=id`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(WHATSAPP_STATUS_TIMEOUT_MS),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function checkWhatsappConnectionEvolution(
+  instanceUrl: string,
+  instanceName: string,
+  apiKey: string,
+): Promise<boolean> {
+  if (!instanceUrl || !instanceName || !apiKey) return false;
+  try {
+    const baseUrl = instanceUrl.replace(/\/+$/, '');
+    const response = await fetch(`${baseUrl}/instance/connectionState/${instanceName}`, {
+      headers: { apikey: apiKey },
+      signal: AbortSignal.timeout(WHATSAPP_STATUS_TIMEOUT_MS),
+    });
+    if (!response.ok) return false;
+    const data = await response.json();
+    const state = data?.instance?.state ?? data?.state;
+    return state === 'open';
+  } catch {
+    return false;
+  }
+}
+
 export async function sendWhatsappMessageMeta(phoneNumberId: string, token: string, toPhone: string, text: string) {
   let response: Response;
   try {

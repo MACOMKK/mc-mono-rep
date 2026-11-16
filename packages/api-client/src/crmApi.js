@@ -334,7 +334,7 @@ export const crmApi = {
     },
     async getProviderWhatsapp() {
       const result = await invokeCrm({ action: 'get_whatsapp_provider' });
-      return result.provider || null;
+      return { provider: result.provider || null, connected: Boolean(result.connected) };
     },
     // payload: { telefone } | { leadId } | { clienteId } -- cria ou reabre a conversa do numero.
     async iniciar(payload) {
