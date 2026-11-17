@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { Bot, Check, CheckCheck, FileText, Reply } from 'lucide-react';
+import { Bot, Check, CheckCheck, FileText, MapPin, Reply } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const AUTOR_LABEL = {
@@ -49,8 +49,32 @@ function formatHora(value) {
   return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
 
+function LocalizacaoConteudo({ location }) {
+  if (!location) return null;
+  const { latitude, longitude, nome, endereco } = location;
+  const mapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+  return (
+    <a
+      href={mapsUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center gap-2 rounded-md border border-current/20 bg-black/5 px-2.5 py-2 hover:bg-black/10"
+    >
+      <MapPin className="h-5 w-5 shrink-0" />
+      <div className="min-w-0">
+        <p className="font-semibold">{nome || 'Localização'}</p>
+        {endereco ? <p className="truncate text-xs opacity-80">{endereco}</p> : null}
+        <p className="text-xs underline-offset-2">Abrir no Google Maps</p>
+      </div>
+    </a>
+  );
+}
+
 function MidiaConteudo({ mensagem }) {
   const { tipo_conteudo: tipo, midia_url: url, midia_nome_arquivo: nomeArquivo } = mensagem;
+  if (tipo === 'localizacao') {
+    return <LocalizacaoConteudo location={mensagem.metadados?.location} />;
+  }
   if (tipo === 'imagem') {
     return (
       <a href={url} target="_blank" rel="noreferrer">
@@ -140,7 +164,7 @@ const MensagemBubble = forwardRef(function MensagemBubble(
           {mensagem.tipo_conteudo && mensagem.tipo_conteudo !== 'texto' ? (
             <div className="flex flex-col gap-1">
               <MidiaConteudo mensagem={mensagem} />
-              {mensagem.conteudo ? (
+              {mensagem.conteudo && mensagem.tipo_conteudo !== 'localizacao' ? (
                 <p className="whitespace-pre-wrap break-words">{highlightTexto(mensagem.conteudo, termoBusca)}</p>
               ) : null}
             </div>

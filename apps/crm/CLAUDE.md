@@ -204,6 +204,20 @@ excluir qualquer mensagem rápida. Antes disso era uma lista fixa hardcoded em
 `GerenciarMensagensRapidasDialog.jsx`, aberto pelo próprio dropdown do composer — não ganhou rota
 de configuração dedicada.
 
+**Enviar/solicitar localização** (`20261117110000_add_crm_mensagem_localizacao.sql`): botões no
+composer (`EnviarLocalizacaoDialog.jsx`/`SolicitarLocalizacaoDialog.jsx`). "Enviar localização"
+manda coordenadas reais (lat/long, com botão "usar minha localização atual" via
+`navigator.geolocation`) e funciona nos dois provedores (`sendWhatsappLocationMeta`/
+`sendWhatsappLocationEvolution`, `_shared/whatsapp.ts`). "Solicitar localização" manda a
+mensagem interativa `location_request_message` pedindo que o CLIENTE compartilhe a dele — só
+existe na Meta Cloud API (Baileys/Evolution não tem esse tipo de mensagem), por isso o botão só
+aparece com `providerWhatsapp === 'meta'` e o backend (`send_atendimento_mensagem`) rejeita se a
+Evolution estiver ativa. `mensagens_atendimento.tipo_conteudo = 'localizacao'` guarda
+lat/long/nome/endereço em `metadados.location` (jsonb livre, sem colunas próprias) — tanto para
+o envio quanto para o recebimento (cliente compartilhando, voluntário ou em resposta ao pedido),
+tratado em `whatsapp-api/index.ts` (`extractIncomingMessagesMeta`/`Evolution`, mesmo caminho de
+mídia recebida, sem gerar resposta automática da IA).
+
 ## Realtime
 
 `useCrmRealtime.js` escuta INSERT/UPDATE/DELETE em `gestao_crm` (leads, clientes, atendimentos,

@@ -186,14 +186,18 @@ async function adicionarNotaConversa({ conversaId, conteudo }) {
 // template (opcional): { name, language, components, previewTexto } -- montado por
 // EnviarTemplateDialog.jsx a partir de list_whatsapp_templates; usado pra enviar fora da janela
 // de 24h da API oficial (ver gate em send_atendimento_mensagem no crm-api).
+// location (opcional): { latitude, longitude, nome, endereco } -- envia a localizacao de fato
+// (coordenadas reais), suportada pelos dois provedores.
+// locationRequest (opcional): { texto } -- pede pro CLIENTE compartilhar a localizacao dele
+// (mensagem interativa), so' suportada na Meta (ver guard em send_atendimento_mensagem).
 // responderMensagemId (opcional): id local (mensagens_atendimento.id) da mensagem que o
 // atendente clicou em "Responder" (botao na bolha, MensagemBubble.jsx) -- o crm-api resolve o
 // conteudo/autor pra gravar a citacao e, se a mensagem original tiver whatsapp_message_id,
 // manda como reply nativo pra Meta (ver send_atendimento_mensagem).
-async function enviarMensagemManual({ conversaId, texto, midia, template, responderMensagemId }) {
+async function enviarMensagemManual({ conversaId, texto, midia, template, location, locationRequest, responderMensagemId }) {
   const textoTrim = texto?.trim() || '';
-  if (!conversaId || (!textoTrim && !midia && !template)) {
-    throw new Error('Conversa e texto, midia ou template da mensagem sao obrigatorios.');
+  if (!conversaId || (!textoTrim && !midia && !template && !location && !locationRequest)) {
+    throw new Error('Conversa e texto, midia, localização ou template da mensagem sao obrigatorios.');
   }
 
   const row = await crmApi.conversas_atendimento.sendMensagem({
@@ -201,6 +205,8 @@ async function enviarMensagemManual({ conversaId, texto, midia, template, respon
     texto: textoTrim,
     ...(midia ? { midia: { base64: midia.base64, mimeType: midia.mimeType, nomeArquivo: midia.nomeArquivo || null } } : {}),
     ...(template ? { template } : {}),
+    ...(location ? { location } : {}),
+    ...(locationRequest ? { locationRequest } : {}),
     ...(responderMensagemId ? { responderMensagemId } : {}),
   });
 

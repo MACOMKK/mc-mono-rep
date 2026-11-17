@@ -106,11 +106,22 @@ type IncomingMedia = {
   evolutionMessageKey?: unknown;
 };
 
+type IncomingLocation = {
+  latitude: number;
+  longitude: number;
+  nome: string | null;
+  endereco: string | null;
+};
+
 type IncomingMessage = {
   messageId: string;
   fromPhone: string;
   text: string;
   media?: IncomingMedia;
+  // Cliente compartilhou a localizacao (voluntariamente ou em resposta a um pedido da Meta,
+  // ver sendWhatsappLocationRequestMeta em _shared/whatsapp.ts) -- so' esse campo OU media vem
+  // preenchido numa mesma mensagem, nunca os dois.
+  location?: IncomingLocation;
   // Nome do contato tal como o proprio WhatsApp manda (sem edicao nossa) -- Meta: contacts[].profile.name
   // casado por wa_id; Evolution/Baileys: pushName no proprio objeto da mensagem. Usado so' como
   // fallback de exibicao pra contato ainda sem lead/cliente vinculado, ver contato_nome na migration.
@@ -136,6 +147,20 @@ function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
         const text = message?.text?.body;
         if (typeof text === 'string') {
           messages.push({ messageId: message.id, fromPhone: message.from, text, contactName });
+          continue;
+        }
+
+        if (message?.type === 'location' && message?.location) {
+          const { latitude, longitude, name, address } = message.location;
+          if (typeof latitude === 'number' && typeof longitude === 'number') {
+            messages.push({
+              messageId: message.id,
+              fromPhone: message.from,
+              text: '',
+              contactName,
+              location: { latitude, longitude, nome: name || null, endereco: address || null },
+            });
+          }
           continue;
         }
 
@@ -165,7 +190,7 @@ function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
 
 // Formato Baileys (usado pela Evolution API): evento "messages.upsert", corpo em
 // payload.data (objeto unico) ou payload.data (array), conforme a versao da instancia.
-// Ignora mensagens enviadas por nos mesmos (key.fromMe) e figurinha/sticker/contato/localizacao
+// Ignora mensagens enviadas por nos mesmos (key.fromMe) e figurinha/sticker/contato
 // (fora de escopo). Midia (imagem/audio/documento) so' traz metadados criptografados aqui --
 // o binario e' baixado depois via downloadMediaEvolution, ver whatsappMedia.ts.
 function extractIncomingMessagesEvolution(payload: any): IncomingMessage[] {
@@ -186,6 +211,23 @@ function extractIncomingMessagesEvolution(payload: any): IncomingMessage[] {
     const text = msg?.conversation ?? msg?.extendedTextMessage?.text;
     if (typeof text === 'string' && text) {
       messages.push({ messageId: String(key.id), fromPhone, text, contactName });
+      continue;
+    }
+
+    const locationMessage = msg?.locationMessage;
+    if (locationMessage && typeof locationMessage.degreesLatitude === 'number' && typeof locationMessage.degreesLongitude === 'number') {
+      messages.push({
+        messageId: String(key.id),
+        fromPhone,
+        text: '',
+        contactName,
+        location: {
+          latitude: locationMessage.degreesLatitude,
+          longitude: locationMessage.degreesLongitude,
+          nome: locationMessage.name || null,
+          endereco: locationMessage.address || null,
+        },
+      });
       continue;
     }
 
@@ -545,9 +587,14 @@ serve(async (req) => {
         }
       }
 
-      const previewTexto = uploaded
-        ? `[${uploaded.tipo === 'imagem' ? 'Imagem' : uploaded.tipo === 'audio' ? 'Áudio' : 'Documento'}]${incoming.text ? ` ${incoming.text}` : ''}`
-        : incoming.text;
+      const conteudoLocalizacao = incoming.location
+        ? incoming.location.endereco || incoming.location.nome || 'Localização compartilhada'
+        : null;
+      const previewTexto = incoming.location
+        ? `📍 Localização${incoming.location.endereco ? ` — ${incoming.location.endereco}` : incoming.location.nome ? ` — ${incoming.location.nome}` : ''}`
+        : uploaded
+          ? `[${uploaded.tipo === 'imagem' ? 'Imagem' : uploaded.tipo === 'audio' ? 'Áudio' : 'Documento'}]${incoming.text ? ` ${incoming.text}` : ''}`
+          : incoming.text;
 
       await sql`
         insert into gestao_crm.mensagens_atendimento
@@ -556,9 +603,12 @@ serve(async (req) => {
           ${conversa.id},
           'entrada',
           'cliente',
-          ${incoming.text},
-          ${sql.json({ whatsapp_message_id: incoming.messageId })},
-          ${uploaded?.tipo ?? 'texto'},
+          ${incoming.location ? conteudoLocalizacao : incoming.text},
+          ${sql.json({
+            whatsapp_message_id: incoming.messageId,
+            ...(incoming.location ? { location: incoming.location } : {}),
+          })},
+          ${incoming.location ? 'localizacao' : (uploaded?.tipo ?? 'texto')},
           ${uploaded?.url ?? null},
           ${uploaded?.mimeType ?? null},
           ${uploaded?.nomeArquivo ?? null}
@@ -589,10 +639,11 @@ serve(async (req) => {
         typeof evolutionCredenciais?.instance_name === 'string' &&
         typeof evolutionCredenciais?.api_key === 'string';
 
-      // Midia sem legenda nao tem o que a IA responda com contexto -- deixa so' registrado,
-      // igual a uma mensagem escalada (nao gera resposta automatica vazia/generica).
-      if (incoming.media && !incoming.text) {
-        results.push({ messageId: incoming.messageId, status: 'midia_sem_legenda' });
+      // Midia sem legenda (ou localizacao, que nunca tem "legenda") nao tem o que a IA responda
+      // com contexto -- deixa so' registrado, igual a uma mensagem escalada (nao gera resposta
+      // automatica vazia/generica).
+      if ((incoming.media || incoming.location) && !incoming.text) {
+        results.push({ messageId: incoming.messageId, status: incoming.location ? 'localizacao_recebida' : 'midia_sem_legenda' });
         continue;
       }
 

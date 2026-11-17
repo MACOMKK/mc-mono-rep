@@ -297,6 +297,136 @@ export async function sendWhatsappMediaEvolution(
   return data;
 }
 
+// Envio de localizacao real (coordenadas) -- botao "Enviar localizacao" do composer (ex.: mandar
+// o endereco da loja pro cliente). name/address sao opcionais na Meta, mas a Evolution exige os
+// dois no payload (ver docs.evolution-api.com/.../send-location) -- o chamador sempre preenche
+// pelo menos um fallback antes de chegar aqui.
+export async function sendWhatsappLocationMeta(
+  phoneNumberId: string,
+  token: string,
+  toPhone: string,
+  latitude: number,
+  longitude: number,
+  name: string,
+  address: string,
+  contextMessageId?: string | null,
+) {
+  const locationPayload: Record<string, unknown> = { latitude, longitude };
+  if (name) locationPayload.name = name;
+  if (address) locationPayload.address = address;
+
+  let response: Response;
+  try {
+    response = await fetch(`https://graph.facebook.com/v20.0/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: toPhone,
+        type: 'location',
+        location: locationPayload,
+        ...(contextMessageId ? { context: { message_id: contextMessageId } } : {}),
+      }),
+      signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error('Tempo limite excedido ao enviar localizacao via WhatsApp (Meta Cloud API).');
+    }
+    throw error;
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.message || 'Falha ao enviar localizacao via WhatsApp.');
+  }
+
+  return data;
+}
+
+export async function sendWhatsappLocationEvolution(
+  instanceUrl: string,
+  instanceName: string,
+  apiKey: string,
+  toPhone: string,
+  latitude: number,
+  longitude: number,
+  name: string,
+  address: string,
+) {
+  const baseUrl = instanceUrl.replace(/\/+$/, '');
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/message/sendLocation/${instanceName}`, {
+      method: 'POST',
+      headers: { apikey: apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        number: toPhone,
+        name: name || 'Localização',
+        address: address || '',
+        latitude,
+        longitude,
+      }),
+      signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error('Tempo limite excedido ao enviar localizacao via Evolution API.');
+    }
+    throw error;
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || data?.error || 'Falha ao enviar localizacao via Evolution API.');
+  }
+
+  return data;
+}
+
+// Solicita que o CLIENTE compartilhe a localizacao dele (botao "Solicitar localizacao" do
+// composer) -- mensagem interativa "location_request_message", recurso exclusivo da Meta Cloud
+// API (Baileys/Evolution nao tem esse tipo de mensagem, so' envia localizacao, nunca pede).
+export async function sendWhatsappLocationRequestMeta(
+  phoneNumberId: string,
+  token: string,
+  toPhone: string,
+  bodyText: string,
+  contextMessageId?: string | null,
+) {
+  let response: Response;
+  try {
+    response = await fetch(`https://graph.facebook.com/v20.0/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: toPhone,
+        type: 'interactive',
+        interactive: {
+          type: 'location_request_message',
+          body: { text: bodyText },
+          action: { name: 'send_location' },
+        },
+        ...(contextMessageId ? { context: { message_id: contextMessageId } } : {}),
+      }),
+      signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error('Tempo limite excedido ao solicitar localizacao via WhatsApp (Meta Cloud API).');
+    }
+    throw error;
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.message || 'Falha ao solicitar localizacao via WhatsApp.');
+  }
+
+  return data;
+}
+
 // Extrai o id da mensagem enviada do payload de resposta de cada provedor -- usado para casar
 // com os eventos de status (entregue/lido) que chegam depois no webhook, ver status em
 // mensagens_atendimento (migration 20261108100000_add_crm_mensagem_status.sql).

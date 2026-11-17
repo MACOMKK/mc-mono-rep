@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Clock, FileText, Lock, Mic, Paperclip, Settings, SendHorizontal, Smile, Sparkles, Square, Trash2, X, Zap } from 'lucide-react';
+import { Clock, FileText, Lock, MapPin, MapPinned, Mic, Paperclip, Settings, SendHorizontal, Smile, Sparkles, Square, Trash2, X, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { crmDataClient } from '@/api/crmDataClient';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,8 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import EnviarTemplateDialog from './EnviarTemplateDialog';
 import GerenciarMensagensRapidasDialog from './GerenciarMensagensRapidasDialog';
+import EnviarLocalizacaoDialog from './EnviarLocalizacaoDialog';
+import SolicitarLocalizacaoDialog from './SolicitarLocalizacaoDialog';
 
 // Conjunto curado (sem lib de picker nova) -- cobre as reacoes/expressoes mais comuns num chat de
 // atendimento. Pode crescer, mas o objetivo aqui e' cobertura pratica, nao o unicode completo.
@@ -30,6 +32,10 @@ const EMOJIS_RAPIDOS = [
 // 20261109140000_add_crm_atendimento_midia.sql) -- falhar aqui evita gastar o upload so pra
 // descobrir no servidor que o arquivo nao cabe.
 const MIDIA_TAMANHO_MAXIMO_BYTES = 25 * 1024 * 1024;
+
+// ~7 linhas antes de rolar por dentro -- cresce o suficiente pra mensagem longa sem empurrar o
+// resto do layout do chat (lista de conversas, header) pra fora da tela.
+const TEXTAREA_ALTURA_MAXIMA_PX = 160;
 
 function tipoFromMime(mimeType) {
   if (mimeType?.startsWith('image/')) return 'imagem';
@@ -72,6 +78,8 @@ export default function MensagemComposer({
   onSend,
   onSendMidia,
   onSendTemplate,
+  onSendLocation,
+  onSendLocationRequest,
   disabled,
   foraDaJanela,
   providerWhatsapp,
@@ -95,6 +103,10 @@ export default function MensagemComposer({
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [enviandoTemplate, setEnviandoTemplate] = useState(false);
   const [gerenciarRapidasOpen, setGerenciarRapidasOpen] = useState(false);
+  const [localizacaoDialogOpen, setLocalizacaoDialogOpen] = useState(false);
+  const [enviandoLocalizacao, setEnviandoLocalizacao] = useState(false);
+  const [solicitarLocalizacaoDialogOpen, setSolicitarLocalizacaoDialogOpen] = useState(false);
+  const [enviandoSolicitacaoLocalizacao, setEnviandoSolicitacaoLocalizacao] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -216,6 +228,18 @@ export default function MensagemComposer({
     };
   }, [anexoPendente]);
 
+  // Textarea cresce com o conteudo (até TEXTAREA_ALTURA_MAXIMA_PX, depois rola por dentro) em vez
+  // de ficar numa linha so' -- sem isso o texto digitado empurrava as linhas de cima pra fora da
+  // vista, escondendo o que ja' tinha sido escrito. Roda a cada mudanca de `value` (inclusive
+  // setValue('') no envio, que precisa encolher de volta) porque o scrollHeight so' e' calculavel
+  // depois do DOM atualizado com o texto novo.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, TEXTAREA_ALTURA_MAXIMA_PX)}px`;
+  }, [value]);
+
   const handleSend = () => {
     const trimmed = value.trim();
     if (!trimmed || bloqueiaTexto) return;
@@ -305,6 +329,30 @@ export default function MensagemComposer({
       // dialogo aberto pra o atendente poder tentar de novo sem reabrir e re-selecionar tudo.
     } finally {
       setEnviandoTemplate(false);
+    }
+  };
+
+  const handleEnviarLocalizacao = async (location) => {
+    setEnviandoLocalizacao(true);
+    try {
+      await onSendLocation(location);
+      setLocalizacaoDialogOpen(false);
+    } catch {
+      // Erro ja e' tratado (toast) no onError da mutation em Atendimento.jsx.
+    } finally {
+      setEnviandoLocalizacao(false);
+    }
+  };
+
+  const handleEnviarSolicitacaoLocalizacao = async (locationRequest) => {
+    setEnviandoSolicitacaoLocalizacao(true);
+    try {
+      await onSendLocationRequest(locationRequest);
+      setSolicitarLocalizacaoDialogOpen(false);
+    } catch {
+      // Erro ja e' tratado (toast) no onError da mutation em Atendimento.jsx.
+    } finally {
+      setEnviandoSolicitacaoLocalizacao(false);
     }
   };
 
@@ -495,6 +543,32 @@ export default function MensagemComposer({
             <FileText className="h-4 w-4" />
           </Button>
         ) : null}
+        {onSendLocation ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 text-muted-foreground"
+            disabled={bloqueiaTexto || isRecording}
+            aria-label="Enviar localização"
+            onClick={() => setLocalizacaoDialogOpen(true)}
+          >
+            <MapPin className="h-4 w-4" />
+          </Button>
+        ) : null}
+        {onSendLocationRequest && providerWhatsapp === 'meta' ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 text-muted-foreground"
+            disabled={bloqueiaTexto || isRecording}
+            aria-label="Solicitar localização"
+            onClick={() => setSolicitarLocalizacaoDialogOpen(true)}
+          >
+            <MapPinned className="h-4 w-4" />
+          </Button>
+        ) : null}
         {isRecording ? (
           <div className="flex flex-1 items-center gap-2 py-1.5 text-sm text-muted-foreground">
             <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" />
@@ -512,7 +586,7 @@ export default function MensagemComposer({
                 : 'Digite uma mensagem...'
             }
             rows={1}
-            className="min-h-0 flex-1 resize-none border-none bg-transparent py-1.5 shadow-none focus-visible:ring-0"
+            className="min-h-0 flex-1 resize-none overflow-y-auto border-none bg-transparent py-1.5 shadow-none focus-visible:ring-0"
             disabled={bloqueiaTexto}
           />
         )}
@@ -564,6 +638,22 @@ export default function MensagemComposer({
         />
       ) : null}
       <GerenciarMensagensRapidasDialog open={gerenciarRapidasOpen} onOpenChange={setGerenciarRapidasOpen} />
+      {onSendLocation ? (
+        <EnviarLocalizacaoDialog
+          open={localizacaoDialogOpen}
+          onOpenChange={setLocalizacaoDialogOpen}
+          onEnviar={handleEnviarLocalizacao}
+          isPending={enviandoLocalizacao}
+        />
+      ) : null}
+      {onSendLocationRequest ? (
+        <SolicitarLocalizacaoDialog
+          open={solicitarLocalizacaoDialogOpen}
+          onOpenChange={setSolicitarLocalizacaoDialogOpen}
+          onEnviar={handleEnviarSolicitacaoLocalizacao}
+          isPending={enviandoSolicitacaoLocalizacao}
+        />
+      ) : null}
     </div>
   );
 }

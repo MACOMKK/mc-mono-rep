@@ -361,6 +361,8 @@ export default function Atendimento() {
       texto: mensagemComErro.conteudo,
       midia: mensagemComErro._midiaRetry || null,
       template: mensagemComErro._templateRetry || null,
+      location: mensagemComErro._locationRetry || null,
+      locationRequest: mensagemComErro._locationRequestRetry || null,
       respondeA: mensagemComErro.responde_a || null,
       responderMensagemId: mensagemComErro.responde_a?.id || null,
     });
@@ -381,16 +383,18 @@ export default function Atendimento() {
     // enviarComRetry tenta de novo (com backoff) falhas transitorias antes de desistir, e o
     // .then(() => aguardar(...)) so' libera o proximo item da fila depois do intervalo minimo --
     // as duas coisas juntas absorvem a instabilidade da Evolution API local sob rajada.
-    mutationFn: ({ texto, midia, template, responderMensagemId }) => {
+    mutationFn: ({ texto, midia, template, location, locationRequest, responderMensagemId }) => {
       const envio = envioEmFilaRef.current.then(
-        () => enviarComRetry({ conversaId, texto, midia, template, responderMensagemId }),
-        () => enviarComRetry({ conversaId, texto, midia, template, responderMensagemId }),
+        () => enviarComRetry({ conversaId, texto, midia, template, location, locationRequest, responderMensagemId }),
+        () => enviarComRetry({ conversaId, texto, midia, template, location, locationRequest, responderMensagemId }),
       );
       envioEmFilaRef.current = envio.catch(() => {}).then(() => aguardar(INTERVALO_MINIMO_FILA_MS));
       return envio;
     },
-    onMutate: ({ texto, midia, template, respondeA }) => {
+    onMutate: ({ texto, midia, template, location, locationRequest, respondeA }) => {
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const conteudoOtimista =
+        texto || (location ? location.endereco || location.nome || 'Localização compartilhada' : '');
 
       // Insere a bolha otimista sincronamente, antes de qualquer coisa assincrona: um onMutate
       // async que faz "await cancelQueries(...)" primeiro arrisca nunca chegar ao setQueryData se
@@ -407,15 +411,18 @@ export default function Atendimento() {
           conversa_id: conversaId,
           direcao: 'saida',
           autor: 'humano',
-          conteudo: texto,
+          conteudo: conteudoOtimista,
           // Preview local (blob) ate a confirmacao do servidor trocar pela url real do Storage --
           // so pra dar feedback imediato de que o anexo certo foi selecionado, antes do upload.
-          tipo_conteudo: midia?.tipo || 'texto',
+          tipo_conteudo: location ? 'localizacao' : midia?.tipo || 'texto',
           midia_url: midia?.file ? URL.createObjectURL(midia.file) : '',
           midia_nome_arquivo: midia?.nomeArquivo || '',
+          metadados: location ? { location } : {},
           responde_a: respondeA || null,
           _midiaRetry: midia || null,
           _templateRetry: template || null,
+          _locationRetry: location || null,
+          _locationRequestRetry: locationRequest || null,
           created_date: new Date().toISOString(),
           pending: true,
         },
@@ -827,6 +834,28 @@ export default function Atendimento() {
                   texto: template.previewTexto,
                   midia: null,
                   template,
+                  respondeA,
+                  responderMensagemId: respondeA?.id || null,
+                });
+              }}
+              onSendLocation={(location) => {
+                const respondeA = respondendoA;
+                setRespondendoA(null);
+                return enviarMutation.mutateAsync({
+                  texto: '',
+                  midia: null,
+                  location,
+                  respondeA,
+                  responderMensagemId: respondeA?.id || null,
+                });
+              }}
+              onSendLocationRequest={(locationRequest) => {
+                const respondeA = respondendoA;
+                setRespondendoA(null);
+                return enviarMutation.mutateAsync({
+                  texto: '',
+                  midia: null,
+                  locationRequest,
                   respondeA,
                   responderMensagemId: respondeA?.id || null,
                 });

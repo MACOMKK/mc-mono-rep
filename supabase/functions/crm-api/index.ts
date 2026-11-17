@@ -17,6 +17,9 @@ import {
   sendWhatsappMediaMeta,
   sendWhatsappMediaEvolution,
   sendWhatsappTemplateMeta,
+  sendWhatsappLocationMeta,
+  sendWhatsappLocationEvolution,
+  sendWhatsappLocationRequestMeta,
   listWhatsappTemplatesMeta,
   extractWhatsappMessageId,
   checkWhatsappConnectionMeta,
@@ -1523,10 +1526,33 @@ Deno.serve(async (request) => {
       const templatePreviewTexto =
         typeof templatePayload?.previewTexto === 'string' ? templatePayload.previewTexto : '';
       const usandoTemplate = Boolean(templateName && templateLanguage);
-      const conteudoFinal = texto || templatePreviewTexto;
 
-      if (!conversaId || (!texto && !temMidia && !usandoTemplate)) {
-        return json({ error: 'Conversa e texto, midia ou template da mensagem sao obrigatorios.' }, 400);
+      // Enviar localizacao (coordenadas reais, botao "Enviar localizacao" do composer) ou
+      // solicitar que o cliente compartilhe a dele (interativa "location_request_message", so'
+      // suportada pela Meta Cloud API -- Baileys/Evolution nao tem esse tipo de mensagem, ver
+      // guard de provedor mais abaixo).
+      const locationPayload = body.location as
+        | { latitude?: unknown; longitude?: unknown; nome?: unknown; endereco?: unknown }
+        | undefined;
+      const locationLatitude = typeof locationPayload?.latitude === 'number' ? locationPayload.latitude : null;
+      const locationLongitude = typeof locationPayload?.longitude === 'number' ? locationPayload.longitude : null;
+      const locationNome = typeof locationPayload?.nome === 'string' ? locationPayload.nome.trim() : '';
+      const locationEndereco = typeof locationPayload?.endereco === 'string' ? locationPayload.endereco.trim() : '';
+      const temLocation = locationLatitude !== null && locationLongitude !== null;
+
+      const locationRequestPayload = body.locationRequest as { texto?: unknown } | undefined;
+      const locationRequestTexto =
+        typeof locationRequestPayload?.texto === 'string' ? locationRequestPayload.texto.trim() : '';
+      const usandoLocationRequest = Boolean(locationRequestTexto);
+
+      const conteudoFinal =
+        texto ||
+        templatePreviewTexto ||
+        (usandoLocationRequest ? locationRequestTexto : '') ||
+        (temLocation ? locationEndereco || locationNome || 'Localização compartilhada' : '');
+
+      if (!conversaId || (!texto && !temMidia && !usandoTemplate && !temLocation && !usandoLocationRequest)) {
+        return json({ error: 'Conversa e texto, midia, localizacao ou template da mensagem sao obrigatorios.' }, 400);
       }
 
       const conversa = await ensureEntityAccess('conversas_atendimento', conversaId, access, collaborator);
@@ -1626,6 +1652,13 @@ Deno.serve(async (request) => {
       // bater perto de WHATSAPP_SEND_TIMEOUT_MS, o provedor (ngrok/Evolution local) e' o gargalo.
       const provedor = evolutionCredenciais ? 'evolution' : 'meta';
 
+      if (provedor === 'evolution' && usandoLocationRequest) {
+        return json(
+          { error: 'Solicitar localizacao so e suportado na API oficial do WhatsApp (Meta).' },
+          400,
+        );
+      }
+
       // API oficial da Meta: texto livre so vale ate 24h depois da ultima mensagem do cliente;
       // fora disso (inclusive conversa iniciada pelo CRM, sem mensagem do cliente) exige template
       // aprovado (usandoTemplate) -- barra aqui com mensagem clara em vez do erro cru da Meta.
@@ -1652,24 +1685,35 @@ Deno.serve(async (request) => {
       let sendResult: unknown = null;
       try {
         if (evolutionCredenciais) {
-          sendResult = uploadedMedia
-            ? await sendWhatsappMediaEvolution(
+          sendResult = temLocation
+            ? await sendWhatsappLocationEvolution(
                 String(evolutionCredenciais.instance_url || ''),
                 String(evolutionCredenciais.instance_name || ''),
                 String(evolutionCredenciais.api_key || ''),
                 toPhone,
-                uploadedMedia.tipo,
-                uploadedMedia.url,
-                uploadedMedia.nomeArquivo,
-                texto,
+                locationLatitude as number,
+                locationLongitude as number,
+                locationNome,
+                locationEndereco,
               )
-            : await sendWhatsappMessageEvolution(
-                String(evolutionCredenciais.instance_url || ''),
-                String(evolutionCredenciais.instance_name || ''),
-                String(evolutionCredenciais.api_key || ''),
-                toPhone,
-                texto,
-              );
+            : uploadedMedia
+              ? await sendWhatsappMediaEvolution(
+                  String(evolutionCredenciais.instance_url || ''),
+                  String(evolutionCredenciais.instance_name || ''),
+                  String(evolutionCredenciais.api_key || ''),
+                  toPhone,
+                  uploadedMedia.tipo,
+                  uploadedMedia.url,
+                  uploadedMedia.nomeArquivo,
+                  texto,
+                )
+              : await sendWhatsappMessageEvolution(
+                  String(evolutionCredenciais.instance_url || ''),
+                  String(evolutionCredenciais.instance_name || ''),
+                  String(evolutionCredenciais.api_key || ''),
+                  toPhone,
+                  texto,
+                );
         } else if (usandoTemplate && whatsappToken && whatsappPhoneNumberId) {
           sendResult = await sendWhatsappTemplateMeta(
             whatsappPhoneNumberId,
@@ -1678,6 +1722,25 @@ Deno.serve(async (request) => {
             templateName,
             templateLanguage,
             templateComponents,
+            contextMessageId,
+          );
+        } else if (usandoLocationRequest && whatsappToken && whatsappPhoneNumberId) {
+          sendResult = await sendWhatsappLocationRequestMeta(
+            whatsappPhoneNumberId,
+            whatsappToken,
+            toPhone,
+            locationRequestTexto,
+            contextMessageId,
+          );
+        } else if (temLocation && whatsappToken && whatsappPhoneNumberId) {
+          sendResult = await sendWhatsappLocationMeta(
+            whatsappPhoneNumberId,
+            whatsappToken,
+            toPhone,
+            locationLatitude as number,
+            locationLongitude as number,
+            locationNome,
+            locationEndereco,
             contextMessageId,
           );
         } else if (whatsappToken && whatsappPhoneNumberId) {
@@ -1722,16 +1785,28 @@ Deno.serve(async (request) => {
           ...(sentMessageId ? { whatsapp_message_id: sentMessageId } : {}),
           ...(usandoTemplate ? { whatsapp_template: templateName } : {}),
           ...(respondeA ? { responde_a: respondeA } : {}),
+          ...(temLocation
+            ? {
+                location: {
+                  latitude: locationLatitude,
+                  longitude: locationLongitude,
+                  nome: locationNome || null,
+                  endereco: locationEndereco || null,
+                },
+              }
+            : {}),
         },
-        tipo_conteudo: uploadedMedia?.tipo ?? 'texto',
+        tipo_conteudo: temLocation ? 'localizacao' : (uploadedMedia?.tipo ?? 'texto'),
         midia_url: uploadedMedia?.url ?? null,
         midia_mime_type: uploadedMedia?.mimeType ?? null,
         midia_nome_arquivo: uploadedMedia?.nomeArquivo ?? null,
       };
       const insertQuery = buildInsertQuery(CRM_SCHEMA, 'mensagens_atendimento', insertPayload);
-      const previewBase = uploadedMedia
-        ? `[${uploadedMedia.tipo === 'imagem' ? 'Imagem' : uploadedMedia.tipo === 'audio' ? 'Áudio' : 'Documento'}]${texto ? ` ${texto}` : ''}`
-        : conteudoFinal;
+      const previewBase = temLocation
+        ? `📍 Localização${locationEndereco ? ` — ${locationEndereco}` : locationNome ? ` — ${locationNome}` : ''}`
+        : uploadedMedia
+          ? `[${uploadedMedia.tipo === 'imagem' ? 'Imagem' : uploadedMedia.tipo === 'audio' ? 'Áudio' : 'Documento'}]${texto ? ` ${texto}` : ''}`
+          : conteudoFinal;
       const preview = previewBase.length > 140 ? `${previewBase.slice(0, 139)}…` : previewBase;
 
       // A mensagem ja foi entregue pelo WhatsApp acima -- se o registro na conversa falhar, tenta
