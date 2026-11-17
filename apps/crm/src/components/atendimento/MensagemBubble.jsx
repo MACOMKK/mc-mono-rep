@@ -182,8 +182,10 @@ const MensagemBubble = forwardRef(function MensagemBubble(
           </button>
         ) : (
           <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-            {isPending ? 'Enviando...' : formatHora(mensagem.created_date)}
-            {!isPending && isSaida ? <StatusIcon status={mensagem.status} /> : null}
+            {formatHora(mensagem.created_date)}
+            {isSaida ? (
+              isPending ? <Check className="h-3 w-3 opacity-40" /> : <StatusIcon status={mensagem.status} />
+            ) : null}
           </span>
         )}
       </div>

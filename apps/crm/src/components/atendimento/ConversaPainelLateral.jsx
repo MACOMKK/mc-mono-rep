@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { useAuth } from '@/lib/AuthContext';
 import LeadForm from '@/components/leads/LeadForm';
 
 const ETAPA_TIPO_LABEL = {
@@ -192,6 +193,7 @@ function formatDataHoraNota(value) {
 // NotaInternaLead (que grava em Lead.observacoes) -- este histórico pertence à conversa em si,
 // disponível mesmo sem lead/cliente vinculado, e é cumulativo (nunca editado/apagado).
 function NotasConversa({ conversa }) {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [texto, setTexto] = useState('');
   const queryKey = ['atendimento-notas-conversa', conversa.id];
@@ -204,11 +206,37 @@ function NotasConversa({ conversa }) {
 
   const adicionarMutation = useMutation({
     mutationFn: (conteudo) => atendimentoApi.adicionarNotaConversa({ conversaId: conversa.id, conteudo }),
-    onSuccess: () => {
+    // Mesmo padrao otimista do chat principal (enviarMutation em Atendimento.jsx): insere a nota
+    // na hora (onMutate, sincrono) em vez de esperar o round-trip, e so troca pelo registro real
+    // no onSuccess (casando pelo tempId) -- sem invalidateQueries, que arriscaria um refetch
+    // pisar numa segunda nota ainda em voo.
+    onMutate: (conteudo) => {
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      queryClient.setQueryData(queryKey, (old = []) => [
+        ...old,
+        {
+          id: tempId,
+          conversa_id: conversa.id,
+          colaborador_id: user?.id || '',
+          colaborador_nome: user?.name || 'Você',
+          conteudo,
+          tipo: 'usuario',
+          criado_em: new Date().toISOString(),
+        },
+      ]);
       setTexto('');
-      queryClient.invalidateQueries({ queryKey });
+      return { tempId };
     },
-    onError: () => {
+    onSuccess: (notaCriada, _conteudo, context) => {
+      queryClient.setQueryData(queryKey, (old = []) =>
+        old.map((item) => (item.id === context?.tempId ? notaCriada : item)),
+      );
+    },
+    onError: (_error, conteudo, context) => {
+      if (context?.tempId) {
+        queryClient.setQueryData(queryKey, (old = []) => old.filter((item) => item.id !== context.tempId));
+      }
+      setTexto(conteudo);
       toast({ title: 'Não foi possível adicionar a nota.', variant: 'destructive' });
     },
   });

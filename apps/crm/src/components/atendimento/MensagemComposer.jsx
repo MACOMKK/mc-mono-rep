@@ -104,9 +104,7 @@ export default function MensagemComposer({
   const [enviandoTemplate, setEnviandoTemplate] = useState(false);
   const [gerenciarRapidasOpen, setGerenciarRapidasOpen] = useState(false);
   const [localizacaoDialogOpen, setLocalizacaoDialogOpen] = useState(false);
-  const [enviandoLocalizacao, setEnviandoLocalizacao] = useState(false);
   const [solicitarLocalizacaoDialogOpen, setSolicitarLocalizacaoDialogOpen] = useState(false);
-  const [enviandoSolicitacaoLocalizacao, setEnviandoSolicitacaoLocalizacao] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -347,28 +345,19 @@ export default function MensagemComposer({
     }
   };
 
-  const handleEnviarLocalizacao = async (location) => {
-    setEnviandoLocalizacao(true);
-    try {
-      await onSendLocation(location);
-      setLocalizacaoDialogOpen(false);
-    } catch {
-      // Erro ja e' tratado (toast) no onError da mutation em Atendimento.jsx.
-    } finally {
-      setEnviandoLocalizacao(false);
-    }
+  // Mesmo padrao de handleSend: onSendLocation (enviarMutation) ja atualiza a lista
+  // otimisticamente em onMutate -- nao esperar a confirmacao do servidor aqui, senao o dialogo
+  // fica aberto (com overlay bloqueando o chat) durante todo o envio, dando sensacao de tela
+  // travada. Fecha o dialogo na hora e deixa erro de envio pro onError da mutation (toast +
+  // bolha de erro com retry).
+  const handleEnviarLocalizacao = (location) => {
+    setLocalizacaoDialogOpen(false);
+    onSendLocation(location).catch(() => {});
   };
 
-  const handleEnviarSolicitacaoLocalizacao = async (locationRequest) => {
-    setEnviandoSolicitacaoLocalizacao(true);
-    try {
-      await onSendLocationRequest(locationRequest);
-      setSolicitarLocalizacaoDialogOpen(false);
-    } catch {
-      // Erro ja e' tratado (toast) no onError da mutation em Atendimento.jsx.
-    } finally {
-      setEnviandoSolicitacaoLocalizacao(false);
-    }
+  const handleEnviarSolicitacaoLocalizacao = (locationRequest) => {
+    setSolicitarLocalizacaoDialogOpen(false);
+    onSendLocationRequest(locationRequest).catch(() => {});
   };
 
   const handleKeyDown = (event) => {
@@ -765,7 +754,6 @@ export default function MensagemComposer({
           open={localizacaoDialogOpen}
           onOpenChange={setLocalizacaoDialogOpen}
           onEnviar={handleEnviarLocalizacao}
-          isPending={enviandoLocalizacao}
         />
       ) : null}
       {onSendLocationRequest ? (
@@ -773,7 +761,6 @@ export default function MensagemComposer({
           open={solicitarLocalizacaoDialogOpen}
           onOpenChange={setSolicitarLocalizacaoDialogOpen}
           onEnviar={handleEnviarSolicitacaoLocalizacao}
-          isPending={enviandoSolicitacaoLocalizacao}
         />
       ) : null}
     </div>

@@ -413,6 +413,8 @@ serve(async (req) => {
     ? null
     : await loadIntegracaoCredenciais('whatsapp_meta', integracoesCtx);
   const provider: WhatsappProvider | null = evolutionCredenciais ? 'evolution' : metaCredenciais ? 'meta' : null;
+  const metaPhoneNumberId =
+    typeof metaCredenciais?.phone_number_id === 'string' ? metaCredenciais.phone_number_id.trim() : null;
 
   // Verificacao do webhook exigida pela Meta Cloud API na configuracao inicial (a Evolution
   // API nao usa esse handshake, entao isso so importa quando o provedor ativo e' a Meta).
@@ -499,7 +501,26 @@ serve(async (req) => {
       });
     }
 
-    if (incomingMessages.length === 0) {
+    // O App da Meta pode ter outras WABAs/numeros inscritos no mesmo webhook (ex.: numero de
+    // teste, ou numero de outro cliente que compartilha o App) -- a assinatura
+    // x-hub-signature-256 so' valida o App, nunca o numero. Sem esse filtro, mensagem de
+    // qualquer numero inscrito era processada como se fosse contato da Macom (chegou a criar
+    // conversa/lead com contato de outro negocio, ver log de auditoria "whatsapp_webhook_origem"
+    // com phoneNumberId != metaPhoneNumberId configurado na integracao). So' descarta quando o
+    // numero configurado e' conhecido (metaPhoneNumberId) e a mensagem informa um numero
+    // diferente -- mensagem sem phoneNumberId (Evolution, ou Meta sem metadata) passa direto.
+    const incomingMessagesFiltradas =
+      provider === 'meta' && metaPhoneNumberId
+        ? incomingMessages.filter((m) => !m.phoneNumberId || m.phoneNumberId === metaPhoneNumberId)
+        : incomingMessages;
+    const descartadas = incomingMessages.length - incomingMessagesFiltradas.length;
+    if (descartadas > 0) {
+      console.error(
+        `Webhook recebeu ${descartadas} mensagem(ns) de phone_number_id diferente do configurado (${metaPhoneNumberId}) -- descartadas.`,
+      );
+    }
+
+    if (incomingMessagesFiltradas.length === 0) {
       // Webhooks de status (enviado/entregue/lido) tambem chegam aqui, sem nenhuma mensagem em
       // value.messages/messages.upsert -- ver extractStatusUpdatesMeta/extractStatusUpdatesEvolution.
       const statusUpdates =
@@ -528,7 +549,7 @@ serve(async (req) => {
 
     const results = [];
 
-    for (const incoming of incomingMessages) {
+    for (const incoming of incomingMessagesFiltradas) {
       const telefoneNormalizado = normalizePhone(incoming.fromPhone);
 
       // Idempotencia: a Meta pode reenviar o mesmo webhook em caso de timeout.
@@ -680,8 +701,6 @@ serve(async (req) => {
       }
 
       const metaToken = typeof metaCredenciais?.access_token === 'string' ? metaCredenciais.access_token.trim() : null;
-      const metaPhoneNumberId =
-        typeof metaCredenciais?.phone_number_id === 'string' ? metaCredenciais.phone_number_id.trim() : null;
       const canSendViaMeta = provider === 'meta' && Boolean(metaToken) && Boolean(metaPhoneNumberId);
       const canSendViaEvolution =
         provider === 'evolution' &&
