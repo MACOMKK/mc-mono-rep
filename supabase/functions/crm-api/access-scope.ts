@@ -1,6 +1,6 @@
 export const CRM_SCHEMA = 'gestao_crm';
 
-export type EntityName = 'clientes' | 'avaliacoes_cliente' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'cores_veiculo' | 'veiculos_estoque' | 'veiculos_estoque_historico_reserva' | 'pipelines' | 'etapas_pipeline' | 'motivos_status' | 'propostas' | 'vendas' | 'conversas_atendimento' | 'mensagens_atendimento' | 'notas_conversa';
+export type EntityName = 'clientes' | 'avaliacoes_cliente' | 'leads' | 'atendimentos' | 'historico_atendimentos' | 'veiculos_interesse' | 'categorias_veiculo' | 'origens_lead' | 'marcas_veiculo' | 'modelos_veiculo' | 'versoes_veiculo' | 'cores_veiculo' | 'veiculos_estoque' | 'veiculos_estoque_historico_reserva' | 'pipelines' | 'etapas_pipeline' | 'motivos_status' | 'propostas' | 'vendas' | 'conversas_atendimento' | 'mensagens_atendimento' | 'notas_conversa' | 'mensagens_rapidas';
 
 export function getAccessLevel(access: Record<string, unknown> | null) {
   return String(access?.nivel_acesso || '');
@@ -152,6 +152,7 @@ export function buildAccessScope(
       case 'pipelines':
       case 'etapas_pipeline':
       case 'motivos_status':
+      case 'mensagens_rapidas':
         return { clause: '', values: [] as unknown[] };
       default:
         throw unimplementedScopeError(entity);
@@ -278,6 +279,7 @@ export function buildAccessScope(
     case 'pipelines':
     case 'etapas_pipeline':
     case 'motivos_status':
+    case 'mensagens_rapidas':
       return { clause: '', values: [] as unknown[] };
     default:
       throw unimplementedScopeError(entity);

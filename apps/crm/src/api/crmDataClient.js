@@ -284,6 +284,16 @@ function mapOrigemLeadRow(row = {}) {
   };
 }
 
+function mapMensagemRapidaRow(row = {}) {
+  return {
+    id: row.id,
+    titulo: row.titulo || '',
+    texto: row.texto || '',
+    ativo: row.ativo !== false,
+    ...mapBaseDates(row),
+  };
+}
+
 function mapMotivoStatusRow(row = {}) {
   return {
     id: row.id,
@@ -1039,6 +1049,28 @@ const OrigemLeadRepository = {
   },
 };
 
+const MensagemRapidaRepository = {
+  ...createListRepository('MensagemRapida', crmApi.mensagens_rapidas, mapMensagemRapidaRow),
+
+  async create(data) {
+    const row = await crmApi.mensagens_rapidas.create({
+      titulo: data.titulo,
+      texto: data.texto,
+      ativo: data.ativo !== false,
+    });
+    return mapMensagemRapidaRow(row);
+  },
+
+  async update(id, data) {
+    const row = await crmApi.mensagens_rapidas.update(id, {
+      titulo: data.titulo,
+      texto: data.texto,
+      ativo: data.ativo !== false,
+    });
+    return mapMensagemRapidaRow(row);
+  },
+};
+
 const MotivoStatusRepository = {
   ...createListRepository('MotivoStatus', crmApi.motivos_status, mapMotivoStatusRow),
 
@@ -1645,6 +1677,7 @@ export const crmDataClient = {
     CategoriaVeiculo: CategoriaVeiculoRepository,
     OrigemLead: OrigemLeadRepository,
     MotivoStatus: MotivoStatusRepository,
+    MensagemRapida: MensagemRapidaRepository,
     Pipeline: PipelineRepository,
     EtapaPipeline: EtapaPipelineRepository,
     PipelineAutomacao: PipelineAutomacaoRepository,

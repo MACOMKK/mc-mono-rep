@@ -196,6 +196,14 @@ ver `GUIA_TESTE_WHATSAPP_EVOLUTION_LOCAL.md`. UI: `MensagemBubble.jsx` mostra �
 (entregue, cinza; lido, azul) ao lado do horário, só em mensagens de saída — chega via Realtime
 (UPDATE em `mensagens_atendimento`, já tratado pelo merge direto no cache descrito abaixo).
 
+`mensagens_rapidas` (`20261117100000_add_crm_mensagens_rapidas.sql`) é o cadastro de respostas
+prontas do composer (botão de raio) — catálogo global de equipe, sem `unidade_id`/posse e sem
+vínculo com quem criou (`criado_por` é só informativo): qualquer atendente pode criar, editar ou
+excluir qualquer mensagem rápida. Antes disso era uma lista fixa hardcoded em
+`MensagemComposer.jsx` (4 itens, preservados na migration como seed). Tela de gestão é o dialog
+`GerenciarMensagensRapidasDialog.jsx`, aberto pelo próprio dropdown do composer — não ganhou rota
+de configuração dedicada.
+
 ## Realtime
 
 `useCrmRealtime.js` escuta INSERT/UPDATE/DELETE em `gestao_crm` (leads, clientes, atendimentos,

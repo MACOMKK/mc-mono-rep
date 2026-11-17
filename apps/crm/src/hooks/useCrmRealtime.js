@@ -26,6 +26,7 @@ const REALTIME_TABLES = [
   { schema: 'gestao_crm', table: 'etapas_pipeline' },
   { schema: 'gestao_crm', table: 'pipeline_automacoes' },
   { schema: 'gestao_crm', table: 'motivos_status' },
+  { schema: 'gestao_crm', table: 'mensagens_rapidas' },
 ];
 
 const TABLE_CACHE_CONFIG = {
@@ -116,6 +117,9 @@ const TABLE_CACHE_CONFIG = {
   },
   motivos_status: {
     queryKeys: [['crm-motivos-status'], ['crm-leads-catalogos']],
+  },
+  mensagens_rapidas: {
+    queryKeys: [['crm-mensagens-rapidas']],
   },
 };
 

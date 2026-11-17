@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Clock, FileText, Lock, Mic, Paperclip, SendHorizontal, Smile, Sparkles, Square, Trash2, X, Zap } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Clock, FileText, Lock, Mic, Paperclip, Settings, SendHorizontal, Smile, Sparkles, Square, Trash2, X, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { crmDataClient } from '@/api/crmDataClient';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
@@ -8,10 +10,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import EnviarTemplateDialog from './EnviarTemplateDialog';
+import GerenciarMensagensRapidasDialog from './GerenciarMensagensRapidasDialog';
 
 // Conjunto curado (sem lib de picker nova) -- cobre as reacoes/expressoes mais comuns num chat de
 // atendimento. Pode crescer, mas o objetivo aqui e' cobertura pratica, nao o unicode completo.
@@ -58,15 +62,6 @@ function mimeTypeSuportadoParaGravacao() {
   return MIME_TYPES_AUDIO_GRAVACAO.find((tipo) => MediaRecorder.isTypeSupported?.(tipo)) || '';
 }
 
-// Cadastro fixo por enquanto -- sem tela de configuracao ainda. Migrar para tabela propria se
-// o uso pegar (ver plano de melhorias do chat de Atendimento).
-const TEMPLATES_RESPOSTA_RAPIDA = [
-  { titulo: 'Saudação', texto: 'Olá! Em que posso ajudar?' },
-  { titulo: 'Horário de atendimento', texto: 'Nosso horário de atendimento é de segunda a sábado, das 8h às 18h.' },
-  { titulo: 'Aguarde um momento', texto: 'Só um momento, vou verificar essa informação para você.' },
-  { titulo: 'Encerramento', texto: 'Fico à disposição! Qualquer outra dúvida, é só chamar por aqui.' },
-];
-
 const RESPONDE_A_AUTOR_LABEL = {
   ia: 'IA',
   humano: 'Você',
@@ -99,6 +94,7 @@ export default function MensagemComposer({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [enviandoTemplate, setEnviandoTemplate] = useState(false);
+  const [gerenciarRapidasOpen, setGerenciarRapidasOpen] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -106,6 +102,13 @@ export default function MensagemComposer({
   const recordingStreamRef = useRef(null);
   const recordingTimerRef = useRef(null);
   const recordingCanceladaRef = useRef(false);
+
+  // Mesma query key que GerenciarMensagensRapidasDialog usa pra invalidar -- criar/editar/excluir
+  // ali reflete aqui sem precisar fechar o dropdown.
+  const { data: mensagensRapidas = [] } = useQuery({
+    queryKey: ['crm-mensagens-rapidas'],
+    queryFn: () => crmDataClient.entities.MensagemRapida.list('titulo', 500),
+  });
 
   const handleTemplateSelect = (texto) => {
     setValue(texto);
@@ -453,16 +456,30 @@ export default function MensagemComposer({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-72">
-            {TEMPLATES_RESPOSTA_RAPIDA.map((template) => (
-              <DropdownMenuItem
-                key={template.titulo}
-                className="flex flex-col items-start gap-0.5 whitespace-normal"
-                onSelect={() => handleTemplateSelect(template.texto)}
-              >
-                <span className="text-xs font-semibold">{template.titulo}</span>
-                <span className="text-xs text-muted-foreground">{template.texto}</span>
+            {mensagensRapidas.length === 0 ? (
+              <DropdownMenuItem disabled className="whitespace-normal text-xs text-muted-foreground">
+                Nenhuma mensagem rápida cadastrada.
               </DropdownMenuItem>
-            ))}
+            ) : (
+              mensagensRapidas.map((mensagem) => (
+                <DropdownMenuItem
+                  key={mensagem.id}
+                  className="flex flex-col items-start gap-0.5 whitespace-normal"
+                  onSelect={() => handleTemplateSelect(mensagem.texto)}
+                >
+                  <span className="text-xs font-semibold">{mensagem.titulo}</span>
+                  <span className="text-xs text-muted-foreground">{mensagem.texto}</span>
+                </DropdownMenuItem>
+              ))
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="flex items-center gap-2 text-xs"
+              onSelect={() => setGerenciarRapidasOpen(true)}
+            >
+              <Settings className="h-3.5 w-3.5" />
+              Gerenciar mensagens rápidas...
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         {onSendTemplate ? (
@@ -546,6 +563,7 @@ export default function MensagemComposer({
           isPending={enviandoTemplate}
         />
       ) : null}
+      <GerenciarMensagensRapidasDialog open={gerenciarRapidasOpen} onOpenChange={setGerenciarRapidasOpen} />
     </div>
   );
 }

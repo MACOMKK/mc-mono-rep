@@ -296,6 +296,12 @@ const ENTITY_CONFIG = {
     orderDirection: 'asc',
     allowedFields: ['conversa_id', 'conteudo'],
   },
+  mensagens_rapidas: {
+    table: 'mensagens_rapidas',
+    orderBy: 'titulo',
+    orderDirection: 'asc',
+    allowedFields: ['titulo', 'texto', 'ativo'],
+  },
 } as const;
 
 
