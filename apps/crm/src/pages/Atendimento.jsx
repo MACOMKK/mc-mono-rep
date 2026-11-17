@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
+  ArrowLeft,
   Info,
   MessageCircle,
   MessageSquarePlus,
@@ -23,6 +24,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/components/ui/use-toast';
 import { useAuth } from '@/lib/AuthContext';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { useIsMobile } from '@/hooks/use-mobile';
 import ConversaListItem, { SlaPendenteBadge } from '@/components/atendimento/ConversaListItem';
 import ConversaPainelLateral from '@/components/atendimento/ConversaPainelLateral';
 import MensagemBubble from '@/components/atendimento/MensagemBubble';
@@ -145,6 +147,7 @@ function buscarConversas(conversas, termo) {
 export default function Atendimento() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const [conversaId, setConversaId] = useState(null);
   const [filtro, setFiltro] = useState('todas');
   const [abaStatus, setAbaStatus] = useState('todas');
@@ -284,11 +287,13 @@ export default function Atendimento() {
     }
   };
 
+  // No mobile nao auto-seleciona a primeira conversa -- a lista e' a tela inicial (como
+  // WhatsApp/Telegram), o chat so abre full-screen quando o atendente toca num item.
   useEffect(() => {
-    if (!conversaId && conversas.length > 0) {
+    if (!isMobile && !conversaId && conversas.length > 0) {
       setConversaId(conversas[0].id);
     }
-  }, [conversaId, conversas]);
+  }, [conversaId, conversas, isMobile]);
 
   // Avisa (toast) quando chega mensagem nova em uma conversa que nao e' a aberta no momento --
   // sem isso o atendente so percebe olhando a lista o tempo todo.
@@ -526,7 +531,15 @@ export default function Atendimento() {
 
   return (
     <div className="flex h-full">
-      <div className="flex w-96 shrink-0 flex-col border-r border-border bg-background">
+      {/* No mobile so' uma coluna fica visivel por vez (lista OU conversa) -- as duas juntas (mais
+          o painel de detalhes) nao cabem lado a lado numa tela de celular. A partir de md volta ao
+          layout de 3 colunas de sempre. */}
+      <div
+        className={cn(
+          'flex w-full shrink-0 flex-col border-r border-border bg-background md:w-96',
+          isMobile && conversaAtiva && 'hidden',
+        )}
+      >
         <div className="flex items-center gap-2 px-3 py-2.5">
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -635,7 +648,7 @@ export default function Atendimento() {
         </ScrollArea>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className={cn('flex min-h-0 flex-1 flex-col', isMobile && !conversaAtiva && 'hidden')}>
         {!conversaAtiva ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
             <MessageCircle className="h-8 w-8" />
@@ -645,6 +658,18 @@ export default function Atendimento() {
           <>
             <div className="flex items-center justify-between gap-2 border-b border-border bg-background px-4 py-4 shadow-sm">
               <div className="flex min-w-0 items-center gap-3">
+                {isMobile ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="-ml-1.5 h-8 w-8 shrink-0"
+                    aria-label="Voltar para a lista de conversas"
+                    onClick={() => setConversaId(null)}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                ) : null}
                 <Avatar className="h-9 w-9 shrink-0">
                   <AvatarFallback className="bg-primary/10 text-xs font-bold text-primary">
                     {iniciais(conversaAtiva.cliente_nome) || <Phone className="h-4 w-4" />}
@@ -686,8 +711,8 @@ export default function Atendimento() {
                     onClick={() => assumirMutation.mutate()}
                     disabled={assumirMutation.isPending || conversaAtiva.status === 'encerrada'}
                   >
-                    <UserCheck className="mr-1 h-3.5 w-3.5" />
-                    Assumir
+                    <UserCheck className="h-3.5 w-3.5 sm:mr-1" />
+                    <span className="hidden sm:inline">Assumir</span>
                   </Button>
                 ) : null}
                 {conversaAtiva.status !== 'encerrada' ? (
@@ -698,8 +723,8 @@ export default function Atendimento() {
                     onClick={() => encerrarMutation.mutate()}
                     disabled={encerrarMutation.isPending}
                   >
-                    <CheckCheck className="mr-1 h-3.5 w-3.5" />
-                    Encerrar
+                    <CheckCheck className="h-3.5 w-3.5 sm:mr-1" />
+                    <span className="hidden sm:inline">Encerrar</span>
                   </Button>
                 ) : null}
               </div>
@@ -870,7 +895,9 @@ export default function Atendimento() {
         )}
       </div>
 
-      {conversaAtiva && painelDetalhesAberto ? <ConversaPainelLateral conversa={conversaAtiva} /> : null}
+      {conversaAtiva && painelDetalhesAberto ? (
+        <ConversaPainelLateral conversa={conversaAtiva} onClose={() => setPainelDetalhesAberto(false)} />
+      ) : null}
       <NovaConversaDialog
         open={novaConversaAberta}
         onOpenChange={setNovaConversaAberta}

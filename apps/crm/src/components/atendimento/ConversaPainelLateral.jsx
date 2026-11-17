@@ -517,7 +517,7 @@ function TagsConversa({ conversa }) {
   );
 }
 
-export default function ConversaPainelLateral({ conversa }) {
+export default function ConversaPainelLateral({ conversa, onClose }) {
   const leadId = conversa?.lead_id || '';
   const clienteId = !leadId && conversa?.cliente_id ? conversa.cliente_id : '';
 
@@ -536,9 +536,25 @@ export default function ConversaPainelLateral({ conversa }) {
   const isLoading = isLoadingLead || isLoadingCliente;
 
   return (
-    <div className="flex w-72 shrink-0 flex-col border-l border-border bg-background">
-      <div className="border-b border-border bg-background px-4 py-4 shadow-sm">
+    // No mobile o painel cobre a tela (lista + chat ja nao cabem com mais uma coluna fixa);
+    // a partir de md volta a ser a coluna lateral de sempre, sem overlay. z-50 (> z-40 da navbar
+    // sticky, Navbar.jsx) -- com z-20 o proprio cabecalho do painel (titulo + botao fechar)
+    // ficava atras da navbar, sem nenhum jeito de fechar no mobile.
+    <div className="fixed inset-0 z-50 flex flex-col bg-background md:static md:inset-auto md:z-auto md:w-72 md:shrink-0 md:border-l md:border-border">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-background px-4 py-4 shadow-sm">
         <h2 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Dados vinculados</h2>
+        {onClose ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 md:hidden"
+            aria-label="Fechar"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-muted/20 px-4 py-4">

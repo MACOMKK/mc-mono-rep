@@ -8,7 +8,11 @@ const ScrollArea = React.forwardRef(({ className, children, ...props }, ref) => 
     ref={ref}
     className={cn("relative overflow-hidden", className)}
     {...props}>
-    <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
+    {/* O Viewport do Radix embrulha o conteudo num div "display: table; min-width: 100%" (p/
+        medir o scroll) -- isso faz a largura ser calculada pelo conteudo max-content, ignorando
+        truncate/flex-shrink dos filhos, e gerava scroll lateral em listas com texto longo (ex.:
+        lista de conversas do Atendimento no mobile). Forcar display:block no filho direto resolve. */}
+    <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] [&>div]:!block">
       {children}
     </ScrollAreaPrimitive.Viewport>
     <ScrollBar />

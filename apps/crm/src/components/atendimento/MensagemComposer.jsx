@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Clock, FileText, Lock, MapPin, MapPinned, Mic, Paperclip, Settings, SendHorizontal, Smile, Sparkles, Square, Trash2, X, Zap } from 'lucide-react';
+import { Clock, FileText, Lock, MapPin, MapPinned, Mic, Paperclip, Plus, Settings, SendHorizontal, Smile, Sparkles, Square, Trash2, X, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { crmDataClient } from '@/api/crmDataClient';
 import { Button } from '@/components/ui/button';
@@ -240,6 +240,21 @@ export default function MensagemComposer({
     el.style.height = `${Math.min(el.scrollHeight, TEXTAREA_ALTURA_MAXIMA_PX)}px`;
   }, [value]);
 
+  // A medicao acima roda no mount com `value` vazio -- se nesse momento a largura do campo ainda
+  // nao assentou (troca de conversa, fonte web carregando com metricas de fallback diferentes) o
+  // scrollHeight sai inflado e fica preso assim pra sempre, ja que o efeito de cima so' reage a
+  // `value`. ResizeObserver recalcula sempre que a largura/altura real do campo mudar.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      el.style.height = 'auto';
+      el.style.height = `${Math.min(el.scrollHeight, TEXTAREA_ALTURA_MAXIMA_PX)}px`;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const handleSend = () => {
     const trimmed = value.trim();
     if (!trimmed || bloqueiaTexto) return;
@@ -442,8 +457,13 @@ export default function MensagemComposer({
           </Button>
         </div>
       ) : null}
-      <div className="flex items-center gap-2 p-3">
-      <div className="flex min-h-11 flex-1 items-center gap-1 rounded-full bg-muted pl-1.5 pr-3">
+      {/* p-2 (nao p-3) e h-10 (nao min-h-11) no pill: no mobile esse bloco inteiro (banner + linha
+          do campo) ficava ocupando uma fatia grande demais da tela, com folga visual sobrando
+          acima/abaixo do texto digitado -- reduzir o padding deixa a proporcao mais parecida com
+          um composer de chat real sem cortar nada (botoes continuam h-8/h-9, textarea continua
+          crescendo ate TEXTAREA_ALTURA_MAXIMA_PX normalmente). */}
+      <div className="flex items-center gap-2 p-2 pr-4">
+      <div className="flex min-h-10 flex-1 items-center gap-1 rounded-full bg-muted pl-1.5 pr-3">
         <input
           ref={fileInputRef}
           type="file"
@@ -468,7 +488,7 @@ export default function MensagemComposer({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 text-muted-foreground"
+              className="hidden h-8 w-8 shrink-0 text-muted-foreground sm:inline-flex"
               disabled={bloqueiaTexto || isRecording}
               aria-label="Emoji"
             >
@@ -490,13 +510,17 @@ export default function MensagemComposer({
             </div>
           </PopoverContent>
         </Popover>
+        {/* Abaixo de sm, Zap/MapPin/MapPinned viram o menu "Mais" unico logo abaixo -- os 6 botoes
+            de icone juntos nao cabem ao lado do campo de texto numa tela de celular (o campo
+            ficava espremido a poucos pixels, texto quebrando letra a letra). Acima de sm
+            continuam como botoes individuais, sem mudanca de comportamento. */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 text-muted-foreground"
+              className="hidden h-8 w-8 shrink-0 text-muted-foreground sm:inline-flex"
               disabled={bloqueiaTexto || isRecording}
               aria-label="Respostas rápidas"
             >
@@ -535,7 +559,13 @@ export default function MensagemComposer({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 w-8 shrink-0 text-muted-foreground"
+            // Fora da janela de 24h esse botao e' o unico jeito de mandar mensagem (ver bloqueiaTexto
+            // acima) -- por isso so' ele fica visivel no mobile mesmo fechado; aberto, ele some pro
+            // menu "Mais" pra sobrar largura pro campo de texto, igual Zap/MapPin/MapPinned.
+            className={cn(
+              'h-8 w-8 shrink-0 text-muted-foreground',
+              !foraDaJanela && 'hidden sm:inline-flex',
+            )}
             disabled={disabled || isRecording}
             aria-label="Enviar template"
             onClick={() => setTemplateDialogOpen(true)}
@@ -548,7 +578,7 @@ export default function MensagemComposer({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 w-8 shrink-0 text-muted-foreground"
+            className="hidden h-8 w-8 shrink-0 text-muted-foreground sm:inline-flex"
             disabled={bloqueiaTexto || isRecording}
             aria-label="Enviar localização"
             onClick={() => setLocalizacaoDialogOpen(true)}
@@ -561,7 +591,7 @@ export default function MensagemComposer({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 w-8 shrink-0 text-muted-foreground"
+            className="hidden h-8 w-8 shrink-0 text-muted-foreground sm:inline-flex"
             disabled={bloqueiaTexto || isRecording}
             aria-label="Solicitar localização"
             onClick={() => setSolicitarLocalizacaoDialogOpen(true)}
@@ -569,6 +599,87 @@ export default function MensagemComposer({
             <MapPinned className="h-4 w-4" />
           </Button>
         ) : null}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground sm:hidden"
+              disabled={bloqueiaTexto || isRecording}
+              aria-label="Mais opções"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-72">
+            {onSendTemplate && !foraDaJanela ? (
+              <DropdownMenuItem
+                className="flex items-center gap-2 text-xs"
+                disabled={disabled}
+                onSelect={() => setTemplateDialogOpen(true)}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Enviar template
+              </DropdownMenuItem>
+            ) : null}
+            <div className="grid grid-cols-8 gap-1 p-1.5">
+              {EMOJIS_RAPIDOS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  className="flex h-7 w-7 items-center justify-center rounded text-base hover:bg-muted"
+                  onClick={() => handleEmojiSelect(emoji)}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+            <DropdownMenuSeparator />
+            {mensagensRapidas.length === 0 ? (
+              <DropdownMenuItem disabled className="whitespace-normal text-xs text-muted-foreground">
+                Nenhuma mensagem rápida cadastrada.
+              </DropdownMenuItem>
+            ) : (
+              mensagensRapidas.map((mensagem) => (
+                <DropdownMenuItem
+                  key={mensagem.id}
+                  className="flex flex-col items-start gap-0.5 whitespace-normal"
+                  onSelect={() => handleTemplateSelect(mensagem.texto)}
+                >
+                  <span className="text-xs font-semibold">{mensagem.titulo}</span>
+                  <span className="text-xs text-muted-foreground">{mensagem.texto}</span>
+                </DropdownMenuItem>
+              ))
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="flex items-center gap-2 text-xs"
+              onSelect={() => setGerenciarRapidasOpen(true)}
+            >
+              <Settings className="h-3.5 w-3.5" />
+              Gerenciar mensagens rápidas...
+            </DropdownMenuItem>
+            {onSendLocation ? (
+              <DropdownMenuItem
+                className="flex items-center gap-2 text-xs"
+                onSelect={() => setLocalizacaoDialogOpen(true)}
+              >
+                <MapPin className="h-3.5 w-3.5" />
+                Enviar localização
+              </DropdownMenuItem>
+            ) : null}
+            {onSendLocationRequest && providerWhatsapp === 'meta' ? (
+              <DropdownMenuItem
+                className="flex items-center gap-2 text-xs"
+                onSelect={() => setSolicitarLocalizacaoDialogOpen(true)}
+              >
+                <MapPinned className="h-3.5 w-3.5" />
+                Solicitar localização
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
         {isRecording ? (
           <div className="flex flex-1 items-center gap-2 py-1.5 text-sm text-muted-foreground">
             <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" />
@@ -586,13 +697,24 @@ export default function MensagemComposer({
                 : 'Digite uma mensagem...'
             }
             rows={1}
-            className="min-h-0 flex-1 resize-none overflow-y-auto border-none bg-transparent py-1.5 shadow-none focus-visible:ring-0"
+            // text-sm (nao o text-base/16px padrao do Textarea, usado pra evitar zoom automatico
+            // do iOS Safari ao focar) -- aqui o pedido explicito foi deixar o texto digitado
+            // menor no mobile; o placeholder herda o mesmo tamanho.
+            className="min-h-0 min-w-0 flex-1 resize-none overflow-y-auto border-none bg-transparent py-1.5 text-sm shadow-none focus-visible:ring-0"
             disabled={bloqueiaTexto}
           />
         )}
       </div>
-      {/* Sugestao de resposta por IA: visual, sem funcionalidade ainda. */}
-      <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-red-500" disabled aria-label="Sugestao de IA (em breve)">
+      {/* Sugestao de resposta por IA: visual, sem funcionalidade ainda. Escondido no mobile pra
+          nao disputar espaco com o campo de texto por um botao que ainda nao faz nada. */}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="hidden h-9 w-9 shrink-0 text-red-500 sm:inline-flex"
+        disabled
+        aria-label="Sugestao de IA (em breve)"
+      >
         <Sparkles className="h-4 w-4" />
       </Button>
       {isRecording && (

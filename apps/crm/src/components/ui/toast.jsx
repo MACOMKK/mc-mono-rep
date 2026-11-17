@@ -3,10 +3,16 @@ import { cva } from "class-variance-authority";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// pointer-events-none aqui (ToastProvider/ToastViewport): sao divs fixed cobrindo uma faixa do
+// topo da tela (padding do flex sozinho ja da ~32px de altura mesmo SEM nenhum toast dentro) --
+// sem isso, essa faixa invisivel engolia cliques em qualquer botao por baixo dela nessa regiao
+// (ex.: o X de fechar do painel de detalhes no Atendimento mobile, ConversaPainelLateral.jsx).
+// Cada Toast individual ja tem pointer-events-auto embutido (toastVariants abaixo), entao o
+// conteudo real continua clicavel normalmente.
 const ToastProvider = React.forwardRef(({ ...props }, ref) => (
   <div
     ref={ref}
-    className="fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]"
+    className="pointer-events-none fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]"
     {...props}
   />
 ));
@@ -15,7 +21,7 @@ ToastProvider.displayName = "ToastProvider";
 const ToastViewport = React.forwardRef(({ ...props }, ref) => (
   <div
     ref={ref}
-    className="fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]"
+    className="pointer-events-none fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]"
     {...props}
   />
 ));

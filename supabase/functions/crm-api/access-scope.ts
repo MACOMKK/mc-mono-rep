@@ -79,68 +79,12 @@ export function buildAccessScope(
           values: [unitId],
         };
       case 'conversas_atendimento':
-        // Mesma regra da RLS original (crm_can_access_lead/crm_can_access_cliente):
-        // visivel se o lead ou cliente vinculado esta na unidade do gestor. Conversa
-        // orfa (lead_id e cliente_id nulos) so aparece para quem e' o atendente dela
-        // (iniciou pelo botao "Nova conversa" ou recebeu por fila/transferencia).
-        return {
-          clause: `(
-            exists (
-              select 1 from ${CRM_SCHEMA}.leads scope_lead
-              where scope_lead.id = conversas_atendimento.lead_id
-                and scope_lead.unidade_id = $${startIndex}
-            )
-            or exists (
-              select 1 from ${CRM_SCHEMA}.leads scope_lead
-              where scope_lead.cliente_id = conversas_atendimento.cliente_id
-                and scope_lead.unidade_id = $${startIndex}
-            )
-            or conversas_atendimento.atendente_id = $${startIndex + 1}
-          )`,
-          values: [unitId, collaboratorId],
-        };
       case 'mensagens_atendimento':
-        return {
-          clause: `exists (
-            select 1 from ${CRM_SCHEMA}.conversas_atendimento scope_conversa
-            where scope_conversa.id = mensagens_atendimento.conversa_id
-              and (
-                exists (
-                  select 1 from ${CRM_SCHEMA}.leads scope_lead
-                  where scope_lead.id = scope_conversa.lead_id
-                    and scope_lead.unidade_id = $${startIndex}
-                )
-                or exists (
-                  select 1 from ${CRM_SCHEMA}.leads scope_lead
-                  where scope_lead.cliente_id = scope_conversa.cliente_id
-                    and scope_lead.unidade_id = $${startIndex}
-                )
-                or scope_conversa.atendente_id = $${startIndex + 1}
-              )
-          )`,
-          values: [unitId, collaboratorId],
-        };
       case 'notas_conversa':
-        return {
-          clause: `exists (
-            select 1 from ${CRM_SCHEMA}.conversas_atendimento scope_conversa
-            where scope_conversa.id = notas_conversa.conversa_id
-              and (
-                exists (
-                  select 1 from ${CRM_SCHEMA}.leads scope_lead
-                  where scope_lead.id = scope_conversa.lead_id
-                    and scope_lead.unidade_id = $${startIndex}
-                )
-                or exists (
-                  select 1 from ${CRM_SCHEMA}.leads scope_lead
-                  where scope_lead.cliente_id = scope_conversa.cliente_id
-                    and scope_lead.unidade_id = $${startIndex}
-                )
-                or scope_conversa.atendente_id = $${startIndex + 1}
-              )
-          )`,
-          values: [unitId, collaboratorId],
-        };
+        // Sem regra de separacao do Atendimento definida ainda -- todo nivel enxerga
+        // todas as conversas/mensagens/notas, independente de unidade/atendente.
+        // Revisitar quando houver regra de distribuicao/visibilidade por unidade.
+        return { clause: '', values: [] as unknown[] };
       case 'categorias_veiculo':
       case 'origens_lead':
       case 'marcas_veiculo':
@@ -210,64 +154,12 @@ export function buildAccessScope(
         values: [collaboratorId],
       };
     case 'conversas_atendimento':
-      return {
-        clause: `(
-          exists (
-            select 1 from ${CRM_SCHEMA}.leads scope_lead
-            where scope_lead.id = conversas_atendimento.lead_id
-              and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
-          )
-          or exists (
-            select 1 from ${CRM_SCHEMA}.leads scope_lead
-            where scope_lead.cliente_id = conversas_atendimento.cliente_id
-              and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
-          )
-          or conversas_atendimento.atendente_id = $${startIndex}
-        )`,
-        values: [collaboratorId],
-      };
     case 'mensagens_atendimento':
-      return {
-        clause: `exists (
-          select 1 from ${CRM_SCHEMA}.conversas_atendimento scope_conversa
-          where scope_conversa.id = mensagens_atendimento.conversa_id
-            and (
-              exists (
-                select 1 from ${CRM_SCHEMA}.leads scope_lead
-                where scope_lead.id = scope_conversa.lead_id
-                  and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
-              )
-              or exists (
-                select 1 from ${CRM_SCHEMA}.leads scope_lead
-                where scope_lead.cliente_id = scope_conversa.cliente_id
-                  and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
-              )
-              or scope_conversa.atendente_id = $${startIndex}
-            )
-        )`,
-        values: [collaboratorId],
-      };
     case 'notas_conversa':
-      return {
-        clause: `exists (
-          select 1 from ${CRM_SCHEMA}.conversas_atendimento scope_conversa
-          where scope_conversa.id = notas_conversa.conversa_id
-            and (
-              exists (
-                select 1 from ${CRM_SCHEMA}.leads scope_lead
-                where scope_lead.id = scope_conversa.lead_id
-                  and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
-              )
-              or exists (
-                select 1 from ${CRM_SCHEMA}.leads scope_lead
-                where scope_lead.cliente_id = scope_conversa.cliente_id
-                  and (scope_lead.responsavel_id = $${startIndex} or scope_lead.criado_por = $${startIndex})
-              )
-              or scope_conversa.atendente_id = $${startIndex}
-            )
-        )`,
-        values: [collaboratorId],
-      };
+      // Sem regra de separacao do Atendimento definida ainda -- todo nivel enxerga
+      // todas as conversas/mensagens/notas, independente de unidade/atendente.
+      // Revisitar quando houver regra de distribuicao/visibilidade por unidade.
+      return { clause: '', values: [] as unknown[] };
     case 'categorias_veiculo':
     case 'origens_lead':
     case 'marcas_veiculo':

@@ -126,6 +126,14 @@ type IncomingMessage = {
   // casado por wa_id; Evolution/Baileys: pushName no proprio objeto da mensagem. Usado so' como
   // fallback de exibicao pra contato ainda sem lead/cliente vinculado, ver contato_nome na migration.
   contactName?: string | null;
+  // Diagnostico de origem (so' Meta Cloud API) -- usado apenas para log em
+  // gestao_crm.logs_auditoria (entidade "whatsapp_webhook_origem"), nao afeta o fluxo da
+  // conversa. "referral" so vem preenchido quando o cliente iniciou a conversa clicando num
+  // anuncio (Facebook/Instagram) com "click to WhatsApp"; phoneNumberId/displayPhoneNumber
+  // identificam qual numero da WABA recebeu a mensagem.
+  referral?: Record<string, unknown> | null;
+  phoneNumberId?: string | null;
+  displayPhoneNumber?: string | null;
 };
 
 function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
@@ -138,15 +146,29 @@ function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
       const value = change?.value;
       const waMessages = Array.isArray(value?.messages) ? value.messages : [];
       const waContacts = Array.isArray(value?.contacts) ? value.contacts : [];
+      const phoneNumberId =
+        typeof value?.metadata?.phone_number_id === 'string' ? value.metadata.phone_number_id : null;
+      const displayPhoneNumber =
+        typeof value?.metadata?.display_phone_number === 'string' ? value.metadata.display_phone_number : null;
       for (const message of waMessages) {
         if (!message?.id || !message?.from) continue;
 
         const contactName =
           waContacts.find((contact: any) => contact?.wa_id === message.from)?.profile?.name || null;
+        const referral =
+          message?.referral && typeof message.referral === 'object' ? message.referral : null;
 
         const text = message?.text?.body;
         if (typeof text === 'string') {
-          messages.push({ messageId: message.id, fromPhone: message.from, text, contactName });
+          messages.push({
+            messageId: message.id,
+            fromPhone: message.from,
+            text,
+            contactName,
+            referral,
+            phoneNumberId,
+            displayPhoneNumber,
+          });
           continue;
         }
 
@@ -158,6 +180,9 @@ function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
               fromPhone: message.from,
               text: '',
               contactName,
+              referral,
+              phoneNumberId,
+              displayPhoneNumber,
               location: { latitude, longitude, nome: name || null, endereco: address || null },
             });
           }
@@ -173,6 +198,9 @@ function extractIncomingMessagesMeta(payload: any): IncomingMessage[] {
             fromPhone: message.from,
             text: mediaNode?.caption || '',
             contactName,
+            referral,
+            phoneNumberId,
+            displayPhoneNumber,
             media: {
               tipo: mediaTipo,
               mimeType: mediaNode.mime_type || 'application/octet-stream',
@@ -448,6 +476,28 @@ serve(async (req) => {
     const payload = JSON.parse(rawBody);
     const incomingMessages =
       provider === 'meta' ? extractIncomingMessagesMeta(payload) : extractIncomingMessagesEvolution(payload);
+
+    // Log de diagnostico (temporario, pra investigar de onde estao vindo contatos novos --
+    // anuncio clicado "click to WhatsApp" preenche message.referral; se nao vier nada, a
+    // mensagem foi iniciada organicamente pelo cliente). Consultar com:
+    // select criado_em, metadados from gestao_crm.logs_auditoria
+    // where entidade = 'whatsapp_webhook_origem' order by criado_em desc;
+    if (provider === 'meta' && incomingMessages.length > 0) {
+      await sql`
+        insert into gestao_crm.logs_auditoria (entidade, acao, metadados)
+        values ('whatsapp_webhook_origem', 'mensagem_recebida', ${sql.json({
+          mensagens: incomingMessages.map((m) => ({
+            fromPhone: m.fromPhone,
+            contactName: m.contactName || null,
+            phoneNumberId: m.phoneNumberId || null,
+            displayPhoneNumber: m.displayPhoneNumber || null,
+            referral: m.referral || null,
+          })),
+        })})
+      `.catch((logError) => {
+        console.error('Falha ao gravar log de origem do webhook:', getErrorMessage(logError));
+      });
+    }
 
     if (incomingMessages.length === 0) {
       // Webhooks de status (enviado/entregue/lido) tambem chegam aqui, sem nenhuma mensagem em

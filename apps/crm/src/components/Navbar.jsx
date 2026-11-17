@@ -280,13 +280,15 @@ export default function Navbar({ realtime }) {
   });
 
   return (
-    <header className="sticky top-0 z-40 bg-[#1a1a1a] px-6">
+    <header className="sticky top-0 z-40 bg-[#1a1a1a] px-3 sm:px-6">
       <div className="flex h-14 items-center">
-        <Link to="/leads" className="mr-6 flex shrink-0 items-center">
+        {/* No mobile o header nao tem folga pra logo completa + grupo da direita (notificacoes/
+            unidade/avatar) -- "| CRM" some e a margem encolhe pra evitar scroll lateral. */}
+        <Link to="/leads" className="mr-3 flex shrink-0 items-center sm:mr-6">
           <img src={MACOM_LOGO_URL} alt="MACOM" className="h-8 w-8 object-contain" />
           <span className="ml-2 text-sm font-black uppercase tracking-widest text-white">MACOM</span>
-          <span className="mx-2 text-white/30">|</span>
-          <span className="text-xs font-semibold uppercase tracking-widest text-white/60">CRM</span>
+          <span className="mx-2 hidden text-white/30 sm:inline">|</span>
+          <span className="hidden text-xs font-semibold uppercase tracking-widest text-white/60 sm:inline">CRM</span>
         </Link>
 
         <nav className="hidden h-full items-center md:flex">
@@ -373,7 +375,9 @@ export default function Navbar({ realtime }) {
           <DropdownMenu>
             <DropdownMenuTrigger className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-white/70 transition-colors hover:text-white">
               <span className="mr-1 h-1.5 w-1.5 rounded-full bg-primary" />
-              {empresa} <ChevronDown className="h-3 w-3" />
+              {/* Nome da unidade pode ser longo em producao (nao so' "Todas") -- some no mobile
+                  pra nao competir por espaco com notificacoes/avatar, mesmo padrao do CRM/| acima. */}
+              <span className="hidden sm:inline">{empresa}</span> <ChevronDown className="h-3 w-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 rounded-none border-0 p-0 shadow-2xl">
               <div className="border-b border-white/10 bg-[#1a1a1a] px-3 py-2 text-xs font-bold uppercase tracking-widest text-white">Unidade</div>
