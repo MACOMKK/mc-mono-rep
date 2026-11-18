@@ -28,6 +28,7 @@ import {
   marcarTesteBodySchema,
   atualizarVencimentoBodySchema,
   atualizarVencimentoParcelaBodySchema,
+  atualizarObservacaoBodySchema,
   setStatusBodySchema,
 } from '../_shared/validation.ts';
 
@@ -2820,6 +2821,49 @@ Deno.serve(async (request) => {
         collaborator!.id as string,
         `Vencimento alterado de ${formatDateLabel(existing.data_vencimento)} para ${formatDateLabel(novaData)}.`,
       );
+
+      return json({ row });
+    }
+
+    if (action === 'atualizar_observacao') {
+      const parsedObservacao = atualizarObservacaoBodySchema.safeParse(body);
+      if (!parsedObservacao.success) {
+        const issue = parsedObservacao.error.issues[0];
+        return json({ error: `Campo invalido: ${issue?.path?.join('.') || 'payload'}.` }, 400);
+      }
+
+      const id = String(parsedObservacao.data.id || '');
+      if (!id) return json({ error: 'ID obrigatorio.' }, 400);
+
+      const novaObservacao = String(parsedObservacao.data.observacao || '').trim();
+
+      const existing = await ensureRowAccess(id, moduleRole, collaborator);
+
+      // Mesma janela de atualizar_vencimento: so o solicitante, enquanto a solicitacao ainda nao
+      // foi paga/reprovada/cancelada -- inclui 'aprovado' de proposito.
+      if (String(existing.solicitante_id) !== String(collaborator!.id)) {
+        throw Object.assign(new Error('Somente o solicitante pode alterar a observacao desta solicitacao.'), { status: 403 });
+      }
+      const statusPermiteAlterarObservacao =
+        existing.status === 'pendente' || existing.status === 'aprovado' || existing.pendencia_bloqueio === true;
+      if (!statusPermiteAlterarObservacao) {
+        throw Object.assign(
+          new Error('Observacao nao pode mais ser alterada (solicitacao paga, reprovada ou cancelada).'),
+          { status: 400 },
+        );
+      }
+
+      if (novaObservacao === String(existing.observacao || '')) {
+        return json({ row: existing });
+      }
+
+      const rows = await sql.unsafe(
+        `update ${SERVICOS_SCHEMA}.solicitacoes_pagamento set observacao = $2 where id = $1 returning *;`,
+        [id, novaObservacao || null],
+      );
+      const row = rows[0] || existing;
+
+      await insertHistorico(id, 'observacao_alterada', collaborator!.id as string, 'Observação do solicitante alterada.');
 
       return json({ row });
     }

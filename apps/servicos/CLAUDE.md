@@ -276,6 +276,12 @@ reais (só adicionar coluna `mod_<novo>` na tabela, seguindo o mesmo padrão).
   - **Envio:** o solicitante abre "Informar valor" e preenche valor e anexo (obrigatórios). O envio usa a action `reenviar_solicitacao`, que aceita `rascunho` além de `reprovado`: vai para `pendente`, passa de novo pela aprovação, registra o histórico `valor_informado` e notifica o aprovador.
   - **Parar a recorrência:** cancelar o rascunho (solicitante ou financeiro, botão "Encerrar recorrência") ou desmarcar "Recorrente" antes de pagar.
   - **Rascunho fora das telas:** fica fora de `relatorio_financeiro` (filtro na CTE base), de Aprovações (lista `pendente`), de Pagamentos/Calendário (filtram `aprovado`/`pago`) e do cron `servicos-lembrete-aprovacoes` (`pendente`).
+- **Editar observação do solicitante mesmo após aprovada (2026-11-18):** action própria
+  `atualizar_observacao` (servicos-api), mesmo padrão de `atualizar_vencimento` — janela estreita
+  (só o campo `observacao`), mas enquanto `pendente`, `aprovado` ou com pendência aberta (nunca em
+  `pago`/`reprovado`/`cancelado`). Só o solicitante. Front: lápis ao lado de "Observação do
+  solicitante" no `SolicitacaoDrawer`, vira um `Textarea` + Salvar/Cancelar. Gera histórico
+  `observacao_alterada`.
 
 ## Oficina — Checklist de inspeção de veículos
 

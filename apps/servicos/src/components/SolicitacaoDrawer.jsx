@@ -64,6 +64,7 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
+  Textarea,
   useToast,
 } from '@macom/ui';
 import FornecedorDetalheDialog from '@/components/FornecedorDetalheDialog';
@@ -177,6 +178,7 @@ const EVENTO_META = {
     icon: Calendar,
     className: 'text-amber-600 bg-amber-500/10',
   },
+  observacao_alterada: { label: 'Observação alterada', icon: Pencil, className: 'text-amber-600 bg-amber-500/10' },
 };
 
 const EVENTO_META_DEFAULT = { label: null, icon: Clock, className: 'text-muted-foreground bg-muted' };
@@ -217,6 +219,8 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [editandoVencimento, setEditandoVencimento] = useState(false);
   const [rascunhoVencimento, setRascunhoVencimento] = useState('');
+  const [editandoObservacao, setEditandoObservacao] = useState(false);
+  const [rascunhoObservacao, setRascunhoObservacao] = useState('');
   const [parcelaEditandoId, setParcelaEditandoId] = useState(null);
   const [rascunhoVencimentoParcela, setRascunhoVencimentoParcela] = useState('');
 
@@ -243,6 +247,9 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   // pendente, nao de solicitacao.data_vencimento -- editar o campo da solicitacao-mae nao teria
   // efeito visivel nesse caso, entao o controle so aparece pra solicitacao sem parcelas.
   const podeEditarVencimento = isDonoSolicitacao && dentroDaJanelaVencimento && Number(solicitacao?.parcelas_total || 0) === 0;
+  // Mesma janela do vencimento (inclui 'aprovado'): o solicitante pode complementar a observacao
+  // depois de aprovada, sem precisar reabrir a solicitacao.
+  const podeEditarObservacao = isDonoSolicitacao && dentroDaJanelaVencimento;
   // Sem trava de status: igual a assinar_anexo (que tambem funciona em qualquer fase), corrigir o
   // esquecimento de marcar "exigir 2 assinaturas" precisa valer mesmo depois de aprovada/paga.
   const podeEditarAssinaturasAnexo = Boolean(user?.isFinanceiro) || isDonoSolicitacao;
@@ -493,6 +500,19 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
     },
     onError: (error) => {
       toast({ title: 'Não foi possível atualizar o vencimento', description: getFriendlyErrorMessage(error) });
+    },
+  });
+
+  const atualizarObservacaoMutation = useMutation({
+    mutationFn: (observacao) => financeiroApi.solicitacoes.atualizarObservacao(solicitacaoId, observacao),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacoes'] });
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'historico', solicitacaoId] });
+      setEditandoObservacao(false);
+      toast({ title: 'Observação atualizada' });
+    },
+    onError: (error) => {
+      toast({ title: 'Não foi possível atualizar a observação', description: getFriendlyErrorMessage(error) });
     },
   });
 
@@ -1005,10 +1025,47 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                     <p className="whitespace-pre-wrap">{solicitacao.descricao || '-'}</p>
                   </div>
 
-                  {solicitacao.observacao && (
+                  {(solicitacao.observacao || podeEditarObservacao) && (
                     <div>
-                      <p className="text-xs text-muted-foreground">Observação do solicitante</p>
-                      <p className="whitespace-pre-wrap">{solicitacao.observacao}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs text-muted-foreground">Observação do solicitante</p>
+                        {podeEditarObservacao && !editandoObservacao && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRascunhoObservacao(solicitacao.observacao || '');
+                              setEditandoObservacao(true);
+                            }}
+                            className="shrink-0 text-muted-foreground hover:text-foreground"
+                            title="Alterar observação"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      {editandoObservacao ? (
+                        <div className="mt-1 space-y-2">
+                          <Textarea
+                            value={rascunhoObservacao}
+                            onChange={(event) => setRascunhoObservacao(event.target.value)}
+                            rows={3}
+                          />
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              disabled={atualizarObservacaoMutation.isPending}
+                              onClick={() => atualizarObservacaoMutation.mutate(rascunhoObservacao)}
+                            >
+                              Salvar
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setEditandoObservacao(false)}>
+                              Cancelar
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="whitespace-pre-wrap">{solicitacao.observacao || '-'}</p>
+                      )}
                     </div>
                   )}
 

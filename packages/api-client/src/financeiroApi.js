@@ -330,6 +330,10 @@ export const financeiroApi = {
       const result = await invokeServicos({ action: 'atualizar_vencimento', id, data_vencimento: dataVencimento });
       return result.row || null;
     },
+    async atualizarObservacao(id, observacao) {
+      const result = await invokeServicos({ action: 'atualizar_observacao', id, observacao });
+      return result.row || null;
+    },
   },
   anexos: {
     async list(solicitacaoId) {

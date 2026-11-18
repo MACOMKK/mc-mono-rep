@@ -490,6 +490,13 @@ export const atualizarVencimentoParcelaBodySchema = z.object({
   data_vencimento: z.string().nullish(),
 });
 
+// Mesma ideia das duas de cima: janela estreita (so o campo `observacao`), mas aberta em
+// 'aprovado' -- o solicitante pode complementar a observacao mesmo depois de aprovada.
+export const atualizarObservacaoBodySchema = z.object({
+  id: z.string().nullish(),
+  observacao: z.string().nullish(),
+});
+
 export const setStatusBodySchema = z.object({
   id: z.string().nullish(),
   status: z.string().nullish(),
