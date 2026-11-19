@@ -40,3 +40,5 @@ README.md
 
 # Build Android local (Capacitor)
 apps/servicos/android/
+.vercel
+.env*
