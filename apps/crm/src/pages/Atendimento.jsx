@@ -40,7 +40,10 @@ const SCROLL_BOTTOM_THRESHOLD = 120;
 // quanto o atendente digita.
 const RETRY_MAX_TENTATIVAS = 2;
 const RETRY_DELAY_MS = 1500;
-const INTERVALO_MINIMO_FILA_MS = 1200;
+// Baixado de 1200ms: o valor anterior penalizava igualmente a Meta Cloud API (que nao precisa
+// desse respiro) so' pra proteger a Evolution local; 400ms ja' evita rajada na Evolution sem
+// acumular espera perceptivel em sequencias de mensagens no caso comum.
+const INTERVALO_MINIMO_FILA_MS = 400;
 
 // Janela de atendimento da API oficial da Meta: sem mensagem do cliente ('entrada') nas ultimas
 // 24h, a API so aceita template aprovado -- texto/midia livre e' rejeitado pelo WhatsApp. Ver gate

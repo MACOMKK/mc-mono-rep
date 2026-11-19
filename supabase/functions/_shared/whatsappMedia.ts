@@ -6,7 +6,8 @@
 // próprio evento messages.upsert, exigindo POST /chat/getBase64FromMediaMessage/{instance} com
 // { message: { key } } pra obter o base64.
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+import { decodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 
 export type MediaTipo = 'imagem' | 'audio' | 'documento';
 
@@ -40,11 +41,10 @@ function extensionFor(mimeType: string, nomeArquivo: string | null) {
   return EXT_BY_MIME[mimeType] || 'bin';
 }
 
+// Decoder em bloco (std/encoding) em vez de loop manual char-a-char -- custo proporcional ao
+// tamanho do arquivo, mais sensivel em audio.
 export function base64ToBytes(base64: string) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  return decodeBase64(base64);
 }
 
 // Usado no envio de midia (card "Enviar mídia") pra classificar o anexo escolhido pelo
@@ -107,13 +107,27 @@ export async function downloadMediaEvolution(
 }
 
 // --- Upload compartilhado ---------------------------------------------------
+// Cliente reutilizado entre invocacoes (isolate fica "warm" entre requests) -- evita handshake
+// novo a cada upload de midia.
+const clientCache = new Map<string, SupabaseClient>();
+
+function getClient(supabaseUrl: string, serviceRoleKey: string): SupabaseClient {
+  const key = `${supabaseUrl}|${serviceRoleKey}`;
+  let client = clientCache.get(key);
+  if (!client) {
+    client = createClient(supabaseUrl, serviceRoleKey);
+    clientCache.set(key, client);
+  }
+  return client;
+}
+
 export async function uploadMedia(
   supabaseUrl: string,
   serviceRoleKey: string,
   conversaId: string,
   media: MediaInfo,
 ): Promise<UploadedMedia> {
-  const client = createClient(supabaseUrl, serviceRoleKey);
+  const client = getClient(supabaseUrl, serviceRoleKey);
   const ext = extensionFor(media.mimeType, media.nomeArquivo);
   const path = `${conversaId}/${crypto.randomUUID()}.${ext}`;
 

@@ -196,6 +196,23 @@ ver `GUIA_TESTE_WHATSAPP_EVOLUTION_LOCAL.md`. UI: `MensagemBubble.jsx` mostra �
 (entregue, cinza; lido, azul) ao lado do horário, só em mensagens de saída — chega via Realtime
 (UPDATE em `mensagens_atendimento`, já tratado pelo merge direto no cache descrito abaixo).
 
+**Triagem de unidade no primeiro contato** (`20261119120000_add_crm_triagem_unidade_whatsapp.sql`,
+`20261119130000_crm_prepare_lead_phase1_skip_auto_distribution.sql`): como só existe 1 número de
+WhatsApp pra empresa inteira (não um por unidade), todo telefone sem lead **ativo** (nunca teve
+lead, ou o único que teve já fechou) recebe uma lista numerada de unidades em texto puro antes de
+qualquer resposta da IA; a resposta válida cria o lead automaticamente na unidade escolhida (sem
+`responsavel_id` — distribuição automática pulada via GUC `gestao_crm.skip_auto_distribution`).
+Pergunta sai de novo sempre que não houver lead ativo pra aquele telefone — `estado = 'resolvido'`
+não é permanente, é reavaliado a cada mensagem (lead fechou ganho/perdido, ou foi excluído como
+teste, conta como "sem lead ativo" de novo); só `estado = 'desistido'` é permanente (esgotou a
+tentativa de resposta válida, escalona pra atendente humano, `status = 'aguardando_humano'`, nunca
+mais pergunta automaticamente nessa conversa). **A lista só mostra unidades da empresa
+dona do número** (hoje Macom Mitsubishi) — exige `empresa_slug` no config da integração ativa
+(um `public.empresas.slug`); sem isso configurado, nunca lista todas as unidades sem filtro (cai
+no fallback de "sem lead automático"). Desligável via `triagem_unidade_ativa` no config da
+integração ativa (Console > Integrações). Ver `supabase/functions/whatsapp-api/README.md` para o
+fluxo completo.
+
 `mensagens_rapidas` (`20261117100000_add_crm_mensagens_rapidas.sql`) é o cadastro de respostas
 prontas do composer (botão de raio) — catálogo global de equipe, sem `unidade_id`/posse e sem
 vínculo com quem criou (`criado_por` é só informativo): qualquer atendente pode criar, editar ou

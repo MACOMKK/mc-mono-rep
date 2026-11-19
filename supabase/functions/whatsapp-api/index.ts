@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createSql } from '../_shared/db.ts';
+import { createSql, withTransaction } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { loadIntegracaoCredenciais } from '../_shared/integracoes.ts';
 import {
@@ -46,6 +46,115 @@ function getErrorMessage(error: unknown) {
 function truncatePreview(text: string, maxLength = 140) {
   const trimmed = (text || '').trim();
   return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 1)}…` : trimmed;
+}
+
+// Pergunta de triagem de unidade (primeiro contato sem lead ativo) -- ver comentario no bloco
+// "if (!conversa)" mais abaixo e a migration 20261119120000_add_crm_triagem_unidade_whatsapp.sql.
+type TriagemOpcao = { numero: number; unidade_id: string; nome: string };
+
+// O numero de WhatsApp em uso e' exclusivo de UMA empresa (hoje Macom Mitsubishi) -- nunca deve
+// listar unidades de outra empresa (ex.: Macom Motos). A integracao declara isso explicitamente
+// via config.empresa_slug (um public.empresas.slug); nao ha como adivinhar isso do numero.
+async function resolveEmpresaIdTriagem(
+  sql: ReturnType<typeof createSql>,
+  empresaSlug: unknown,
+): Promise<string | null> {
+  if (typeof empresaSlug !== 'string' || !empresaSlug.trim()) return null;
+  // public.empresas nao tem coluna "ativo" (removida em 20260709120000_simplify_empresas_link_unidades.sql).
+  const [empresa] = await sql`select id from public.empresas where slug = ${empresaSlug.trim()}`;
+  return empresa?.id ?? null;
+}
+
+async function listUnidadesParaTriagem(
+  sql: ReturnType<typeof createSql>,
+  empresaId: string,
+): Promise<TriagemOpcao[]> {
+  const unidades = await sql`
+    select id, nome from public.unidades where empresa_id = ${empresaId} order by nome asc
+  `;
+  return unidades.map((u: { id: string; nome: string }, i: number) => ({
+    numero: i + 1,
+    unidade_id: u.id,
+    nome: u.nome,
+  }));
+}
+
+function buildPerguntaTriagem(opcoes: TriagemOpcao[], invalida = false) {
+  const lista = opcoes.map((o) => `${o.numero}. ${o.nome}`).join('\n');
+  const prefixo = invalida ? 'Não entendi sua resposta. ' : '';
+  return `${prefixo}Para encaminhar seu atendimento, responda com o número da sua unidade:\n${lista}`;
+}
+
+// Aceita so' um numero puro que bata com uma das opcoes mostradas -- nunca reconsulta
+// public.unidades, so' interpreta contra o snapshot persistido em triagem_unidade_opcoes.
+function parseRespostaTriagem(texto: string, opcoes: TriagemOpcao[]): TriagemOpcao | null {
+  const match = String(texto || '').trim().match(/^(\d+)$/);
+  if (!match) return null;
+  const numero = Number(match[1]);
+  return opcoes.find((o) => o.numero === numero) ?? null;
+}
+
+// Cria o lead automatico da triagem dentro de uma transacao (withTransaction, nunca sql.begin() --
+// ver _shared/db.ts). Reaproveita a identidade existente (public.clientes/gestao_crm.clientes_crm)
+// quando o telefone ja' e' conhecido (ex.: lead antigo ja' fechado) -- nunca duplica public.clientes.
+async function criarLeadWhatsapp(
+  tx: ReturnType<typeof createSql>,
+  params: {
+    telefoneNormalizadoConversa: string;
+    telefoneOriginal: string;
+    nome: string | null;
+    unidadeId: string;
+    clienteIdExistente: string | null;
+  },
+): Promise<{ id: string; clienteId: string }> {
+  const { telefoneNormalizadoConversa, telefoneOriginal, nome, unidadeId, clienteIdExistente } = params;
+  const candidatos = telefoneNacionalCandidatos(telefoneNormalizadoConversa);
+  const telefoneNacional = candidatos[0];
+  const nomeLead = (nome || '').trim() || 'Contato WhatsApp';
+
+  let clienteId = clienteIdExistente;
+  if (!clienteId) {
+    const [existente] = await tx`
+      select id from public.clientes
+      where telefone_normalizado = any(string_to_array(${candidatos.join(',')}, ','))
+      limit 1
+    `;
+    clienteId = existente?.id ?? null;
+  }
+
+  if (!clienteId) {
+    const [novoCliente] = await tx`
+      insert into public.clientes (nome, telefone, telefone_normalizado, origem_cadastro)
+      values (${nomeLead}, ${telefoneOriginal}, ${telefoneNacional}, 'crm_lead')
+      returning id
+    `;
+    clienteId = novoCliente.id;
+  }
+
+  if (!clienteId) {
+    throw new Error('Falha ao resolver identidade do cliente para o lead automatico do WhatsApp.');
+  }
+
+  await tx`
+    insert into gestao_crm.clientes_crm (id, unidade_id)
+    values (${clienteId}, ${unidadeId})
+    on conflict (id) do update set unidade_id = excluded.unidade_id
+  `;
+
+  const [origemWhatsapp] = await tx`select id from gestao_crm.origens_lead where nome = 'WhatsApp'`;
+  if (!origemWhatsapp) {
+    throw new Error('Origem de lead "WhatsApp" nao encontrada em gestao_crm.origens_lead.');
+  }
+
+  await tx`select set_config('gestao_crm.skip_auto_distribution', 'on', true)`;
+
+  const [lead] = await tx`
+    insert into gestao_crm.leads (cliente_id, nome, telefone, telefone_normalizado, unidade_id, origem_id)
+    values (${clienteId}, ${nomeLead}, ${telefoneOriginal}, ${telefoneNacional}, ${unidadeId}, ${origemWhatsapp.id})
+    returning id
+  `;
+
+  return { id: lead.id, clienteId };
 }
 
 function bytesToHex(bytes: ArrayBuffer) {
@@ -485,7 +594,10 @@ serve(async (req) => {
     // select criado_em, metadados from gestao_crm.logs_auditoria
     // where entidade = 'whatsapp_webhook_origem' order by criado_em desc;
     if (provider === 'meta' && incomingMessages.length > 0) {
-      await sql`
+      // So' log de diagnostico -- nunca deve atrasar o processamento da mensagem. Disparado via
+      // waitUntil (sem await no caminho principal) em vez de bloquear antes de qualquer
+      // mensagem ser lida.
+      const logPromise = sql`
         insert into gestao_crm.logs_auditoria (entidade, acao, metadados)
         values ('whatsapp_webhook_origem', 'mensagem_recebida', ${sql.json({
           mensagens: incomingMessages.map((m) => ({
@@ -496,9 +608,13 @@ serve(async (req) => {
             referral: m.referral || null,
           })),
         })})
-      `.catch((logError) => {
+      `.catch((logError: unknown) => {
         console.error('Falha ao gravar log de origem do webhook:', getErrorMessage(logError));
       });
+      const waitUntil = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
+        .EdgeRuntime?.waitUntil;
+      if (waitUntil) waitUntil(logPromise);
+      else await logPromise;
     }
 
     // O App da Meta pode ter outras WABAs/numeros inscritos no mesmo webhook (ex.: numero de
@@ -565,7 +681,9 @@ serve(async (req) => {
       }
 
       const [conversaExistente] = await sql`
-        select id, status, contato_nome from gestao_crm.conversas_atendimento
+        select id, status, contato_nome, lead_id, cliente_id,
+               triagem_unidade_estado, triagem_unidade_opcoes, triagem_unidade_tentativas
+        from gestao_crm.conversas_atendimento
         where telefone_normalizado = ${telefoneNormalizado}
         order by criado_em desc
         limit 1
@@ -597,34 +715,41 @@ serve(async (req) => {
       }
 
       if (!conversa) {
-        // Lead tem prioridade sobre cliente: um contato que ja e' lead (oportunidade em aberto)
-        // nao deve ser rebaixado a vinculo de cliente so porque o telefone tambem bateu la --
-        // ver analise em apps/crm/CLAUDE.md, secao "Atendimento (WhatsApp + IA)".
+        // Lead ATIVO tem prioridade sobre cliente: um contato que ja e' lead em negociacao em
+        // andamento nao deve ser rebaixado a vinculo de cliente so porque o telefone tambem bateu
+        // la -- ver analise em apps/crm/CLAUDE.md, secao "Atendimento (WhatsApp + IA)". Lead
+        // encontrado mas ja FECHADO (ganho/perdido) e' tratado como "sem lead ativo" -- dispara a
+        // triagem de unidade normalmente (o cliente pode voltar pra negociar numa unidade
+        // diferente; ver plano "Pergunta de triagem de unidade"), so' reaproveitando a identidade
+        // (cliente_id) em vez de duplicar public.clientes.
         // leads/clientes guardam o telefone sem DDI (ver _shared/phone.ts) -- comparar com o
         // numero da conversa (com 55) direto nunca casava.
         const candidatos = telefoneNacionalCandidatos(telefoneNormalizado);
         const [lead] = await sql`
-          select id from gestao_crm.leads
+          select id, cliente_id, etapa_tipo from gestao_crm.leads
           where telefone_normalizado = any(string_to_array(${candidatos.join(',')}, ','))
           order by criado_em desc
           limit 1
         `;
+        const leadAtivo = lead && lead.etapa_tipo === 'em_andamento' ? lead : null;
 
         // Identidade (nome/telefone) mora em public.clientes desde a migration
         // 20260915120000_extract_public_clientes.sql -- gestao_crm.clientes_crm e' so a
         // extensao comercial (empresa, status_relacionamento etc.), sem telefone_normalizado.
-        const [cliente] = lead
+        const [cliente] = leadAtivo
           ? [null]
           : await sql`
               select id from public.clientes
               where telefone_normalizado = any(string_to_array(${candidatos.join(',')}, ','))
               limit 1
             `;
+        const clienteIdResolvido = cliente?.id ?? (lead ? lead.cliente_id : null) ?? null;
 
         const [novaConversa] = await sql`
           insert into gestao_crm.conversas_atendimento (telefone_normalizado, lead_id, cliente_id, status, contato_nome)
-          values (${telefoneNormalizado}, ${lead?.id ?? null}, ${cliente?.id ?? null}, 'aberta', ${incoming.contactName ?? null})
-          returning id, status, contato_nome
+          values (${telefoneNormalizado}, ${leadAtivo?.id ?? null}, ${clienteIdResolvido}, 'aberta', ${incoming.contactName ?? null})
+          returning id, status, contato_nome, lead_id, cliente_id,
+                    triagem_unidade_estado, triagem_unidade_opcoes, triagem_unidade_tentativas
         `;
         conversa = novaConversa;
       }
@@ -694,12 +819,6 @@ serve(async (req) => {
         where id = ${conversa.id}
       `;
 
-      // Conversa ja escalada para humano: nao responder automaticamente.
-      if (conversa.status === 'aguardando_humano') {
-        results.push({ messageId: incoming.messageId, status: 'aguardando_humano' });
-        continue;
-      }
-
       const metaToken = typeof metaCredenciais?.access_token === 'string' ? metaCredenciais.access_token.trim() : null;
       const canSendViaMeta = provider === 'meta' && Boolean(metaToken) && Boolean(metaPhoneNumberId);
       const canSendViaEvolution =
@@ -707,6 +826,182 @@ serve(async (req) => {
         typeof evolutionCredenciais?.instance_url === 'string' &&
         typeof evolutionCredenciais?.instance_name === 'string' &&
         typeof evolutionCredenciais?.api_key === 'string';
+      const podeEnviarTexto = canSendViaMeta || canSendViaEvolution;
+
+      async function enviarTextoSaida(texto: string) {
+        if (provider === 'meta') {
+          return sendWhatsappMessageMeta(metaPhoneNumberId!, metaToken!, incoming.fromPhone, texto);
+        }
+        return sendWhatsappMessageEvolution(
+          evolutionCredenciais!.instance_url as string,
+          evolutionCredenciais!.instance_name as string,
+          evolutionCredenciais!.api_key as string,
+          incoming.fromPhone,
+          texto,
+        );
+      }
+
+      async function registrarMensagemSaidaTriagem(texto: string) {
+        await sql`
+          insert into gestao_crm.mensagens_atendimento (conversa_id, direcao, autor, conteudo, metadados)
+          values (${conversa.id}, 'saida', 'ia', ${texto}, ${sql.json({ tipo: 'triagem_unidade' })})
+        `;
+        await sql`
+          update gestao_crm.conversas_atendimento
+          set ultima_mensagem_em = now(), ultima_mensagem_preview = ${truncatePreview(texto)}
+          where id = ${conversa.id}
+        `;
+      }
+
+      // Pergunta de triagem de unidade -- so' avalia enquanto triagem_unidade_estado for null
+      // (nunca avaliado nesta conversa), 'resolvido' (reavalia se o lead ainda esta' ativo --
+      // 'resolvido' NAO e permanente, so' significa "tinha lead ativo na ultima vez que
+      // verificamos": o lead pode ter fechado, ou sido excluido como teste, desde entao) ou
+      // 'perguntado' (aguardando resposta). So' 'desistido' e permanente de verdade (ja escalado
+      // pra atendente humano decidir) -- nunca mais entra aqui.
+      // (ver migration 20261119120000_add_crm_triagem_unidade_whatsapp.sql).
+      let triagemHandled = false;
+      try {
+        if (conversa.triagem_unidade_estado == null || conversa.triagem_unidade_estado === 'resolvido') {
+          let leadAtivoAtual: { etapa_tipo: string } | null = null;
+          if (conversa.lead_id) {
+            const [leadRow] = await sql`select etapa_tipo from gestao_crm.leads where id = ${conversa.lead_id}`;
+            leadAtivoAtual = leadRow?.etapa_tipo === 'em_andamento' ? leadRow : null;
+          }
+
+          if (leadAtivoAtual) {
+            await sql`update gestao_crm.conversas_atendimento set triagem_unidade_estado = 'resolvido' where id = ${conversa.id}`;
+            conversa = { ...conversa, triagem_unidade_estado: 'resolvido' };
+          } else {
+            const triagemConfigAtiva =
+              (evolutionCredenciais?.triagem_unidade_ativa ?? metaCredenciais?.triagem_unidade_ativa) !== 'off';
+            const empresaSlugTriagem = evolutionCredenciais?.empresa_slug ?? metaCredenciais?.empresa_slug ?? null;
+            const empresaIdTriagem =
+              triagemConfigAtiva && podeEnviarTexto ? await resolveEmpresaIdTriagem(sql, empresaSlugTriagem) : null;
+
+            if (triagemConfigAtiva && podeEnviarTexto && !empresaIdTriagem) {
+              // Sem empresa_slug configurado (ou slug que nao resolve pra nenhuma public.empresas
+              // cadastrada) -- nunca lista todas as unidades sem filtro (foi isso que causou leads de
+              // uma empresa sendo oferecidos para outra). Fica igual ao caso "sem como perguntar
+              // agora": cai no fallback abaixo (0 unidades -> 'desistido').
+              await sql`
+                insert into gestao_crm.logs_auditoria (entidade, acao, metadados)
+                values ('whatsapp_triagem_unidade', 'empresa_slug_nao_configurado', ${sql.json({
+                  conversaId: conversa.id,
+                  empresaSlugTriagem,
+                })})
+              `.catch(() => {});
+            }
+
+            const unidades = empresaIdTriagem ? await listUnidadesParaTriagem(sql, empresaIdTriagem) : [];
+
+            if (unidades.length >= 2) {
+              const textoPergunta = buildPerguntaTriagem(unidades);
+              await enviarTextoSaida(textoPergunta);
+              await sql`
+                update gestao_crm.conversas_atendimento
+                set triagem_unidade_estado = 'perguntado',
+                    triagem_unidade_opcoes = ${sql.json({ opcoes: unidades })},
+                    triagem_unidade_tentativas = 0
+                where id = ${conversa.id}
+              `;
+              await registrarMensagemSaidaTriagem(textoPergunta);
+              conversa = { ...conversa, triagem_unidade_estado: 'perguntado' };
+              triagemHandled = true;
+            } else if (unidades.length === 1) {
+              const novoLead = await withTransaction(sql, (tx) =>
+                criarLeadWhatsapp(tx, {
+                  telefoneNormalizadoConversa: telefoneNormalizado,
+                  telefoneOriginal: incoming.fromPhone,
+                  nome: conversa.contato_nome ?? incoming.contactName ?? null,
+                  unidadeId: unidades[0].unidade_id,
+                  clienteIdExistente: conversa.cliente_id ?? null,
+                }),
+              );
+              await sql`
+                update gestao_crm.conversas_atendimento
+                set lead_id = ${novoLead.id}, cliente_id = ${novoLead.clienteId}, triagem_unidade_estado = 'resolvido'
+                where id = ${conversa.id}
+              `;
+              conversa = { ...conversa, lead_id: novoLead.id, cliente_id: novoLead.clienteId, triagem_unidade_estado: 'resolvido' };
+            } else {
+              // 0 ou 1 unidade indisponivel pra perguntar, ou feature desligada, ou sem como
+              // enviar texto agora -- fallback = comportamento legado (conversa sem lead
+              // automatico); marca 'desistido' pra nao reavaliar isso a cada mensagem nova.
+              await sql`update gestao_crm.conversas_atendimento set triagem_unidade_estado = 'desistido' where id = ${conversa.id}`;
+              conversa = { ...conversa, triagem_unidade_estado: 'desistido' };
+            }
+          }
+        } else if (conversa.triagem_unidade_estado === 'perguntado') {
+          const opcoes: TriagemOpcao[] = conversa.triagem_unidade_opcoes?.opcoes ?? [];
+          const escolhida = parseRespostaTriagem(incoming.text, opcoes);
+
+          if (escolhida) {
+            const novoLead = await withTransaction(sql, (tx) =>
+              criarLeadWhatsapp(tx, {
+                telefoneNormalizadoConversa: telefoneNormalizado,
+                telefoneOriginal: incoming.fromPhone,
+                nome: conversa.contato_nome ?? incoming.contactName ?? null,
+                unidadeId: escolhida.unidade_id,
+                clienteIdExistente: conversa.cliente_id ?? null,
+              }),
+            );
+            await sql`
+              update gestao_crm.conversas_atendimento
+              set lead_id = ${novoLead.id}, cliente_id = ${novoLead.clienteId}, triagem_unidade_estado = 'resolvido'
+              where id = ${conversa.id}
+            `;
+            conversa = { ...conversa, lead_id: novoLead.id, cliente_id: novoLead.clienteId, triagem_unidade_estado: 'resolvido' };
+
+            if (podeEnviarTexto) {
+              const confirmacao = `Perfeito! Encaminhei seu contato para a unidade ${escolhida.nome}. Em breve alguém da nossa equipe vai te atender.`;
+              await enviarTextoSaida(confirmacao);
+              await registrarMensagemSaidaTriagem(confirmacao);
+            }
+            triagemHandled = true;
+          } else if ((conversa.triagem_unidade_tentativas ?? 0) < 1 && podeEnviarTexto) {
+            const textoPergunta = buildPerguntaTriagem(opcoes, true);
+            await enviarTextoSaida(textoPergunta);
+            await sql`update gestao_crm.conversas_atendimento set triagem_unidade_tentativas = 1 where id = ${conversa.id}`;
+            await registrarMensagemSaidaTriagem(textoPergunta);
+            conversa = { ...conversa, triagem_unidade_tentativas: 1 };
+            triagemHandled = true;
+          } else {
+            // Esgotou a tentativa (ou nao ha mais como enviar texto): desiste de perguntar e
+            // escalona pra atendente humano decidir a unidade manualmente. Nunca mais pergunta
+            // nesta conversa a partir daqui.
+            await sql`
+              update gestao_crm.conversas_atendimento
+              set triagem_unidade_estado = 'desistido', status = 'aguardando_humano'
+              where id = ${conversa.id}
+            `;
+            conversa = { ...conversa, triagem_unidade_estado: 'desistido', status: 'aguardando_humano' };
+            triagemHandled = true;
+          }
+        }
+      } catch (triagemError) {
+        console.error('Falha na triagem de unidade do WhatsApp:', getErrorMessage(triagemError));
+        await sql`
+          insert into gestao_crm.logs_auditoria (entidade, acao, metadados)
+          values ('whatsapp_triagem_unidade', 'erro', ${sql.json({ conversaId: conversa.id, erro: getErrorMessage(triagemError) })})
+        `.catch(() => {});
+        // Nao marca estado -- deixa como estava pra tentar de novo na proxima mensagem (erro
+        // provavelmente transitorio: rede, timeout de envio etc.), exceto quando o estado ja
+        // tinha avancado para 'perguntado'/'resolvido' antes do erro (ex.: falha so' no envio da
+        // confirmacao apos criar o lead) -- nesse caso o UPDATE que falhou nao chegou a commitar
+        // nada, e a mensagem do contato ja foi registrada normalmente acima.
+      }
+
+      if (triagemHandled) {
+        results.push({ messageId: incoming.messageId, status: 'triagem_unidade' });
+        continue;
+      }
+
+      // Conversa ja escalada para humano: nao responder automaticamente.
+      if (conversa.status === 'aguardando_humano') {
+        results.push({ messageId: incoming.messageId, status: 'aguardando_humano' });
+        continue;
+      }
 
       // Midia sem legenda (ou localizacao, que nunca tem "legenda") nao tem o que a IA responda
       // com contexto -- deixa so' registrado, igual a uma mensagem escalada (nao gera resposta
@@ -730,18 +1025,7 @@ serve(async (req) => {
 
       const respostaIa = await callAi(OPENAI_API_KEY, historicoRows || []);
 
-      let sendResult: unknown;
-      if (provider === 'meta') {
-        sendResult = await sendWhatsappMessageMeta(metaPhoneNumberId!, metaToken!, incoming.fromPhone, respostaIa);
-      } else {
-        sendResult = await sendWhatsappMessageEvolution(
-          evolutionCredenciais!.instance_url as string,
-          evolutionCredenciais!.instance_name as string,
-          evolutionCredenciais!.api_key as string,
-          incoming.fromPhone,
-          respostaIa,
-        );
-      }
+      const sendResult = await enviarTextoSaida(respostaIa);
       const sentMessageId = extractWhatsappMessageId(provider, sendResult);
 
       await sql`
