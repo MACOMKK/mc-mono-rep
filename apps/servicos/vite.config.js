@@ -104,9 +104,13 @@ export default mergeConfig(baseConfig, {
         // com o mesmo prefixo do entry point real, o que impediria excluir só ele do precache
         // do Service Worker (ver injectManifest.globIgnores abaixo) sem also excluir o entry.
         manualChunks(id) {
-          if (id.includes('commonjsHelpers') || id.includes('commonjs-proxy')) {
-            console.log('DEBUG_HELPER_ID:', id);
-          }
+          // O helper de interop CJS/ESM injetado pelo Rollup (usado tanto pelo pdf-lib quanto por
+          // deps eager, ex. React) e um modulo virtual sem id dentro de node_modules/pdf-lib -- sem
+          // essa checagem, o Rollup as vezes decide fisicamente co-loca-lo dentro do chunk
+          // "pdf-vendor" (por ser o primeiro chunk manual que o referencia) e isso forca um import
+          // estatico do index pro pdf-vendor, fazendo todo usuario baixar pdf-lib so pra pegar esse
+          // helper de 1 linha -- fixar explicitamente num chunk proprio evita essa co-locacao.
+          if (id.includes('commonjsHelpers')) return 'vendor-shared';
           if (id.replace(/\\/g, '/').includes('/node_modules/pdf-lib/')) return 'pdf-vendor';
         },
       },
