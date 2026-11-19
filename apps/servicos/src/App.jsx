@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BrandLoader, PasswordChangeForm, Toaster } from '@macom/ui';
 import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom';
@@ -8,23 +9,27 @@ import { PushProvider } from '@/lib/PushContext';
 import AppLayout from '@/components/layout/AppLayout';
 import AppUpdatePrompt from '@/components/AppUpdatePrompt';
 import Login from '@/pages/Login';
-import MinhasSolicitacoes from '@/pages/MinhasSolicitacoes';
-import Aprovacoes from '@/pages/Aprovacoes';
-import Pagamentos from '@/pages/Pagamentos';
-import CalendarioVencimentos from '@/pages/CalendarioVencimentos';
-import Fornecedores from '@/pages/Fornecedores';
-import Categorias from '@/pages/Categorias';
-import Relatorios from '@/pages/Relatorios';
-import Configuracoes from '@/pages/Configuracoes';
 import ModuloEmBreve from '@/pages/ModuloEmBreve';
 import AcessoRestrito from '@/pages/AcessoRestrito';
-import ChecklistList from '@/pages/oficina/ChecklistList';
-import ChecklistHistorico from '@/pages/oficina/ChecklistHistorico';
-import ChecklistForm from '@/pages/oficina/ChecklistForm';
-import ChecklistDetail from '@/pages/oficina/ChecklistDetail';
 import ChecklistPublico from '@/pages/oficina/ChecklistPublico';
-import VeiculosHistorico from '@/pages/oficina/VeiculosHistorico';
-import ClientesLista from '@/pages/oficina/ClientesLista';
+
+// Code splitting: cada pagina de modulo vira um chunk proprio, baixado so quando a rota e
+// visitada -- antes disso, tudo (Financeiro + Oficina + recharts + pdf-lib) ia num bundle unico
+// de ~2,1MB mesmo pra quem usa so um dos modulos.
+const MinhasSolicitacoes = lazy(() => import('@/pages/MinhasSolicitacoes'));
+const Aprovacoes = lazy(() => import('@/pages/Aprovacoes'));
+const Pagamentos = lazy(() => import('@/pages/Pagamentos'));
+const CalendarioVencimentos = lazy(() => import('@/pages/CalendarioVencimentos'));
+const Fornecedores = lazy(() => import('@/pages/Fornecedores'));
+const Categorias = lazy(() => import('@/pages/Categorias'));
+const Relatorios = lazy(() => import('@/pages/Relatorios'));
+const Configuracoes = lazy(() => import('@/pages/Configuracoes'));
+const ChecklistList = lazy(() => import('@/pages/oficina/ChecklistList'));
+const ChecklistHistorico = lazy(() => import('@/pages/oficina/ChecklistHistorico'));
+const ChecklistForm = lazy(() => import('@/pages/oficina/ChecklistForm'));
+const ChecklistDetail = lazy(() => import('@/pages/oficina/ChecklistDetail'));
+const VeiculosHistorico = lazy(() => import('@/pages/oficina/VeiculosHistorico'));
+const ClientesLista = lazy(() => import('@/pages/oficina/ClientesLista'));
 
 const getFromPath = (search) => {
   const params = new URLSearchParams(search);
@@ -85,6 +90,7 @@ const ServicosRoutes = () => {
 
   return (
     <PushProvider>
+    <Suspense fallback={<LoadingScreen />}>
     <Routes>
       <Route element={<AppLayout />}>
         <Route path="/" element={<Navigate replace to={defaultRoute} />} />
@@ -148,6 +154,7 @@ const ServicosRoutes = () => {
         <Route path="*" element={<Navigate replace to={defaultRoute} />} />
       </Route>
     </Routes>
+    </Suspense>
     </PushProvider>
   );
 };

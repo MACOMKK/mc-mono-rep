@@ -4,7 +4,7 @@ import { Button } from '@macom/ui';
 import { AVARIA_TIPOS, DOCUMENTACAO_ITENS, PNEUS, SEGURANCA_ITENS } from '@/lib/checklistItens';
 import mitsubishiLogo from '@/assets/oficina/mitsubishi-logo.jpg';
 import suzukiLogo from '@/assets/oficina/suzuki-logo.jpg';
-import vehicleDiagram from '@/assets/oficina/vehicle-diagram.png';
+import vehicleDiagram from '@/assets/oficina/vehicle-diagram.webp';
 import './checklistDocumento.css';
 
 function formatDate(value) {

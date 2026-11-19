@@ -1,6 +1,7 @@
 import { precacheAndRoute, createHandlerBoundToURL, cleanupOutdatedCaches } from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
-import { NetworkOnly } from 'workbox-strategies';
+import { CacheFirst, NetworkOnly } from 'workbox-strategies';
+import { ExpirationPlugin } from 'workbox-expiration';
 
 // Service worker unico deste app: alem do cache offline do app shell (workbox, injectManifest),
 // tambem trata Web Push -- os dois nao podem ser SWs separados porque ambos disputariam o mesmo
@@ -14,6 +15,18 @@ cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
 
 registerRoute(({ url }) => url.hostname.endsWith('.supabase.co'), new NetworkOnly());
+
+// Imagens (diagrama de veiculo, logos) ficam fora do precache do install (ver vite.config.js,
+// injectManifest.globPatterns) de proposito -- o app nao precisa funcionar offline desde a
+// primeira visita, e precachear tudo no login competia por banda com as chamadas de API reais.
+// Em vez disso, cacheiam sob demanda na primeira vez que a tela que usa a imagem e aberta.
+registerRoute(
+  ({ request }) => request.destination === 'image',
+  new CacheFirst({
+    cacheName: 'servicos-images',
+    plugins: [new ExpirationPlugin({ maxEntries: 30, maxAgeSeconds: 30 * 24 * 60 * 60 })],
+  }),
+);
 
 registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
 

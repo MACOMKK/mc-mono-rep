@@ -1,13 +1,25 @@
-import { PDFDocument } from 'pdf-lib';
-import { embedSignatureImage, stampSignature } from '@macom/pdf-signature';
 import { financeiroApi } from '@macom/api-client/financeiroApi';
 import { supabase } from '@macom/api-client/supabaseClient';
 import { registrarOuDescartarUpload } from './anexoUpload';
+
+// pdf-lib/pdf-signature carregados sob demanda: este modulo e importado estaticamente pelo
+// SolicitacaoDrawer, e um import estatico de pdf-lib no topo pesaria o bundle da pagina pra todo
+// mundo, mesmo quem nunca assina anexo.
+let pdfToolsPromise = null;
+function loadPdfTools() {
+  if (!pdfToolsPromise) {
+    pdfToolsPromise = Promise.all([import('pdf-lib'), import('@macom/pdf-signature/pdfSignature')]).then(
+      ([pdfLib, pdfSignature]) => ({ PDFDocument: pdfLib.PDFDocument, ...pdfSignature }),
+    );
+  }
+  return pdfToolsPromise;
+}
 
 // Assina um anexo individual (nao o "PDF unico" mesclado) e substitui o arquivo original pela
 // versao carimbada: mesmo padrao de path de uploadAnexo (anexoUpload.js), so que sobrescrevendo
 // a linha do anexo via financeiroApi.anexos.assinar em vez de criar um novo registro.
 export async function signAnexo({ anexo, signatureUrl, signerName, posicao, empresaNome }) {
+  const { PDFDocument, embedSignatureImage, stampSignature } = await loadPdfTools();
   const response = await fetch(anexo.url);
   if (!response.ok) throw new Error(`Falha ao baixar "${anexo.nome_arquivo}".`);
   const bytes = await response.arrayBuffer();

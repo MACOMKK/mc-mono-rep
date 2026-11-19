@@ -4,7 +4,8 @@ import { TransformWrapper, TransformComponent, useControls } from 'react-zoom-pa
 
 import { Spinner } from '@macom/ui';
 import { AVARIA_TIPOS } from '@/lib/checklistItens';
-import vehicleDiagram from '@/assets/oficina/vehicle-diagram.png';
+// Pra gerar de novo caso o diagrama mude: node -e "require('sharp')('vehicle-diagram.png').resize(1000).webp({quality:85}).toFile('vehicle-diagram.webp')"
+import vehicleDiagram from '@/assets/oficina/vehicle-diagram.webp';
 
 function getPercentPoint(event, container) {
   const rect = container.getBoundingClientRect();
@@ -137,7 +138,13 @@ export default function AvariaMap({ avarias = [], onAdicionar, onRemover, onCapt
               className={readOnly ? 'relative w-full' : 'relative w-full cursor-crosshair'}
               onClick={handleClickImagem}
             >
-              <img src={vehicleDiagram} alt="Diagrama do veículo" className="w-full select-none" draggable={false} />
+              <img
+                src={vehicleDiagram}
+                alt="Diagrama do veículo"
+                className="w-full select-none"
+                draggable={false}
+                loading="lazy"
+              />
 
               {avarias.map((avaria) => {
                 const tipo = AVARIA_TIPOS.find((t) => t.key === avaria.tipo);

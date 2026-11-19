@@ -84,6 +84,20 @@ function versionJsonPlugin() {
 }
 
 export default mergeConfig(baseConfig, {
+  build: {
+    rollupOptions: {
+      output: {
+        // pdf-lib so entra em bundle de quem usa assinatura/PDF (ver loadPdfTools em
+        // SolicitacaoDrawer.jsx/anexoSignature.js, import() dinamico) -- sem isso, o Rollup
+        // agrupa esse chunk junto de outras deps compartilhadas num chunk generico "index-*",
+        // com o mesmo prefixo do entry point real, o que impediria excluir só ele do precache
+        // do Service Worker (ver injectManifest.globIgnores abaixo) sem also excluir o entry.
+        manualChunks(id) {
+          if (id.replace(/\\/g, '/').includes('/node_modules/pdf-lib/')) return 'pdf-vendor';
+        },
+      },
+    },
+  },
   plugins: [
     versionJsonPlugin(),
     VitePWA({
@@ -111,7 +125,16 @@ export default mergeConfig(baseConfig, {
         ],
       },
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,svg,woff2,woff,png,ico}'],
+        // png/webp fora do precache de proposito: o app nao precisa funcionar offline desde a
+        // primeira visita, e as imagens cacheadas aqui competiam por banda com as chamadas de API
+        // reais logo apos o login. Ficam em cache sob demanda via runtime caching (src/sw.js).
+        globPatterns: ['**/*.{js,css,html,svg,woff2,woff,ico}'],
+        // Chunks pesados carregados so sob demanda (Relatorios usa recharts; pdf-* e pdf-vendor-*
+        // sao pdfjs-dist/pdf-lib, so usados em "Juntar PDFs"/assinatura) -- precacha-los no login
+        // competiria por banda com as chamadas de API reais pra quem nunca abre essas telas. Ficam
+        // de fora do precache; quem usar essas telas baixa o chunk normalmente na hora (import()),
+        // so nao fica guardado no cache do Service Worker.
+        globIgnores: ['**/Relatorios-*.js', '**/pdf-*.js', '**/pdf-vendor-*.js'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       devOptions: { enabled: false },

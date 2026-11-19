@@ -139,6 +139,9 @@ export default function NovaSolicitacaoDrawer({ open, onOpenChange, solicitacao 
       setAnexoProgresso(null);
     }
     queryClient.invalidateQueries({ queryKey: ['servicos', 'anexos', solicitacaoId] });
+    // Mesma solicitacao pode estar aberta no SolicitacaoDrawer (chave separada, ver componente)
+    // -- invalida tambem pra refletir sem precisar fechar/reabrir o drawer.
+    queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacao-detalhe', solicitacaoId] });
     return falhas;
   }
 

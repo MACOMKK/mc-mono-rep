@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -31,16 +31,24 @@ import {
   X,
 } from 'lucide-react';
 
-import { PDFDocument } from 'pdf-lib';
 import { financeiroApi } from '@macom/api-client/financeiroApi';
-import {
-  createLocalSignaturePreferenceStore,
-  downloadPdf,
-  embedSignatureImage,
-  mergePdfs,
-  PositionSignatureModal,
-  stampSignature,
-} from '@macom/pdf-signature';
+import { createLocalSignaturePreferenceStore } from '@macom/pdf-signature/signaturePreferences';
+
+// pdf-lib (e o componente de posicionar assinatura, que por sua vez carrega pdfjs-dist) só
+// entram no bundle de quem realmente usa "Juntar PDFs"/assinatura -- carregados on-demand em vez
+// de estaticamente no topo, pra não pesar o chunk da página pra todo mundo que abre uma
+// solicitação sem nunca usar essas ações.
+const PositionSignatureModal = lazy(() => import('@macom/pdf-signature/PositionSignatureModal'));
+
+let pdfToolsPromise = null;
+function loadPdfTools() {
+  if (!pdfToolsPromise) {
+    pdfToolsPromise = Promise.all([import('pdf-lib'), import('@macom/pdf-signature/pdfSignature')]).then(
+      ([pdfLib, pdfSignature]) => ({ PDFDocument: pdfLib.PDFDocument, ...pdfSignature }),
+    );
+  }
+  return pdfToolsPromise;
+}
 import {
   Badge,
   Button,
@@ -259,47 +267,28 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
 
   const solicitacaoId = solicitacao?.id;
 
-  const anexosQuery = useQuery({
-    queryKey: ['servicos', 'anexos', solicitacaoId],
-    queryFn: () => financeiroApi.anexos.list(solicitacaoId),
+  // Uma unica chamada (get_detalhe) no lugar de 3 separadas (anexos/parcelas/historico) -- cada
+  // uma pagava seu proprio round-trip + checagem de acesso repetida no servidor.
+  const detalheQuery = useQuery({
+    queryKey: ['servicos', 'solicitacao-detalhe', solicitacaoId],
+    queryFn: () => financeiroApi.solicitacoes.getDetalhe(solicitacaoId),
     enabled: Boolean(solicitacaoId),
   });
-  const anexos = anexosQuery.data || [];
-  const anexosLoading = anexosQuery.isLoading;
-
-  const parcelasQuery = useQuery({
-    queryKey: ['servicos', 'parcelas', solicitacaoId],
-    queryFn: () => financeiroApi.parcelas.list(solicitacaoId),
-    enabled: Boolean(solicitacaoId) && !parcelasSlot,
-  });
-  const parcelas = parcelasQuery.data || [];
-  const parcelasLoading = parcelasQuery.isLoading;
-
-  const historicoQuery = useQuery({
-    queryKey: ['servicos', 'historico', solicitacaoId],
-    queryFn: () => financeiroApi.historico.list(solicitacaoId),
-    enabled: Boolean(solicitacaoId),
-  });
-  const historico = historicoQuery.data || [];
-  const historicoLoading = historicoQuery.isLoading;
+  const anexos = detalheQuery.data?.anexos || [];
+  const anexosLoading = detalheQuery.isLoading;
+  const parcelas = detalheQuery.data?.parcelas || [];
+  const parcelasLoading = detalheQuery.isLoading;
+  const historico = detalheQuery.data?.historico || [];
+  const historicoLoading = detalheQuery.isLoading;
 
   useEffect(() => {
-    if (anexosQuery.error) {
-      toast({ title: 'Não foi possível carregar os anexos', description: getFriendlyErrorMessage(anexosQuery.error) });
+    if (detalheQuery.error) {
+      toast({
+        title: 'Não foi possível carregar os detalhes da solicitação',
+        description: getFriendlyErrorMessage(detalheQuery.error),
+      });
     }
-  }, [anexosQuery.error]);
-
-  useEffect(() => {
-    if (parcelasQuery.error) {
-      toast({ title: 'Não foi possível carregar as parcelas', description: getFriendlyErrorMessage(parcelasQuery.error) });
-    }
-  }, [parcelasQuery.error]);
-
-  useEffect(() => {
-    if (historicoQuery.error) {
-      toast({ title: 'Não foi possível carregar o histórico', description: getFriendlyErrorMessage(historicoQuery.error) });
-    }
-  }, [historicoQuery.error]);
+  }, [detalheQuery.error]);
 
   async function handleCopiarNumero(numero) {
     try {
@@ -317,15 +306,18 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
     navigate('/fornecedores');
   }
 
+  // anexos/parcelas/historico vem todos da mesma query (get_detalhe) agora -- invalidar essa
+  // unica chave recarrega os 3 juntos. Mantidas como 2 funcoes (em vez de 1) pra nao precisar
+  // tocar todos os call sites que hoje chamam loadAnexos()/loadHistorico() separadamente.
   function loadAnexos() {
-    queryClient.invalidateQueries({ queryKey: ['servicos', 'anexos', solicitacaoId] });
+    queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacao-detalhe', solicitacaoId] });
     // Mesmo motivo do uploadAnexoMutation: `anexos_total`/`nota_fiscal_total` das listagens
     // (Aprovacoes/Pagamentos/MinhasSolicitacoes) ficariam desatualizados ate o proximo refetch.
     queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacoes'] });
   }
 
   function loadHistorico() {
-    queryClient.invalidateQueries({ queryKey: ['servicos', 'historico', solicitacaoId] });
+    queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacao-detalhe', solicitacaoId] });
   }
 
   const uploadAnexoMutation = useMutation({
@@ -333,7 +325,9 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
       uploadAnexo({ file, solicitacaoId, tipoAnexo, sigiloso, assinaturasNecessarias }),
     onSuccess: (row, variables) => {
       setAnexosPendentes((current) => current.filter((item) => item.tempId !== variables.tempId));
-      queryClient.setQueryData(['servicos', 'anexos', solicitacaoId], (old) => [...(old || []), row]);
+      queryClient.setQueryData(['servicos', 'solicitacao-detalhe', solicitacaoId], (old) =>
+        old ? { ...old, anexos: [...(old.anexos || []), row] } : old,
+      );
       loadHistorico();
       // As listagens de solicitacoes (Aprovacoes/Pagamentos/MinhasSolicitacoes) trazem
       // `anexos_total` pra avisar sem anexo direto no clique de aprovar -- sem essa
@@ -494,7 +488,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
       // Aprovacoes/Pagamentos) -- invalidar a mesma chave-prefixo que as demais mutations de status
       // ja usam basta pra refletir o novo vencimento sem precisar de callback subindo pro pai.
       queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacoes'] });
-      queryClient.invalidateQueries({ queryKey: ['servicos', 'historico', solicitacaoId] });
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacao-detalhe', solicitacaoId] });
       setEditandoVencimento(false);
       toast({ title: 'Vencimento atualizado' });
     },
@@ -507,7 +501,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
     mutationFn: (observacao) => financeiroApi.solicitacoes.atualizarObservacao(solicitacaoId, observacao),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacoes'] });
-      queryClient.invalidateQueries({ queryKey: ['servicos', 'historico', solicitacaoId] });
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacao-detalhe', solicitacaoId] });
       setEditandoObservacao(false);
       toast({ title: 'Observação atualizada' });
     },
@@ -519,10 +513,10 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   const atualizarVencimentoParcelaMutation = useMutation({
     mutationFn: ({ id, dataVencimento }) => financeiroApi.parcelas.atualizarVencimento(id, dataVencimento),
     onSuccess: (row) => {
-      queryClient.setQueryData(['servicos', 'parcelas', solicitacaoId], (old) =>
-        (old || []).map((item) => (item.id === row.id ? row : item)),
+      queryClient.setQueryData(['servicos', 'solicitacao-detalhe', solicitacaoId], (old) =>
+        old ? { ...old, parcelas: (old.parcelas || []).map((item) => (item.id === row.id ? row : item)) } : old,
       );
-      queryClient.invalidateQueries({ queryKey: ['servicos', 'historico', solicitacaoId] });
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacao-detalhe', solicitacaoId] });
       setParcelaEditandoId(null);
       toast({ title: 'Vencimento da parcela atualizado' });
     },
@@ -593,6 +587,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
 
     setGerandoPdfUnico(true);
     try {
+      const { mergePdfs, downloadPdf } = await loadPdfTools();
       const pdfFinal = await mergePdfs(selecionados.map((anexo) => ({ url: anexo.url, nome: anexo.nome_arquivo })));
       setJuntarAnexosAberto(false);
 
@@ -614,6 +609,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
     const { pdfFinal } = assinaturaPendente;
     const posicao = { pageIndex, xFrac, yFrac, widthFrac, heightFrac };
     try {
+      const { embedSignatureImage, stampSignature, downloadPdf } = await loadPdfTools();
       const signatureImage = await embedSignatureImage(pdfFinal, user.signatureUrl);
       await stampSignature(pdfFinal, {
         ...posicao,
@@ -632,7 +628,9 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
         posicao,
       });
       if (anexoRow) {
-        queryClient.setQueryData(['servicos', 'anexos', solicitacaoId], (old) => [...(old || []), anexoRow]);
+        queryClient.setQueryData(['servicos', 'solicitacao-detalhe', solicitacaoId], (old) =>
+          old ? { ...old, anexos: [...(old.anexos || []), anexoRow] } : old,
+        );
         loadHistorico();
         toast({ title: 'PDF único assinado e arquivado na solicitação' });
       }
@@ -663,6 +661,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
   async function handleAbrirAssinaturaAnexo(anexo) {
     setAbrindoAssinaturaAnexoId(anexo.id);
     try {
+      const { PDFDocument } = await loadPdfTools();
       const response = await fetch(anexo.url);
       if (!response.ok) throw new Error(`Falha ao carregar "${anexo.nome_arquivo}".`);
       const bytes = await response.arrayBuffer();
@@ -685,10 +684,10 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
         empresaNome: solicitacao?.empresa_nome,
       }),
     onSuccess: (row) => {
-      queryClient.setQueryData(['servicos', 'anexos', solicitacaoId], (old) =>
-        (old || []).map((item) => (item.id === row.id ? row : item)),
+      queryClient.setQueryData(['servicos', 'solicitacao-detalhe', solicitacaoId], (old) =>
+        old ? { ...old, anexos: (old.anexos || []).map((item) => (item.id === row.id ? row : item)) } : old,
       );
-      queryClient.invalidateQueries({ queryKey: ['servicos', 'historico', solicitacaoId] });
+      queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacao-detalhe', solicitacaoId] });
       setAnexoParaAssinar(null);
       toast({ title: 'Anexo assinado' });
     },
@@ -722,6 +721,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
     if (anexosElegiveisParaAssinar.length === 0) return;
     setAbrindoAssinarTodos(true);
     try {
+      const { PDFDocument } = await loadPdfTools();
       const primeiro = anexosElegiveisParaAssinar[0];
       const response = await fetch(primeiro.url);
       if (!response.ok) throw new Error(`Falha ao carregar "${primeiro.nome_arquivo}".`);
@@ -757,8 +757,8 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
           posicao,
           empresaNome: solicitacao?.empresa_nome,
         });
-        queryClient.setQueryData(['servicos', 'anexos', solicitacaoId], (old) =>
-          (old || []).map((item) => (item.id === row.id ? row : item)),
+        queryClient.setQueryData(['servicos', 'solicitacao-detalhe', solicitacaoId], (old) =>
+          old ? { ...old, anexos: (old.anexos || []).map((item) => (item.id === row.id ? row : item)) } : old,
         );
         sucesso += 1;
       } catch (error) {
@@ -766,7 +766,7 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
       }
     }
 
-    queryClient.invalidateQueries({ queryKey: ['servicos', 'historico', solicitacaoId] });
+    queryClient.invalidateQueries({ queryKey: ['servicos', 'solicitacao-detalhe', solicitacaoId] });
     setAssinandoLote(null);
     if (sucesso > 0) {
       toast({ title: `${sucesso} de ${fila.length} anexo(s) assinado(s)` });
@@ -1432,38 +1432,40 @@ export default function SolicitacaoDrawer({ solicitacao, onOpenChange, footer = 
                   onGerar={handleGerarPdfUnico}
                 />
 
-                <PositionSignatureModal
-                  open={Boolean(assinaturaPendente)}
-                  onOpenChange={(open) => !open && setAssinaturaPendente(null)}
-                  pdfBytes={assinaturaPendente?.pdfBytes}
-                  totalPaginas={assinaturaPendente?.totalPaginas || 0}
-                  signatureUrl={user?.signatureUrl}
-                  onConfirm={handleConfirmarPosicaoAssinatura}
-                  onLoadPreference={handleLoadSignaturePreference}
-                  onSavePreference={handleSaveSignaturePreference}
-                />
+                <Suspense fallback={null}>
+                  <PositionSignatureModal
+                    open={Boolean(assinaturaPendente)}
+                    onOpenChange={(open) => !open && setAssinaturaPendente(null)}
+                    pdfBytes={assinaturaPendente?.pdfBytes}
+                    totalPaginas={assinaturaPendente?.totalPaginas || 0}
+                    signatureUrl={user?.signatureUrl}
+                    onConfirm={handleConfirmarPosicaoAssinatura}
+                    onLoadPreference={handleLoadSignaturePreference}
+                    onSavePreference={handleSaveSignaturePreference}
+                  />
 
-                <PositionSignatureModal
-                  open={Boolean(anexoParaAssinar)}
-                  onOpenChange={(open) => !open && setAnexoParaAssinar(null)}
-                  pdfBytes={anexoParaAssinar?.pdfBytes}
-                  totalPaginas={anexoParaAssinar?.totalPaginas || 0}
-                  signatureUrl={user?.signatureUrl}
-                  onConfirm={handleConfirmarAssinaturaAnexo}
-                  onLoadPreference={handleLoadAnexoSignaturePreference}
-                  onSavePreference={handleSaveAnexoSignaturePreference}
-                />
+                  <PositionSignatureModal
+                    open={Boolean(anexoParaAssinar)}
+                    onOpenChange={(open) => !open && setAnexoParaAssinar(null)}
+                    pdfBytes={anexoParaAssinar?.pdfBytes}
+                    totalPaginas={anexoParaAssinar?.totalPaginas || 0}
+                    signatureUrl={user?.signatureUrl}
+                    onConfirm={handleConfirmarAssinaturaAnexo}
+                    onLoadPreference={handleLoadAnexoSignaturePreference}
+                    onSavePreference={handleSaveAnexoSignaturePreference}
+                  />
 
-                <PositionSignatureModal
-                  open={Boolean(assinaturaLotePendente)}
-                  onOpenChange={(open) => !open && setAssinaturaLotePendente(null)}
-                  pdfBytes={assinaturaLotePendente?.pdfBytes}
-                  totalPaginas={assinaturaLotePendente?.totalPaginas || 0}
-                  signatureUrl={user?.signatureUrl}
-                  onConfirm={handleConfirmarAssinaturaLote}
-                  onLoadPreference={handleLoadAnexoSignaturePreference}
-                  onSavePreference={handleSaveAnexoSignaturePreference}
-                />
+                  <PositionSignatureModal
+                    open={Boolean(assinaturaLotePendente)}
+                    onOpenChange={(open) => !open && setAssinaturaLotePendente(null)}
+                    pdfBytes={assinaturaLotePendente?.pdfBytes}
+                    totalPaginas={assinaturaLotePendente?.totalPaginas || 0}
+                    signatureUrl={user?.signatureUrl}
+                    onConfirm={handleConfirmarAssinaturaLote}
+                    onLoadPreference={handleLoadAnexoSignaturePreference}
+                    onSavePreference={handleSaveAnexoSignaturePreference}
+                  />
+                </Suspense>
               </TabsContent>
 
               <TabsContent value="parcelas" className="space-y-4">

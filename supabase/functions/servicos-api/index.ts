@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import { createSql } from '../_shared/db.ts';
+import { createSql, withTransaction } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { sendPushToColaborador } from '../_shared/push.ts';
 import { proximaDataUtil } from '../_shared/diasUteis.ts';
@@ -2250,186 +2250,170 @@ Deno.serve(async (request) => {
       // "Pago" cobre a vista e parcelado: a vista nunca cria linhas em parcelas_pagamento, entao
       // valor_pago (soma das parcelas quitadas) fica 0 mesmo com status = 'pago' -- nesse caso o
       // valor pago de verdade e o valor cheio da solicitacao.
-      const baseCte = `
-        with base as (
+      const baseSelectBody = `
+        select
+          sp.*,
+          c.nome as solicitante_nome,
+          ac.nome as aprovador_destino_nome,
+          e.nome as empresa_nome,
+          u.nome as unidade_nome,
+          d.nome as departamento_nome,
+          coalesce(pp.valor_pago, 0) as valor_pago,
+          coalesce(
+            case when pp.parcelas_total > 0 then pp.vencimento_parcela end,
+            sp.data_vencimento
+          ) as vencimento_efetivo
+        from ${SERVICOS_SCHEMA}.solicitacoes_pagamento sp
+        join public.colaboradores c on c.id = sp.solicitante_id
+        left join public.colaboradores ac on ac.id = sp.aprovador_destino_id
+        left join public.empresas e on e.id = sp.empresa_id
+        left join public.unidades u on u.id = sp.unidade_id
+        left join public.departamentos d on d.id = sp.departamento_id
+        left join lateral (
           select
-            sp.*,
-            c.nome as solicitante_nome,
-            ac.nome as aprovador_destino_nome,
-            e.nome as empresa_nome,
-            u.nome as unidade_nome,
-            d.nome as departamento_nome,
-            coalesce(pp.valor_pago, 0) as valor_pago,
+            coalesce(sum(valor) filter (where status = 'pago'), 0) as valor_pago,
+            count(*) as parcelas_total,
             coalesce(
-              case when pp.parcelas_total > 0 then pp.vencimento_parcela end,
-              sp.data_vencimento
-            ) as vencimento_efetivo
-          from ${SERVICOS_SCHEMA}.solicitacoes_pagamento sp
-          join public.colaboradores c on c.id = sp.solicitante_id
-          left join public.colaboradores ac on ac.id = sp.aprovador_destino_id
-          left join public.empresas e on e.id = sp.empresa_id
-          left join public.unidades u on u.id = sp.unidade_id
-          left join public.departamentos d on d.id = sp.departamento_id
-          left join lateral (
-            select
-              coalesce(sum(valor) filter (where status = 'pago'), 0) as valor_pago,
-              count(*) as parcelas_total,
-              coalesce(
-                min(data_vencimento) filter (where status = 'pendente'),
-                max(data_vencimento)
-              ) as vencimento_parcela
-            from ${SERVICOS_SCHEMA}.parcelas_pagamento
-            where solicitacao_id = sp.id
-          ) pp on true
-          where sp.criado_em >= $1 and sp.criado_em <= $2
-            and not sp.pessoal
-            -- Rascunho de recorrencia ("Aguardando valor") ainda nao tem valor nem foi enviado:
-            -- fica fora de todos os totais/rankings.
-            and sp.status <> 'rascunho'
-            and ($3::uuid is null or sp.empresa_id = $3)
-            and ($4::bigint is null or sp.numero = $4)
-            and ($5::uuid is null or sp.solicitante_id = $5)
-            and ($6::uuid is null or sp.aprovador_destino_id = $6)
-            and ($7::uuid is null or sp.departamento_id = $7)
-            and ($8::uuid is null or sp.unidade_id = $8)
-        )
+              min(data_vencimento) filter (where status = 'pendente'),
+              max(data_vencimento)
+            ) as vencimento_parcela
+          from ${SERVICOS_SCHEMA}.parcelas_pagamento
+          where solicitacao_id = sp.id
+        ) pp on true
+        where sp.criado_em >= $1 and sp.criado_em <= $2
+          and not sp.pessoal
+          -- Rascunho de recorrencia ("Aguardando valor") ainda nao tem valor nem foi enviado:
+          -- fica fora de todos os totais/rankings.
+          and sp.status <> 'rascunho'
+          and ($3::uuid is null or sp.empresa_id = $3)
+          and ($4::bigint is null or sp.numero = $4)
+          and ($5::uuid is null or sp.solicitante_id = $5)
+          and ($6::uuid is null or sp.aprovador_destino_id = $6)
+          and ($7::uuid is null or sp.departamento_id = $7)
+          and ($8::uuid is null or sp.unidade_id = $8)
       `;
       const values = [de, ate, empresaId, numero, solicitanteId, aprovadorDestinoId, departamentoId, unidadeId];
 
-      const resumoRows = await sql.unsafe(
-        `
-          ${baseCte}
-          select
-            count(*) as total_quantidade,
-            coalesce(sum(valor), 0) as total_valor,
-            count(*) filter (where status = 'pendente') as total_pendentes,
-            coalesce(sum(valor) filter (where status = 'pendente'), 0) as total_pendentes_valor,
-            count(*) filter (where status = 'aprovado') as total_aprovadas,
-            coalesce(sum(valor - (case when status = 'pago' then valor else valor_pago end))
-              filter (where status = 'aprovado'), 0) as total_em_aberto,
-            count(*) filter (where status = 'pago') as total_pagas,
-            coalesce(sum(case when status = 'pago' then valor else valor_pago end), 0) as total_pago,
-            count(*) filter (where status = 'aprovado' and vencimento_efetivo < current_date) as total_atrasadas,
-            coalesce(sum(valor) filter (where status = 'aprovado' and vencimento_efetivo < current_date), 0) as valor_atrasadas,
-            count(*) filter (where status = 'reprovado') as total_reprovadas,
-            count(*) filter (where status = 'cancelado') as total_canceladas
-          from base;
-        `,
-        values,
-      );
+      // Materializa a base filtrada UMA vez numa tabela temporaria (em vez de reinterpolar a
+      // mesma CTE com 5 joins + subquery lateral em 9 statements separados -- o Postgres nao
+      // compartilha CTE entre statements, entao cada `with base as (...)` recomputava tudo do
+      // zero). `on commit drop` garante que ela some ao fim da transacao.
+      const [
+        resumoRows,
+        porCategoriaRows,
+        porStatusRows,
+        porSetorRows,
+        porUnidadeRows,
+        porDiretorRows,
+        pendenciaPagamentoPorSetorRows,
+        proximosVencimentosRows,
+        porMesRows,
+      ] = await withTransaction(sql, async (tx) => {
+        await tx.unsafe(`create temp table base_relatorio on commit drop as ${baseSelectBody};`, values);
 
-      const porCategoriaRows = await sql.unsafe(
-        `
-          ${baseCte}
-          select categoria, count(*) as quantidade, coalesce(sum(valor), 0) as valor
-          from base
-          where status not in ('reprovado', 'cancelado')
-          group by categoria
-          order by valor desc;
-        `,
-        values,
-      );
+        return [
+          tx.unsafe(`
+            select
+              count(*) as total_quantidade,
+              coalesce(sum(valor), 0) as total_valor,
+              count(*) filter (where status = 'pendente') as total_pendentes,
+              coalesce(sum(valor) filter (where status = 'pendente'), 0) as total_pendentes_valor,
+              count(*) filter (where status = 'aprovado') as total_aprovadas,
+              coalesce(sum(valor - (case when status = 'pago' then valor else valor_pago end))
+                filter (where status = 'aprovado'), 0) as total_em_aberto,
+              count(*) filter (where status = 'pago') as total_pagas,
+              coalesce(sum(case when status = 'pago' then valor else valor_pago end), 0) as total_pago,
+              count(*) filter (where status = 'aprovado' and vencimento_efetivo < current_date) as total_atrasadas,
+              coalesce(sum(valor) filter (where status = 'aprovado' and vencimento_efetivo < current_date), 0) as valor_atrasadas,
+              count(*) filter (where status = 'reprovado') as total_reprovadas,
+              count(*) filter (where status = 'cancelado') as total_canceladas
+            from base_relatorio;
+          `),
 
-      const porStatusRows = await sql.unsafe(
-        `
-          ${baseCte}
-          select status, count(*) as quantidade, coalesce(sum(valor), 0) as valor
-          from base
-          group by status
-          order by valor desc;
-        `,
-        values,
-      );
+          tx.unsafe(`
+            select categoria, count(*) as quantidade, coalesce(sum(valor), 0) as valor
+            from base_relatorio
+            where status not in ('reprovado', 'cancelado')
+            group by categoria
+            order by valor desc;
+          `),
 
-      // Rankings do dashboard "Monitoramento de Requisicoes Financeiras": todas as solicitacoes
-      // do periodo (independente de status), agrupadas por setor/unidade -- espelha a regra do
-      // "Total de Solicitacoes" (conta tudo, inclusive canceladas/reprovadas).
-      const porSetorRows = await sql.unsafe(
-        `
-          ${baseCte}
-          select coalesce(departamento_nome, 'Sem setor') as setor, count(*) as quantidade, coalesce(sum(valor), 0) as valor
-          from base
-          group by 1
-          order by quantidade desc, valor desc
-          limit 20;
-        `,
-        values,
-      );
+          tx.unsafe(`
+            select status, count(*) as quantidade, coalesce(sum(valor), 0) as valor
+            from base_relatorio
+            group by status
+            order by valor desc;
+          `),
 
-      const porUnidadeRows = await sql.unsafe(
-        `
-          ${baseCte}
-          select coalesce(unidade_nome, 'Sem unidade') as unidade, count(*) as quantidade, coalesce(sum(valor), 0) as valor
-          from base
-          group by 1
-          order by quantidade desc, valor desc
-          limit 20;
-        `,
-        values,
-      );
+          // Rankings do dashboard "Monitoramento de Requisicoes Financeiras": todas as
+          // solicitacoes do periodo (independente de status), agrupadas por setor/unidade --
+          // espelha a regra do "Total de Solicitacoes" (conta tudo, inclusive
+          // canceladas/reprovadas).
+          tx.unsafe(`
+            select coalesce(departamento_nome, 'Sem setor') as setor, count(*) as quantidade, coalesce(sum(valor), 0) as valor
+            from base_relatorio
+            group by 1
+            order by quantidade desc, valor desc
+            limit 20;
+          `),
 
-      // Pendencias por diretor(a): so solicitacoes ainda pendentes de analise (status = 'pendente'),
-      // agrupadas pelo aprovador designado -- ver nota sobre "diretor(a)" acima.
-      const porDiretorRows = await sql.unsafe(
-        `
-          ${baseCte}
-          select coalesce(aprovador_destino_nome, 'Sem aprovador') as diretor, count(*) as quantidade, coalesce(sum(valor), 0) as valor
-          from base
-          where status = 'pendente'
-          group by 1
-          order by valor desc
-          limit 20;
-        `,
-        values,
-      );
+          tx.unsafe(`
+            select coalesce(unidade_nome, 'Sem unidade') as unidade, count(*) as quantidade, coalesce(sum(valor), 0) as valor
+            from base_relatorio
+            group by 1
+            order by quantidade desc, valor desc
+            limit 20;
+          `),
 
-      // Pendencias de pagamento por setor: aprovadas pela diretoria, ainda nao pagas.
-      const pendenciaPagamentoPorSetorRows = await sql.unsafe(
-        `
-          ${baseCte}
-          select coalesce(departamento_nome, 'Sem setor') as setor, count(*) as quantidade, coalesce(sum(valor - valor_pago), 0) as valor
-          from base
-          where status = 'aprovado'
-          group by 1
-          order by valor desc
-          limit 20;
-        `,
-        values,
-      );
+          // Pendencias por diretor(a): so solicitacoes ainda pendentes de analise
+          // (status = 'pendente'), agrupadas pelo aprovador designado -- ver nota sobre
+          // "diretor(a)" acima.
+          tx.unsafe(`
+            select coalesce(aprovador_destino_nome, 'Sem aprovador') as diretor, count(*) as quantidade, coalesce(sum(valor), 0) as valor
+            from base_relatorio
+            where status = 'pendente'
+            group by 1
+            order by valor desc
+            limit 20;
+          `),
 
-      // Proximos vencimentos: fila operacional das solicitacoes aprovadas aguardando pagamento,
-      // ordenada da mais proxima/vencida pra mais distante.
-      const proximosVencimentosRows = await sql.unsafe(
-        `
-          ${baseCte}
-          select
-            numero, titulo, solicitante_nome, departamento_nome, unidade_nome,
-            vencimento_efetivo, aprovador_destino_nome, status, valor
-          from base
-          where status = 'aprovado' and vencimento_efetivo is not null
-          order by vencimento_efetivo asc
-          limit 50;
-        `,
-        values,
-      );
+          // Pendencias de pagamento por setor: aprovadas pela diretoria, ainda nao pagas.
+          tx.unsafe(`
+            select coalesce(departamento_nome, 'Sem setor') as setor, count(*) as quantidade, coalesce(sum(valor - valor_pago), 0) as valor
+            from base_relatorio
+            where status = 'aprovado'
+            group by 1
+            order by valor desc
+            limit 20;
+          `),
 
-      // Evolucao mensal: agrupa por mes de criacao (mesmo campo usado no filtro de periodo,
-      // nao data de pagamento) -- limita aos ultimos 12 meses com dado no periodo filtrado pra
-      // nao devolver uma serie enorme quando o filtro de data fica aberto.
-      const porMesRows = await sql.unsafe(
-        `
-          ${baseCte}
-          select
-            to_char(date_trunc('month', criado_em), 'YYYY-MM') as mes,
-            coalesce(sum(valor), 0) as valor_solicitado,
-            coalesce(sum(case when status = 'pago' then valor else valor_pago end), 0) as valor_pago
-          from base
-          group by 1
-          order by 1 desc
-          limit 12;
-        `,
-        values,
-      );
+          // Proximos vencimentos: fila operacional das solicitacoes aprovadas aguardando
+          // pagamento, ordenada da mais proxima/vencida pra mais distante.
+          tx.unsafe(`
+            select
+              numero, titulo, solicitante_nome, departamento_nome, unidade_nome,
+              vencimento_efetivo, aprovador_destino_nome, status, valor
+            from base_relatorio
+            where status = 'aprovado' and vencimento_efetivo is not null
+            order by vencimento_efetivo asc
+            limit 50;
+          `),
+
+          // Evolucao mensal: agrupa por mes de criacao (mesmo campo usado no filtro de periodo,
+          // nao data de pagamento) -- limita aos ultimos 12 meses com dado no periodo filtrado
+          // pra nao devolver uma serie enorme quando o filtro de data fica aberto.
+          tx.unsafe(`
+            select
+              to_char(date_trunc('month', criado_em), 'YYYY-MM') as mes,
+              coalesce(sum(valor), 0) as valor_solicitado,
+              coalesce(sum(case when status = 'pago' then valor else valor_pago end), 0) as valor_pago
+            from base_relatorio
+            group by 1
+            order by 1 desc
+            limit 12;
+          `),
+        ];
+      });
       porMesRows.reverse();
 
       return json({
@@ -3409,6 +3393,82 @@ Deno.serve(async (request) => {
       await insertHistorico(id, 'pendencia_liberada', collaborator!.id as string, observacao);
       await notifySolicitantePendencia(row, false, collaborator!.id as string);
       return json({ row });
+    }
+
+    // Consolida anexos + parcelas + historico numa unica chamada (SolicitacaoDrawer abria 3
+    // separadas -- list_anexos/list_parcelas/historico -- cada uma repetindo o ensureRowAccess).
+    // As 3 actions antigas continuam existindo (outros pontos ainda podem depender delas).
+    if (action === 'get_detalhe') {
+      const solicitacaoId = String(body.solicitacao_id || '');
+      if (!solicitacaoId) return json({ error: 'solicitacao_id obrigatorio.' }, 400);
+      const solicitacaoRow = await ensureRowAccess(solicitacaoId, moduleRole, collaborator);
+
+      const [anexosRows, parcelas, historico] = await Promise.all([
+        sql.unsafe(
+          `select * from ${SERVICOS_SCHEMA}.anexos_solicitacao where solicitacao_id = $1 order by criado_em asc;`,
+          [solicitacaoId],
+        ),
+        sql.unsafe(
+          `select * from ${SERVICOS_SCHEMA}.parcelas_pagamento where solicitacao_id = $1 order by numero asc;`,
+          [solicitacaoId],
+        ),
+        sql.unsafe(
+          `
+            select h.*, c.nome as autor_nome
+            from ${SERVICOS_SCHEMA}.historico_solicitacao h
+            left join public.colaboradores c on c.id = h.autor_id
+            where h.solicitacao_id = $1
+            order by h.criado_em desc;
+          `,
+          [solicitacaoId],
+        ),
+      ]);
+
+      // Mesma logica de anexo sigiloso + assinaturas + signed URL de list_anexos.
+      const departamentoIdAnexos = collaborator?.departamento_id as string | null | undefined;
+      const unidadeIdAnexos = collaborator?.unidade_id as string | null | undefined;
+      const podeVerSigiloso = await canViewAnexoSigiloso(
+        moduleRole,
+        collaborator?.id as string | undefined,
+        solicitacaoRow,
+        departamentoIdAnexos,
+        unidadeIdAnexos,
+      );
+      const visiveis = anexosRows.filter((anexo: Record<string, unknown>) => !anexo.sigiloso || podeVerSigiloso);
+
+      const assinaturasRows = visiveis.length
+        ? await sql.unsafe(
+            `
+              select sa.anexo_id, sa.colaborador_id, sa.papel, sa.assinado_em, c.nome
+              from ${SERVICOS_SCHEMA}.assinaturas_anexo sa
+              join public.colaboradores c on c.id = sa.colaborador_id
+              where sa.anexo_id = any($1::uuid[])
+              order by sa.assinado_em asc;
+            `,
+            [visiveis.map((anexo: Record<string, unknown>) => anexo.id)],
+          )
+        : [];
+      const assinaturasPorAnexo = new Map<string, Record<string, unknown>[]>();
+      for (const assinatura of assinaturasRows) {
+        const key = String(assinatura.anexo_id);
+        if (!assinaturasPorAnexo.has(key)) assinaturasPorAnexo.set(key, []);
+        assinaturasPorAnexo.get(key)!.push({
+          colaborador_id: assinatura.colaborador_id,
+          nome: assinatura.nome,
+          papel: assinatura.papel,
+          assinado_em: assinatura.assinado_em,
+        });
+      }
+
+      const anexos = await Promise.all(
+        visiveis.map(async (anexo: Record<string, unknown>) => ({
+          ...anexo,
+          url: await createSignedUrlForPath(String(anexo.storage_path)),
+          assinaturas: assinaturasPorAnexo.get(String(anexo.id)) || [],
+        })),
+      );
+
+      return json({ anexos, parcelas, historico });
     }
 
     if (action === 'list_anexos') {

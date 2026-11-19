@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { createSql } from '../_shared/db.ts';
+import { createSql, withTransaction } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { loadIntegracaoCredenciais } from '../_shared/integracoes.ts';
 import {
@@ -416,6 +416,19 @@ serve(async (req) => {
   const metaPhoneNumberId =
     typeof metaCredenciais?.phone_number_id === 'string' ? metaCredenciais.phone_number_id.trim() : null;
 
+  // Lead automatico ao chegar contato novo (sem lead/cliente pelo telefone): precisa de uma
+  // unidade_id para satisfazer o trigger prepare_lead_phase1 (nao ha usuario logado nem unidade
+  // escolhida manualmente no contexto do webhook). Config simples na mesma integracao ativa
+  // (campo "unidade_id_lead_automatico" em integracoes.integracoes.config, editavel na tela
+  // generica do Console) -- ausente/vazio desliga a feature sem precisar redeploy (fallback:
+  // mesmo comportamento de antes, conversa sem lead/cliente vinculado). Ver migracao
+  // 20261118100000_crm_prepare_lead_phase1_skip_auto_distribution.sql.
+  const unidadeIdLeadAutomaticoRaw = (evolutionCredenciais ?? metaCredenciais)?.unidade_id_lead_automatico;
+  const unidadeIdLeadAutomatico =
+    typeof unidadeIdLeadAutomaticoRaw === 'string' && unidadeIdLeadAutomaticoRaw.trim()
+      ? unidadeIdLeadAutomaticoRaw.trim()
+      : null;
+
   // Verificacao do webhook exigida pela Meta Cloud API na configuracao inicial (a Evolution
   // API nao usa esse handshake, entao isso so importa quando o provedor ativo e' a Meta).
   if (req.method === 'GET') {
@@ -621,9 +634,59 @@ serve(async (req) => {
               limit 1
             `;
 
+        // Contato totalmente novo (nem lead nem cliente pelo telefone): cria o lead ja aqui, em
+        // vez de deixar a conversa solta ate alguem usar "Criar lead a partir do contato" no
+        // Atendimento. So roda com unidade_id_lead_automatico configurado (ver acima) -- sem
+        // isso, mantem o comportamento antigo (conversa sem lead/cliente vinculado).
+        let leadIdAutomatico: string | null = null;
+        if (!lead && !cliente && unidadeIdLeadAutomatico) {
+          try {
+            const nomeContato = (incoming.contactName || '').trim() || 'Contato WhatsApp';
+            const telefoneNacional = candidatos[0];
+            leadIdAutomatico = await withTransaction(sql, async (tx) => {
+              const [origemWhatsapp] = await tx`
+                select id from gestao_crm.origens_lead where nome = 'WhatsApp' limit 1
+              `;
+              const [clienteIdentidade] = await tx`
+                insert into public.clientes (nome, telefone, telefone_normalizado, origem_cadastro)
+                values (${nomeContato}, ${telefoneNacional}, ${telefoneNacional}, 'crm_lead')
+                returning id
+              `;
+              await tx`
+                insert into gestao_crm.clientes_crm (id, unidade_id)
+                values (${clienteIdentidade.id}, ${unidadeIdLeadAutomatico})
+              `;
+              // GUC de transacao (mesmo padrao de gestao_crm.allow_convertido): impede
+              // prepare_lead_phase1 de rodar a distribuicao automatica de vendedor -- esse lead
+              // fica sem responsavel ate um atendente assumir a conversa.
+              await tx`select set_config('gestao_crm.skip_auto_distribution', 'on', true)`;
+              const [leadRow] = await tx`
+                insert into gestao_crm.leads (
+                  cliente_id, nome, telefone, telefone_normalizado, origem_id, unidade_id, eh_teste
+                )
+                values (
+                  ${clienteIdentidade.id}, ${nomeContato}, ${telefoneNacional}, ${telefoneNacional},
+                  ${origemWhatsapp?.id ?? null}, ${unidadeIdLeadAutomatico}, false
+                )
+                returning id
+              `;
+              return leadRow.id;
+            });
+          } catch (leadError) {
+            console.error('Falha ao criar lead automatico de contato novo do WhatsApp:', getErrorMessage(leadError));
+            leadIdAutomatico = null;
+          }
+        }
+
         const [novaConversa] = await sql`
           insert into gestao_crm.conversas_atendimento (telefone_normalizado, lead_id, cliente_id, status, contato_nome)
-          values (${telefoneNormalizado}, ${lead?.id ?? null}, ${cliente?.id ?? null}, 'aberta', ${incoming.contactName ?? null})
+          values (
+            ${telefoneNormalizado},
+            ${lead?.id ?? leadIdAutomatico ?? null},
+            ${cliente?.id ?? null},
+            'aberta',
+            ${incoming.contactName ?? null}
+          )
           returning id, status, contato_nome
         `;
         conversa = novaConversa;

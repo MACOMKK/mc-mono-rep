@@ -276,6 +276,13 @@ export const financeiroApi = {
       const result = await invokeServicos({ action: 'get', id });
       return result.row || null;
     },
+    // Consolida o que o drawer de detalhe precisa (anexos + parcelas + historico) numa unica
+    // chamada, em vez de 3 (anexos.list/parcelas.list/historico.list) -- cada uma pagava seu
+    // proprio round-trip + checagem de acesso repetida.
+    async getDetalhe(id) {
+      const result = await invokeServicos({ action: 'get_detalhe', solicitacao_id: id });
+      return { anexos: result.anexos || [], parcelas: result.parcelas || [], historico: result.historico || [] };
+    },
     async create(payload) {
       const result = await invokeServicos({ action: 'create', payload });
       return result.row || null;
