@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Car, Pencil, Plus, RotateCcw, Save, Search, Star, Trash2, X } from 'lucide-react';
+import { Car, Check, ChevronsUpDown, Pencil, Plus, RotateCcw, Save, Search, Star, Trash2, X } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { cn } from '@/lib/utils';
 import ListPagination from '@/components/ListPagination';
 import {
   AlertDialog,
@@ -16,12 +17,62 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/components/ui/use-toast';
+
+// Combobox pesquisavel (Select nativo nao tem busca) -- usado no campo Modelo porque o catalogo
+// pode crescer bastante por marca (varias motorizacoes/trims), diferente de Marca/Versao/Categoria.
+function ModeloCombobox({ modelos, value, onChange, disabled, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const selecionado = modelos.find((modelo) => modelo.id === value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={disabled}
+          className="h-9 w-full justify-between rounded-none text-sm font-normal"
+        >
+          <span className={cn('truncate', !selecionado && 'text-muted-foreground')}>
+            {selecionado ? `${selecionado.nome}${!selecionado.ativo ? ' (inativo)' : ''}` : placeholder}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] rounded-none p-0">
+        <Command>
+          <CommandInput placeholder="Buscar modelo..." />
+          <CommandList>
+            <CommandEmpty>Nenhum modelo encontrado.</CommandEmpty>
+            <CommandGroup>
+              {modelos.map((modelo) => (
+                <CommandItem
+                  key={modelo.id}
+                  value={modelo.nome}
+                  onSelect={() => {
+                    onChange(modelo.id);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn('mr-2 h-4 w-4', modelo.id === value ? 'opacity-100' : 'opacity-0')} />
+                  {modelo.nome}{!modelo.ativo ? ' (inativo)' : ''}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 // teste: Ignored Build Step Vercel (isolar deploys por app)
 const emptyNovoModelo = { nome: '', marca_id: '', categoria_veiculo_id: '', ano_inicio: '', ano_fim: '' };
@@ -266,7 +317,10 @@ export default function Estoque() {
 
   const { data: modelos = [] } = useQuery({
     queryKey: ['crm-modelos-veiculo'],
-    queryFn: () => crmDataClient.entities.ModeloVeiculo.list('nome'),
+    // limit alto (teto do backend e' 1000, ver crm-api/index.ts parseInteger) -- o padrao de 100
+    // deixava modelos de fora do select (ordenado globalmente por nome, nao por marca) sem
+    // nenhum aviso, so' sumindo da lista.
+    queryFn: () => crmDataClient.entities.ModeloVeiculo.list('nome', 1000),
   });
 
   const { data: marcas = [] } = useQuery({
@@ -892,20 +946,13 @@ export default function Estoque() {
             <div className="space-y-2">
               <Label className="text-xs font-bold uppercase tracking-wider">Modelo</Label>
               <div className="flex gap-1">
-                <Select
+                <ModeloCombobox
+                  modelos={modelosDaMarca}
                   value={form.modelo_id}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, modelo_id: value, versao_id: '' }))}
+                  onChange={(value) => setForm((prev) => ({ ...prev, modelo_id: value, versao_id: '' }))}
                   disabled={!form.marca_id}
-                >
-                  <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione o modelo" /></SelectTrigger>
-                  <SelectContent className="rounded-none">
-                    {modelosDaMarca.map((modelo) => (
-                      <SelectItem key={modelo.id} value={modelo.id}>
-                        {modelo.nome}{!modelo.ativo ? ' (inativo)' : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="Selecione o modelo"
+                />
                 <Button
                   type="button"
                   variant="outline"
