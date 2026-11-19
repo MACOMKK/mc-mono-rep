@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Save, Trash2 } from 'lucide-react';
+import { Plus, Save, Search, Trash2 } from 'lucide-react';
 import { crmDataClient } from '@/api/crmDataClient';
 import { useAuth } from '@/lib/AuthContext';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import ListPagination from '@/components/ListPagination';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,12 +33,36 @@ export default function ModelosVeiculo() {
   const [novaCategoriaId, setNovaCategoriaId] = useState('');
   const [novoAnoInicio, setNovoAnoInicio] = useState('');
   const [novoAnoFim, setNovoAnoFim] = useState('');
+  const [busca, setBusca] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const buscaDebounced = useDebouncedValue(busca);
 
-  const { data: modelos = [], isLoading, error } = useQuery({
-    queryKey: ['crm-modelos-veiculo'],
-    queryFn: () => crmDataClient.entities.ModeloVeiculo.list('nome'),
+  useEffect(() => {
+    setPage(1);
+  }, [buscaDebounced]);
+
+  const modelosQueryKey = ['crm-modelos-veiculo', { busca: buscaDebounced, page, pageSize }];
+
+  const {
+    data: modelosPage = { rows: [], count: 0 },
+    isLoading,
+    isFetching,
+    error,
+  } = useQuery({
+    queryKey: modelosQueryKey,
+    // busca so' filtra pelo nome do modelo (ver buildSearchFilter em crm-api/index.ts) -- marca/
+    // segmento continuam so' como coluna exibida, nao e' possivel filtrar por elas aqui ainda.
+    queryFn: () => crmDataClient.entities.ModeloVeiculo.listPage({
+      orderBy: 'nome',
+      page,
+      limit: pageSize,
+      search: buscaDebounced,
+    }),
     enabled: canConfigure,
   });
+  const modelos = modelosPage.rows;
+  const totalPages = Math.max(1, Math.ceil((modelosPage.count || 0) / pageSize));
 
   const { data: marcas = [] } = useQuery({
     queryKey: ['crm-marcas-veiculo'],
@@ -61,7 +87,7 @@ export default function ModelosVeiculo() {
       setNovoAnoFim('');
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'] });
+      await queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'], exact: false });
       toast({ title: 'Modelo criado', variant: 'success' });
     },
     onError: (mutationError) => toast({
@@ -74,7 +100,7 @@ export default function ModelosVeiculo() {
   const updateMutation = useMutation({
     mutationFn: ({ id, ...data }) => crmDataClient.entities.ModeloVeiculo.update(id, data),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'] });
+      await queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'], exact: false });
       toast({ title: 'Modelo atualizado', variant: 'success' });
     },
     onError: (mutationError) => toast({
@@ -87,17 +113,21 @@ export default function ModelosVeiculo() {
   const deleteMutation = useMutation({
     mutationFn: (id) => crmDataClient.entities.ModeloVeiculo.delete(id),
     onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ['crm-modelos-veiculo'] });
-      const previousModelos = queryClient.getQueryData(['crm-modelos-veiculo']);
-      queryClient.setQueryData(['crm-modelos-veiculo'], (old = []) => old.filter((modelo) => modelo.id !== id));
-      return { previousModelos };
+      await queryClient.cancelQueries({ queryKey: ['crm-modelos-veiculo'], exact: false });
+      const previousModelosPage = queryClient.getQueryData(modelosQueryKey);
+      queryClient.setQueryData(modelosQueryKey, (old) => (old ? {
+        ...old,
+        rows: old.rows.filter((modelo) => modelo.id !== id),
+        count: Math.max(0, (old.count || 0) - 1),
+      } : old));
+      return { previousModelosPage };
     },
     onSuccess: () => {
       toast({ title: 'Modelo excluido', variant: 'success' });
     },
     onError: (mutationError, _id, context) => {
-      if (context?.previousModelos) {
-        queryClient.setQueryData(['crm-modelos-veiculo'], context.previousModelos);
+      if (context?.previousModelosPage) {
+        queryClient.setQueryData(modelosQueryKey, context.previousModelosPage);
       }
       toast({
         title: 'Nao foi possivel excluir o modelo',
@@ -106,7 +136,7 @@ export default function ModelosVeiculo() {
       });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'] });
+      queryClient.invalidateQueries({ queryKey: ['crm-modelos-veiculo'], exact: false });
     },
   });
 
@@ -203,10 +233,22 @@ export default function ModelosVeiculo() {
         </Button>
       </form>
 
+      <div className="mb-4 flex items-center gap-2 border-b bg-white p-3">
+        <Search className="h-4 w-4 text-muted-foreground" />
+        <Input
+          value={busca}
+          onChange={(event) => setBusca(event.target.value)}
+          placeholder="Buscar modelo pelo nome..."
+          className="h-9 max-w-sm rounded-none"
+        />
+      </div>
+
       {isLoading ? <p className="py-10 text-sm text-muted-foreground">Carregando modelos...</p> : null}
       {error ? <p className="py-10 text-sm text-red-600">{error.message}</p> : null}
       {!isLoading && !error && modelos.length === 0 ? (
-        <p className="py-10 text-sm text-muted-foreground">Nenhum modelo cadastrado.</p>
+        <p className="py-10 text-sm text-muted-foreground">
+          {busca ? `Nenhum modelo encontrado para "${busca}".` : 'Nenhum modelo cadastrado.'}
+        </p>
       ) : null}
 
       {!isLoading && !error && modelos.length > 0 ? (
@@ -376,6 +418,14 @@ export default function ModelosVeiculo() {
               ))}
             </TableBody>
           </Table>
+          <ListPagination
+            count={modelosPage.count}
+            isFetching={isFetching}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage((current) => Math.max(1, current - 1))}
+            onNext={() => setPage((current) => Math.min(totalPages, current + 1))}
+          />
         </div>
       ) : null}
 

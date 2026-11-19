@@ -920,6 +920,8 @@ function buildSearchFilter(entity: EntityName, search: string, startIndex: numbe
     pushText('cv.nome');
     pushText('mv.nome');
     pushText('mk.nome');
+  } else if (entity === 'modelos_veiculo') {
+    pushText('nome');
   }
 
   return {
