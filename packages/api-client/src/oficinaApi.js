@@ -18,6 +18,17 @@ function toError(message, status = 500, code, details, hint) {
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
+// Regiao opcional de execucao da Edge Function (ex.: us-west-2, onde fica o banco). Sem a
+// variavel, o Supabase escolhe a regiao mais proxima do usuario (sa-east-1), que fica a ~200 ms
+// de ida e volta do banco a cada query. `forceFunctionRegion` na URL (em vez do header
+// x-region) evita preflight/CORS extra. Atencao: com regiao explicita NAO ha fallback
+// automatico se a regiao cair -- para voltar ao padrao, basta remover a variavel e refazer o
+// deploy do app. Ver docs: supabase.com/docs/guides/functions/regional-invocation
+const SERVICOS_OFICINA_API_REGION = String(import.meta.env.VITE_SERVICOS_OFICINA_API_REGION || '').trim();
+const SERVICOS_OFICINA_API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/servicos-oficina-api${
+  SERVICOS_OFICINA_API_REGION ? `?forceFunctionRegion=${encodeURIComponent(SERVICOS_OFICINA_API_REGION)}` : ''
+}`;
+
 function fetchComTimeout(url, options, signal, timeoutMs) {
   return fetchWithTimeout(url, options, {
     signal,
@@ -46,7 +57,7 @@ async function invokeOficinaRaw(body = {}, accessTokenOverride, { signal, timeou
   }
 
   const response = await fetchComTimeout(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/servicos-oficina-api`,
+    SERVICOS_OFICINA_API_URL,
     {
       method: 'POST',
       headers: {
@@ -88,7 +99,7 @@ async function invokeOficinaPublicoRaw(body = {}, { signal, timeoutMs = DEFAULT_
   assertSupabaseConfigured();
 
   const response = await fetchComTimeout(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/servicos-oficina-api`,
+    SERVICOS_OFICINA_API_URL,
     {
       method: 'POST',
       headers: {

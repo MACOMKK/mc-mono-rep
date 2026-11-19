@@ -17,6 +17,17 @@ function toError(message, status = 500, code, details, hint) {
   return error;
 }
 
+// Regiao opcional de execucao da Edge Function (ex.: us-west-2, onde fica o banco). Sem a
+// variavel, o Supabase escolhe a regiao mais proxima do usuario (sa-east-1), que fica a ~200 ms
+// de ida e volta do banco a cada query. `forceFunctionRegion` na URL (em vez do header
+// x-region) evita preflight/CORS extra. Atencao: com regiao explicita NAO ha fallback
+// automatico se a regiao cair -- para voltar ao padrao, basta remover a variavel e refazer o
+// deploy do app. Ver docs: supabase.com/docs/guides/functions/regional-invocation
+const SERVICOS_API_REGION = String(import.meta.env.VITE_SERVICOS_API_REGION || '').trim();
+const SERVICOS_API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/servicos-api${
+  SERVICOS_API_REGION ? `?forceFunctionRegion=${encodeURIComponent(SERVICOS_API_REGION)}` : ''
+}`;
+
 function invokeServicos(body = {}, accessTokenOverride) {
   return monitorCall('servicos-api', body, () => invokeServicosRaw(body, accessTokenOverride));
 }
@@ -33,7 +44,7 @@ async function invokeServicosRaw(body = {}, accessTokenOverride) {
     throw toError('Sessao expirada. Faca login novamente.', 401, 'auth_required');
   }
 
-  const response = await fetchWithTimeout(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/servicos-api`, {
+  const response = await fetchWithTimeout(SERVICOS_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
