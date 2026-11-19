@@ -85,6 +85,17 @@ function versionJsonPlugin() {
 
 export default mergeConfig(baseConfig, {
   build: {
+    // Por padrao o Vite injeta <link rel="modulepreload"> no index.html pra qualquer chunk
+    // dinamico compartilhado por 2+ paginas (manualChunks faz o "pdf-vendor" se qualificar,
+    // ja que Aprovacoes/MinhasSolicitacoes/Pagamentos todas importam SolicitacaoDrawer, que
+    // carrega pdf-lib via import() dinamico) -- isso baixava os 532 KB do pdf-vendor pra todo
+    // usuario logo na tela de login, mesmo quem nunca usa "Juntar PDFs"/assinatura, anulando o
+    // ganho de banda do code splitting de pdf-lib (ver loadPdfTools em
+    // SolicitacaoDrawer.jsx/anexoSignature.js). Filtra esse chunk da lista de preload; ele
+    // continua sendo baixado normalmente, só na hora real do import() dinamico.
+    modulePreload: {
+      resolveDependencies: (_filename, deps) => deps.filter((dep) => !dep.includes('pdf-vendor')),
+    },
     rollupOptions: {
       output: {
         // pdf-lib so entra em bundle de quem usa assinatura/PDF (ver loadPdfTools em
@@ -93,6 +104,9 @@ export default mergeConfig(baseConfig, {
         // com o mesmo prefixo do entry point real, o que impediria excluir só ele do precache
         // do Service Worker (ver injectManifest.globIgnores abaixo) sem also excluir o entry.
         manualChunks(id) {
+          if (id.includes('commonjsHelpers') || id.includes('commonjs-proxy')) {
+            console.log('DEBUG_HELPER_ID:', id);
+          }
           if (id.replace(/\\/g, '/').includes('/node_modules/pdf-lib/')) return 'pdf-vendor';
         },
       },
