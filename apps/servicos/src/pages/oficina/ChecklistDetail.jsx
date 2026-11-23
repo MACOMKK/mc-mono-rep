@@ -27,6 +27,7 @@ import FotoUploadGrid from '@/components/oficina/FotoUploadGrid';
 import AssinaturaModal from '@/components/oficina/AssinaturaModal';
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog';
 import ChecklistDocumento from '@/pages/oficina/ChecklistDocumento';
+import ClienteDetalheSheet from '@/components/oficina/ClienteDetalheSheet';
 
 const STATUS_LABEL = { em_andamento: 'Em andamento', avaliado: 'Avaliado', finalizado: 'Finalizado' };
 const STATUS_VARIANT = { em_andamento: 'warning', avaliado: 'default', finalizado: 'success' };
@@ -107,6 +108,7 @@ export default function ChecklistDetail() {
   const [excluindo, setExcluindo] = useState(false);
   const [excluirAberto, setExcluirAberto] = useState(false);
   const [erroExcluir, setErroExcluir] = useState(null);
+  const [clienteDetalheId, setClienteDetalheId] = useState(null);
 
   useEffect(() => {
     oficinaApi.checklists
@@ -302,7 +304,17 @@ export default function ChecklistDetail() {
       <div className="grid grid-cols-2 gap-4 rounded-lg border border-border bg-card p-4 text-sm">
         <div>
           <p className="text-xs text-muted-foreground">Cliente</p>
-          <p>{row.cliente_nome || '—'}</p>
+          {row.cliente_id ? (
+            <button
+              type="button"
+              className="text-left text-primary underline-offset-2 hover:underline"
+              onClick={() => setClienteDetalheId(row.cliente_id)}
+            >
+              {row.cliente_nome || '—'}
+            </button>
+          ) : (
+            <p>{row.cliente_nome || '—'}</p>
+          )}
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Veículo</p>
@@ -566,6 +578,13 @@ export default function ChecklistDetail() {
       >
         {erroExcluir && <p className="text-sm text-destructive">{erroExcluir}</p>}
       </ConfirmDeleteDialog>
+
+      <ClienteDetalheSheet
+        clienteId={clienteDetalheId}
+        onOpenChange={(open) => {
+          if (!open) setClienteDetalheId(null);
+        }}
+      />
     </div>
   );
 }

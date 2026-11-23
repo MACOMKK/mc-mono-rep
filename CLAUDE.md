@@ -192,7 +192,8 @@ Não há CI configurado (`.github/`) — validar localmente antes de subir.
   `supabase secrets set`).
 - Regras de negócio muito específicas de um app (modelo de permissões, entidades
   de domínio, particularidades de backend) vivem no `CLAUDE.md` próprio do app —
-  já existe para `central`, `crm`, `intranet`, `relatorios` e `servicos`. `admin`
-  ainda não tem um por ser simples hoje (revisitar se crescer). Este arquivo raiz cobre
-  apenas o que é transversal: arquitetura do monorepo, pacotes `@macom/*`
+  já existe para `central`, `admin`, `crm`, `intranet`, `relatorios` e `servicos`
+  (o do `admin` documenta hoje só convenções de UI, não regras de negócio — ver
+  levantamento em `REGRAS DE NEGOCIO DOS SISTEMAS/admin-console.md`). Este arquivo
+  raiz cobre apenas o que é transversal: arquitetura do monorepo, pacotes `@macom/*`
   compartilhados, backend Supabase geral e como rodar/testar.
