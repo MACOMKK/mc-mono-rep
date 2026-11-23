@@ -80,7 +80,6 @@ const emptyNovoModelo = { nome: '', marca_id: '', categoria_veiculo_id: '', ano_
 const CONDICAO_OPTIONS = [
   { value: 'novo', label: 'Novo' },
   { value: 'seminovo', label: 'Seminovo' },
-  { value: 'usado', label: 'Usado' },
 ];
 
 const STATUS_OPTIONS = [
@@ -249,7 +248,7 @@ export default function Estoque() {
   // decide se manda condicao como igualdade, IN ou nenhum filtro (quando cobre as 3 opcoes).
   const condicoesPermitidas = useMemo(() => {
     const todas = CONDICAO_OPTIONS.map((option) => option.value);
-    const daAba = abaCondicao === 'novo' ? ['novo'] : abaCondicao === 'seminovo' ? ['seminovo', 'usado'] : todas;
+    const daAba = abaCondicao === 'novo' ? ['novo'] : abaCondicao === 'seminovo' ? ['seminovo'] : todas;
     const doDropdown = filtros.condicao ? [filtros.condicao] : todas;
     return daAba.filter((value) => doDropdown.includes(value));
   }, [abaCondicao, filtros.condicao]);

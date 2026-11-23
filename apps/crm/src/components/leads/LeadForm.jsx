@@ -836,7 +836,6 @@ export default function LeadForm({
                       <SelectContent className="rounded-none">
                         <SelectItem value="novo">Novo</SelectItem>
                         <SelectItem value="seminovo">Seminovo</SelectItem>
-                        <SelectItem value="usado">Usado</SelectItem>
                       </SelectContent>
                     </Select>
                   </Field>

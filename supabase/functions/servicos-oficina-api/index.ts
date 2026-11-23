@@ -1309,7 +1309,7 @@ Deno.serve(async (request) => {
       const veiculoRows = await sql.unsafe(`select id from public.veiculos where id = $1;`, [veiculoId]);
       if (!veiculoRows[0]) return json({ error: 'Veiculo nao encontrado.' }, 404);
 
-      const condicao = ['novo', 'seminovo', 'usado'].includes(String(body.condicao || ''))
+      const condicao = ['novo', 'seminovo'].includes(String(body.condicao || ''))
         ? String(body.condicao)
         : 'seminovo';
       const preco = body.preco != null && body.preco !== '' ? Number(body.preco) : null;
