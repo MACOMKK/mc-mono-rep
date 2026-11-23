@@ -454,6 +454,10 @@ function mapDatabaseError(error: unknown) {
     return 'Ja existe um veiculo com este chassi.';
   }
 
+  if (message.includes('veiculos_chassi_ou_placa_check')) {
+    return 'Informe o chassi ou a placa do veiculo.';
+  }
+
   if (message.includes('idx_veiculos_placa_unique')) {
     return 'Ja existe um veiculo com esta placa.';
   }
@@ -697,7 +701,7 @@ function sanitizeVeiculoPayload(payload: Record<string, unknown> = {}) {
     }
   }
   if (typeof sanitized.chassi === 'string') {
-    sanitized.chassi = sanitized.chassi.trim().toUpperCase();
+    sanitized.chassi = sanitized.chassi.trim().toUpperCase() || null;
   }
   if (typeof sanitized.placa === 'string') {
     sanitized.placa = sanitized.placa.trim().toUpperCase().replace(/\s+/g, '') || null;

@@ -230,6 +230,9 @@ export default function Estoque() {
   // deixar o unique de chassi/placa travar a criacao com erro generico (ver veiculo_buscar_existente).
   const [veiculoEncontrado, setVeiculoEncontrado] = useState(null);
   const [veiculoVinculadoId, setVeiculoVinculadoId] = useState(null);
+  // null = dialog em modo cadastro; id da linha de veiculos_estoque = modo edicao (reaproveita o
+  // mesmo dialog/form, so troca create -> update e pula a busca de veiculo duplicado por chassi/placa).
+  const [editandoEstoqueId, setEditandoEstoqueId] = useState(null);
   const chassiDebounced = useDebouncedValue(form.chassi);
   const placaDebounced = useDebouncedValue(form.placa);
   const [reservaDialogVeiculo, setReservaDialogVeiculo] = useState(null);
@@ -374,7 +377,9 @@ export default function Estoque() {
   );
 
   useEffect(() => {
-    if (!novoVeiculoDialogOpen) return undefined;
+    // Em modo edicao o chassi/placa digitados sao do proprio veiculo que ja esta no estoque --
+    // a busca de duplicidade so faz sentido no cadastro de um veiculo novo.
+    if (!novoVeiculoDialogOpen || editandoEstoqueId) return undefined;
     const chassi = chassiDebounced.trim();
     const placa = placaDebounced.trim();
     if (chassi.length < 11 && placa.length < 7) {
@@ -386,7 +391,31 @@ export default function Estoque() {
       .then((veiculo) => { if (!cancelado) setVeiculoEncontrado(veiculo); })
       .catch(() => { if (!cancelado) setVeiculoEncontrado(null); });
     return () => { cancelado = true; };
-  }, [novoVeiculoDialogOpen, chassiDebounced, placaDebounced]);
+  }, [novoVeiculoDialogOpen, editandoEstoqueId, chassiDebounced, placaDebounced]);
+
+  const abrirEdicaoVeiculo = (veiculo) => {
+    const modelo = modeloPorId[veiculo.modelo_id];
+    setForm({
+      marca_id: modelo?.marca_id || '',
+      modelo_id: veiculo.modelo_id || '',
+      versao_id: veiculo.versao_id || '',
+      chassi: veiculo.chassi || '',
+      placa: veiculo.placa || '',
+      cor_id: veiculo.cor_id || '',
+      km: veiculo.km != null ? String(veiculo.km) : '',
+      condicao: veiculo.condicao || 'novo',
+      status: veiculo.status || 'disponivel',
+      preco: veiculo.preco != null ? String(veiculo.preco) : '',
+      situacao: veiculo.situacao || 'estoque',
+      vendedor_reserva_id: veiculo.vendedor_reserva_id || '',
+      cliente_reserva_id: veiculo.cliente_reserva_id || '',
+      cliente_reserva_nome: veiculo.cliente_reserva_nome || '',
+    });
+    setVeiculoEncontrado(null);
+    setVeiculoVinculadoId(null);
+    setEditandoEstoqueId(veiculo.id);
+    setNovoVeiculoDialogOpen(true);
+  };
 
   const handleVincularVeiculoEncontrado = () => {
     if (!veiculoEncontrado) return;
@@ -426,6 +455,13 @@ export default function Estoque() {
     mutationFn: ({ id, ...data }) => crmDataClient.entities.VeiculoEstoque.update(id, data),
     onSuccess: async () => {
       await invalidateVeiculosEstoque();
+      // Os dropdowns inline (condicao/situacao/status/reserva) tambem usam essa mutation e nunca
+      // abrem o dialog -- fechar/limpar aqui so afeta o fluxo de edicao completa.
+      setNovoVeiculoDialogOpen(false);
+      setForm(emptyForm);
+      setEditandoEstoqueId(null);
+      setVeiculoEncontrado(null);
+      setVeiculoVinculadoId(null);
       toast({ title: 'Veiculo atualizado', variant: 'success' });
     },
     onError: (mutationError) => toast({
@@ -584,12 +620,18 @@ export default function Estoque() {
   const handleCreate = (event) => {
     event.preventDefault();
     const chassi = form.chassi.trim();
-    if (!chassi || !form.modelo_id) return;
-    createMutation.mutate({
+    const placa = form.placa.trim();
+    // Novo normalmente tem chassi na hora do cadastro (chassi obrigatorio, placa opcional);
+    // seminovo/usado normalmente so tem placa (placa obrigatoria, chassi opcional) -- public.veiculos
+    // so exige que exista ao menos um dos dois (20261123100000_veiculos_chassi_opcional.sql), mas por
+    // condicao a regra de negocio e mais especifica que isso.
+    const identificadorObrigatorioFaltando = form.condicao === 'novo' ? !chassi : !placa;
+    if (identificadorObrigatorioFaltando || !form.modelo_id) return;
+    const payload = {
       modelo_id: form.modelo_id,
       versao_id: form.versao_id || null,
-      chassi,
-      placa: form.placa.trim() || null,
+      chassi: chassi || null,
+      placa: placa || null,
       cor_id: form.cor_id || null,
       km: form.km ? Number(form.km) : null,
       condicao: form.condicao,
@@ -598,8 +640,12 @@ export default function Estoque() {
       situacao: form.situacao,
       vendedor_reserva_id: form.vendedor_reserva_id || null,
       cliente_reserva_id: form.cliente_reserva_id || null,
-      veiculo_existente_id: veiculoVinculadoId || null,
-    });
+    };
+    if (editandoEstoqueId) {
+      updateMutation.mutate({ id: editandoEstoqueId, ...payload });
+    } else {
+      createMutation.mutate({ ...payload, veiculo_existente_id: veiculoVinculadoId || null });
+    }
   };
 
   const abrirReservaDialog = (veiculo) => {
@@ -930,15 +976,28 @@ export default function Estoque() {
                     </TableCell>
                     {canConfigure ? (
                       <TableCell>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8 rounded-none text-red-600"
-                          onClick={() => setVeiculoParaExcluir(veiculo)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 shrink-0 rounded-none"
+                            title="Editar veiculo"
+                            onClick={() => abrirEdicaoVeiculo(veiculo)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 shrink-0 rounded-none text-red-600"
+                            title="Excluir veiculo"
+                            onClick={() => setVeiculoParaExcluir(veiculo)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     ) : null}
                   </TableRow>
@@ -971,12 +1030,15 @@ export default function Estoque() {
             setForm(emptyForm);
             setVeiculoEncontrado(null);
             setVeiculoVinculadoId(null);
+            setEditandoEstoqueId(null);
           }
         }}
       >
         <DialogContent className="rounded-none sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="text-sm font-black uppercase tracking-widest">Adicionar veiculo ao estoque</DialogTitle>
+            <DialogTitle className="text-sm font-black uppercase tracking-widest">
+              {editandoEstoqueId ? 'Editar veiculo do estoque' : 'Adicionar veiculo ao estoque'}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreate} className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
@@ -1046,7 +1108,9 @@ export default function Estoque() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase tracking-wider">Chassi</Label>
+              <Label className="text-xs font-bold uppercase tracking-wider">
+                Chassi {form.condicao === 'novo' ? <span className="text-red-600">*</span> : null}
+              </Label>
               <Input
                 value={form.chassi}
                 onChange={(event) => {
@@ -1058,7 +1122,9 @@ export default function Estoque() {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase tracking-wider">Placa</Label>
+              <Label className="text-xs font-bold uppercase tracking-wider">
+                Placa {form.condicao !== 'novo' ? <span className="text-red-600">*</span> : null}
+              </Label>
               <Input
                 value={form.placa}
                 onChange={(event) => {
@@ -1206,10 +1272,19 @@ export default function Estoque() {
             <DialogFooter className="md:col-span-2">
               <Button
                 type="submit"
-                disabled={!form.chassi.trim() || !form.modelo_id || createMutation.isPending || Boolean(veiculoEncontrado?.estoque_id)}
+                disabled={
+                  (form.condicao === 'novo' ? !form.chassi.trim() : !form.placa.trim())
+                  || !form.modelo_id
+                  || createMutation.isPending
+                  || updateMutation.isPending
+                  || (!editandoEstoqueId && Boolean(veiculoEncontrado?.estoque_id))
+                }
                 className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
               >
-                <Plus className="mr-2 h-4 w-4" /> {createMutation.isPending ? 'Adicionando...' : 'Adicionar ao estoque'}
+                <Plus className="mr-2 h-4 w-4" />
+                {createMutation.isPending || updateMutation.isPending
+                  ? 'Salvando...'
+                  : editandoEstoqueId ? 'Salvar alteracoes' : 'Adicionar ao estoque'}
               </Button>
             </DialogFooter>
           </form>
