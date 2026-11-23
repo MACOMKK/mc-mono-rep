@@ -1248,6 +1248,7 @@ const VeiculoEstoqueRepository = {
   async create(data) {
     const result = await crmApi.veiculos_estoque.saveFull({
       estoqueId: null,
+      veiculoExistenteId: data.veiculo_existente_id || null,
       veiculoPayload: {
         modelo_id: data.modelo_id || null,
         versao_id: data.versao_id || null,
@@ -1267,6 +1268,10 @@ const VeiculoEstoqueRepository = {
       },
     });
     return mapVeiculoEstoqueRow({ ...result.estoque, veiculo: result.veiculo });
+  },
+
+  async buscarVeiculoExistente({ chassi, placa } = {}) {
+    return crmApi.veiculos_estoque.buscarExistente({ chassi, placa });
   },
 
   async update(id, data) {

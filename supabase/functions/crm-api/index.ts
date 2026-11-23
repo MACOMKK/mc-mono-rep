@@ -3056,10 +3056,51 @@ Deno.serve(async (request) => {
       return json(result);
     }
 
+    // Busca um public.veiculos ja existente por chassi/placa (ex.: importado para um cliente via
+    // Servicos/lote, nunca colocado no estoque) -- usado pela tela de Estoque para oferecer
+    // "vincular esse veiculo" em vez de deixar o unique de chassi/placa travar a criacao com um
+    // erro generico. So considera util quando o veiculo ainda NAO esta no estoque.
+    if (action === 'veiculo_buscar_existente') {
+      ensureCanConfigure(access);
+
+      const chassi = typeof body.chassi === 'string' ? body.chassi.trim().toUpperCase() : '';
+      const placa = typeof body.placa === 'string'
+        ? body.placa.trim().toUpperCase().replace(/\s+/g, '')
+        : '';
+      if (!chassi && !placa) {
+        return json({ veiculo: null });
+      }
+
+      const rows = await sql.unsafe(
+        `
+          select
+            v.id, v.chassi, v.placa, v.km, v.cor_id, v.modelo_id, v.versao_id,
+            mk.id as marca_id, mv.nome as modelo_nome, mk.nome as marca_nome,
+            c.nome as cliente_atual_nome,
+            (select id from ${CRM_SCHEMA}.veiculos_estoque where veiculo_id = v.id limit 1) as estoque_id
+          from public.veiculos v
+          left join public.modelos_veiculo mv on mv.id = v.modelo_id
+          left join public.marcas_veiculo mk on mk.id = mv.marca_id
+          left join public.clientes c on c.id = v.cliente_atual_id
+          where ($1 <> '' and v.chassi = $1) or ($2 <> '' and v.placa = $2)
+          limit 1;
+        `,
+        [chassi, placa],
+      );
+
+      return json({ veiculo: rows[0] || null });
+    }
+
     if (action === 'save_veiculo_estoque_full') {
       ensureCanConfigure(access);
 
       const estoqueId = typeof body.estoqueId === 'string' && body.estoqueId ? body.estoqueId : '';
+      // Permite reaproveitar um public.veiculos ja existente (ex.: importado para um cliente via
+      // Servicos/lote, nunca colocado no estoque) em vez de tentar criar um novo -- o unique de
+      // chassi/placa bloquearia a criacao duplicada. Ver ModeloCombobox/veiculo_buscar_existente.
+      const veiculoExistenteId = typeof body.veiculoExistenteId === 'string' && body.veiculoExistenteId
+        ? body.veiculoExistenteId
+        : '';
       const veiculoPayloadRaw = sanitizeVeiculoPayload(body.veiculoPayload || {});
       const estoquePayloadRaw = sanitizePayload('veiculos_estoque', body.estoquePayload || {});
 
@@ -3076,6 +3117,33 @@ Deno.serve(async (request) => {
           }
           const updateQuery = buildUpdateQuery('public', 'veiculos', veiculoId, veiculoPayloadRaw);
           const rows = await transaction.unsafe(updateQuery.text, updateQuery.values);
+          veiculoRow = rows[0];
+        } else if (veiculoExistenteId) {
+          const jaNoEstoque = await transaction.unsafe(
+            `select id from ${CRM_SCHEMA}.veiculos_estoque where veiculo_id = $1 limit 1;`,
+            [veiculoExistenteId],
+          );
+          if (jaNoEstoque[0]) {
+            throw Object.assign(new Error('Este veiculo ja esta no estoque.'), { status: 409 });
+          }
+          // Entrar no estoque = a empresa adquiriu o veiculo do cliente -- encerra o vinculo de
+          // propriedade atual (mesmo padrao de "ate = now()" usado em veiculo_transferir no
+          // servicos-oficina-api) e zera cliente_atual_id, senao o dono anterior continuaria
+          // aparecendo como proprietario de um carro que agora e' da revenda.
+          await transaction.unsafe(
+            `update public.veiculos_proprietarios set ate = now() where veiculo_id = $1 and ate is null;`,
+            [veiculoExistenteId],
+          );
+          const updateQuery = buildUpdateQuery(
+            'public',
+            'veiculos',
+            veiculoExistenteId,
+            { ...veiculoPayloadRaw, cliente_atual_id: null },
+          );
+          const rows = await transaction.unsafe(updateQuery.text, updateQuery.values);
+          if (!rows[0]) {
+            throw Object.assign(new Error('Veiculo existente nao encontrado.'), { status: 404 });
+          }
           veiculoRow = rows[0];
         } else {
           const insertQuery = buildInsertQuery('public', 'veiculos', veiculoPayloadRaw);

@@ -225,6 +225,13 @@ export default function Estoque() {
   const [novaCorNome, setNovaCorNome] = useState('');
   const [veiculoParaExcluir, setVeiculoParaExcluir] = useState(null);
   const [novoVeiculoDialogOpen, setNovoVeiculoDialogOpen] = useState(false);
+  // Veiculo existente (public.veiculos) encontrado por chassi/placa que ainda nao esta no
+  // estoque -- ex.: importado para um cliente via Servicos/lote. Oferece "vincular" em vez de
+  // deixar o unique de chassi/placa travar a criacao com erro generico (ver veiculo_buscar_existente).
+  const [veiculoEncontrado, setVeiculoEncontrado] = useState(null);
+  const [veiculoVinculadoId, setVeiculoVinculadoId] = useState(null);
+  const chassiDebounced = useDebouncedValue(form.chassi);
+  const placaDebounced = useDebouncedValue(form.placa);
   const [reservaDialogVeiculo, setReservaDialogVeiculo] = useState(null);
   const [reservaForm, setReservaForm] = useState({
     vendedor_reserva_id: '',
@@ -366,10 +373,42 @@ export default function Estoque() {
     [modelos, form.marca_id],
   );
 
+  useEffect(() => {
+    if (!novoVeiculoDialogOpen) return undefined;
+    const chassi = chassiDebounced.trim();
+    const placa = placaDebounced.trim();
+    if (chassi.length < 11 && placa.length < 7) {
+      setVeiculoEncontrado(null);
+      return undefined;
+    }
+    let cancelado = false;
+    crmDataClient.entities.VeiculoEstoque.buscarVeiculoExistente({ chassi, placa })
+      .then((veiculo) => { if (!cancelado) setVeiculoEncontrado(veiculo); })
+      .catch(() => { if (!cancelado) setVeiculoEncontrado(null); });
+    return () => { cancelado = true; };
+  }, [novoVeiculoDialogOpen, chassiDebounced, placaDebounced]);
+
+  const handleVincularVeiculoEncontrado = () => {
+    if (!veiculoEncontrado) return;
+    setForm((prev) => ({
+      ...prev,
+      marca_id: veiculoEncontrado.marca_id || '',
+      modelo_id: veiculoEncontrado.modelo_id || '',
+      versao_id: veiculoEncontrado.versao_id || '',
+      chassi: veiculoEncontrado.chassi || prev.chassi,
+      placa: veiculoEncontrado.placa || prev.placa,
+      cor_id: veiculoEncontrado.cor_id || '',
+      km: veiculoEncontrado.km != null ? String(veiculoEncontrado.km) : prev.km,
+    }));
+    setVeiculoVinculadoId(veiculoEncontrado.id);
+  };
+
   const createMutation = useMutation({
     mutationFn: (data) => crmDataClient.entities.VeiculoEstoque.create(data),
     onMutate: () => {
       setForm(emptyForm);
+      setVeiculoEncontrado(null);
+      setVeiculoVinculadoId(null);
     },
     onSuccess: async () => {
       await invalidateVeiculosEstoque();
@@ -559,6 +598,7 @@ export default function Estoque() {
       situacao: form.situacao,
       vendedor_reserva_id: form.vendedor_reserva_id || null,
       cliente_reserva_id: form.cliente_reserva_id || null,
+      veiculo_existente_id: veiculoVinculadoId || null,
     });
   };
 
@@ -923,7 +963,17 @@ export default function Estoque() {
         </div>
       ) : null}
 
-      <Dialog open={novoVeiculoDialogOpen} onOpenChange={(open) => { setNovoVeiculoDialogOpen(open); if (!open) setForm(emptyForm); }}>
+      <Dialog
+        open={novoVeiculoDialogOpen}
+        onOpenChange={(open) => {
+          setNovoVeiculoDialogOpen(open);
+          if (!open) {
+            setForm(emptyForm);
+            setVeiculoEncontrado(null);
+            setVeiculoVinculadoId(null);
+          }
+        }}
+      >
         <DialogContent className="rounded-none sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-sm font-black uppercase tracking-widest">Adicionar veiculo ao estoque</DialogTitle>
@@ -999,7 +1049,10 @@ export default function Estoque() {
               <Label className="text-xs font-bold uppercase tracking-wider">Chassi</Label>
               <Input
                 value={form.chassi}
-                onChange={(event) => setForm((prev) => ({ ...prev, chassi: event.target.value }))}
+                onChange={(event) => {
+                  setVeiculoVinculadoId(null);
+                  setForm((prev) => ({ ...prev, chassi: event.target.value }));
+                }}
                 placeholder="Ex.: 93XATGK1WVCT33302"
                 className="h-9 rounded-none"
               />
@@ -1008,11 +1061,45 @@ export default function Estoque() {
               <Label className="text-xs font-bold uppercase tracking-wider">Placa</Label>
               <Input
                 value={form.placa}
-                onChange={(event) => setForm((prev) => ({ ...prev, placa: event.target.value }))}
+                onChange={(event) => {
+                  setVeiculoVinculadoId(null);
+                  setForm((prev) => ({ ...prev, placa: event.target.value }));
+                }}
                 placeholder="Ex.: ABC1D23"
                 className="h-9 rounded-none"
               />
             </div>
+            {veiculoEncontrado ? (
+              <div className="col-span-full border border-amber-300 bg-amber-50 p-3 text-xs">
+                {veiculoEncontrado.estoque_id ? (
+                  <p className="text-amber-900">
+                    Este veiculo (chassi {veiculoEncontrado.chassi}) ja esta no estoque.
+                  </p>
+                ) : veiculoVinculadoId === veiculoEncontrado.id ? (
+                  <p className="text-amber-900">
+                    Vinculado ao veiculo ja cadastrado (chassi {veiculoEncontrado.chassi}
+                    {veiculoEncontrado.cliente_atual_nome ? `, dono atual: ${veiculoEncontrado.cliente_atual_nome}` : ''}).
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-amber-900">
+                      Ja existe um veiculo cadastrado com esse chassi/placa
+                      {veiculoEncontrado.cliente_atual_nome ? ` (dono atual: ${veiculoEncontrado.cliente_atual_nome})` : ''}.
+                      Ele nunca foi colocado no estoque.
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 shrink-0 rounded-none text-xs"
+                      onClick={handleVincularVeiculoEncontrado}
+                    >
+                      Vincular este veiculo ao estoque
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label className="text-xs font-bold uppercase tracking-wider">Cor</Label>
               <div className="flex gap-1">
@@ -1119,7 +1206,7 @@ export default function Estoque() {
             <DialogFooter className="md:col-span-2">
               <Button
                 type="submit"
-                disabled={!form.chassi.trim() || !form.modelo_id || createMutation.isPending}
+                disabled={!form.chassi.trim() || !form.modelo_id || createMutation.isPending || Boolean(veiculoEncontrado?.estoque_id)}
                 className="h-9 rounded-none text-xs font-bold uppercase tracking-wider"
               >
                 <Plus className="mr-2 h-4 w-4" /> {createMutation.isPending ? 'Adicionando...' : 'Adicionar ao estoque'}

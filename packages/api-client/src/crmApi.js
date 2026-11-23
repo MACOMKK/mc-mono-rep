@@ -294,6 +294,10 @@ export const crmApi = {
     async reserva(payload) {
       return invokeCrm({ action: 'veiculo_estoque_reserva', ...payload });
     },
+    async buscarExistente({ chassi, placa } = {}) {
+      const result = await invokeCrm({ action: 'veiculo_buscar_existente', chassi, placa });
+      return result.veiculo || null;
+    },
   },
   veiculos_estoque_historico_reserva: buildEntity('veiculos_estoque_historico_reserva'),
   pipelines: buildEntity('pipelines'),
