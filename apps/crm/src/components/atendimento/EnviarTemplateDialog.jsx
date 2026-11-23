@@ -44,7 +44,7 @@ function componentesPreenchiveis(components) {
   );
 }
 
-export default function EnviarTemplateDialog({ open, onOpenChange, onEnviar, isPending }) {
+export default function EnviarTemplateDialog({ open, onOpenChange, onEnviar }) {
   const [templateSelecionado, setTemplateSelecionado] = useState(null);
   const [valores, setValores] = useState({});
 
@@ -183,11 +183,11 @@ export default function EnviarTemplateDialog({ open, onOpenChange, onEnviar, isP
         <DialogFooter>
           {templateSelecionado ? (
             <>
-              <Button type="button" variant="outline" onClick={voltar} disabled={isPending}>
+              <Button type="button" variant="outline" onClick={voltar}>
                 Voltar
               </Button>
-              <Button type="button" onClick={handleConfirmar} disabled={isPending || !todosPlaceholdersPreenchidos}>
-                {isPending ? 'Enviando...' : 'Enviar template'}
+              <Button type="button" onClick={handleConfirmar} disabled={!todosPlaceholdersPreenchidos}>
+                Enviar template
               </Button>
             </>
           ) : (

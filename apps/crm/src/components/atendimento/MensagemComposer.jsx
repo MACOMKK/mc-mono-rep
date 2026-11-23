@@ -101,7 +101,6 @@ export default function MensagemComposer({
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
-  const [enviandoTemplate, setEnviandoTemplate] = useState(false);
   const [gerenciarRapidasOpen, setGerenciarRapidasOpen] = useState(false);
   const [localizacaoDialogOpen, setLocalizacaoDialogOpen] = useState(false);
   const [solicitarLocalizacaoDialogOpen, setSolicitarLocalizacaoDialogOpen] = useState(false);
@@ -332,17 +331,14 @@ export default function MensagemComposer({
     }
   };
 
-  const handleEnviarTemplate = async (template) => {
-    setEnviandoTemplate(true);
-    try {
-      await onSendTemplate(template);
-      setTemplateDialogOpen(false);
-    } catch {
-      // Erro ja e' tratado (toast) no onError da mutation em Atendimento.jsx -- so mantem o
-      // dialogo aberto pra o atendente poder tentar de novo sem reabrir e re-selecionar tudo.
-    } finally {
-      setEnviandoTemplate(false);
-    }
+  // Mesmo padrao de handleEnviarLocalizacao: onSendTemplate (enviarMutation) ja atualiza a lista
+  // otimisticamente em onMutate (bolha "pending", igual a qualquer outro envio) -- nao esperar a
+  // confirmacao do servidor aqui, senao o dialogo fica aberto (com overlay bloqueando o chat)
+  // durante todo o envio, dando sensacao de tela travada. Fecha o dialogo na hora e deixa erro de
+  // envio pro onError da mutation (toast + bolha de erro com retry).
+  const handleEnviarTemplate = (template) => {
+    setTemplateDialogOpen(false);
+    onSendTemplate(template).catch(() => {});
   };
 
   // Mesmo padrao de handleSend: onSendLocation (enviarMutation) ja atualiza a lista
@@ -745,7 +741,6 @@ export default function MensagemComposer({
           open={templateDialogOpen}
           onOpenChange={setTemplateDialogOpen}
           onEnviar={handleEnviarTemplate}
-          isPending={enviandoTemplate}
         />
       ) : null}
       <GerenciarMensagensRapidasDialog open={gerenciarRapidasOpen} onOpenChange={setGerenciarRapidasOpen} />
