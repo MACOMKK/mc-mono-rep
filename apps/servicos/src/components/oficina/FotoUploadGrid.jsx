@@ -6,11 +6,13 @@ import { comprimirChecklistFoto, isAllowedChecklistFotoMimeType, uploadChecklist
 import { oficinaApi } from '@macom/api-client/oficinaApi';
 import { FOTO_CATEGORIAS, MAX_FOTOS } from '@/lib/checklistItens';
 import { toUpperText } from '@/lib/oficinaFormat';
+import ImageLightbox from '@/components/oficina/ImageLightbox';
 
 export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdicionada, onFotoAtualizada, onFotoRemovida, readOnly = false }) {
   const inputRef = useRef(null);
   const [pendentes, setPendentes] = useState([]);
   const [erro, setErro] = useState(null);
+  const [indiceExpandido, setIndiceExpandido] = useState(null);
 
   const removerPendente = (id) => {
     setPendentes((atual) => {
@@ -122,7 +124,13 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {fotos.map((foto, index) => (
           <div key={`${foto.storage_path}-${index}`} className="flex flex-col gap-3 rounded-xl border p-3">
-            <img src={foto.url} alt={foto.categoria || 'Foto do veículo'} className="aspect-video w-full rounded-lg object-cover" />
+            <button type="button" onClick={() => setIndiceExpandido(index)} className="block">
+              <img
+                src={foto.url}
+                alt={foto.categoria || 'Foto do veículo'}
+                className="aspect-video w-full cursor-zoom-in rounded-lg object-cover"
+              />
+            </button>
 
             {foto.avaria_id && (
               <span className="w-fit rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
@@ -213,6 +221,14 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
             </div>
           ))}
       </div>
+
+      <ImageLightbox
+        fotos={fotos}
+        index={indiceExpandido}
+        onOpenChange={(open) => {
+          if (!open) setIndiceExpandido(null);
+        }}
+      />
     </div>
   );
 }
