@@ -284,6 +284,24 @@ export default function LeadForm({
     [versoesVeiculo, data.veiculo_interesse?.modelo_id, data.veiculo_interesse?.versao_id],
   );
 
+  const { data: veiculosEstoque = [] } = useQuery({
+    queryKey: ['crm-veiculos-estoque'],
+    queryFn: () => crmDataClient.entities.VeiculoEstoque.list('-created_date'),
+    enabled: open,
+  });
+
+  const semEstoqueNaCondicao = useMemo(() => {
+    const modeloId = data.veiculo_interesse?.modelo_id;
+    const condicao = data.veiculo_interesse?.condicao || 'novo';
+    if (!modeloId) return false;
+    return !veiculosEstoque.some((veiculo) => (
+      veiculo.modelo_id === modeloId
+      && veiculo.condicao === condicao
+      && ['disponivel', 'reservado'].includes(veiculo.status)
+      && veiculo.situacao !== 'imobilizado'
+    ));
+  }, [veiculosEstoque, data.veiculo_interesse?.modelo_id, data.veiculo_interesse?.condicao]);
+
   const setMarca = (value) => {
     if (value === 'outra') {
       setData((current) => ({
@@ -838,6 +856,11 @@ export default function LeadForm({
                         <SelectItem value="seminovo">Seminovo</SelectItem>
                       </SelectContent>
                     </Select>
+                    {semEstoqueNaCondicao ? (
+                      <p className="mt-1 text-xs font-semibold text-amber-600">
+                        Sem unidades {data.veiculo_interesse?.condicao === 'seminovo' ? 'seminovo' : 'novo'} deste modelo no estoque atualmente
+                      </p>
+                    ) : null}
                   </Field>
                 </div>
                 <button

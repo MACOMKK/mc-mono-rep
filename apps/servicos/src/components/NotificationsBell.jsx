@@ -6,8 +6,25 @@ import { Bell, BellOff, BellRing, CheckCheck } from 'lucide-react';
 import { financeiroApi } from '@macom/api-client/financeiroApi';
 import { supabase } from '@macom/api-client/supabaseClient';
 import { Button, useToast } from '@macom/ui';
+import { useNotificacoes } from '@macom/notifications';
 import { useAuth } from '@/lib/AuthContext';
 import { usePush } from '@/lib/PushContext';
+
+// Normaliza uma notificacao do canal generico (campos em ingles, ver mapNotificacao em
+// supabase/functions/_shared/notificacoes.ts) pro mesmo formato das notificacoes locais
+// (gestao_servicos.notificacoes, campos em portugues) -- so assim as duas fontes podem entrar
+// na mesma lista/UI sem duplicar NotificationItem.
+function normalizarNotificacaoGenerica(item) {
+  return {
+    _origem: 'generico',
+    id: item.id,
+    titulo: item.title,
+    mensagem: item.message,
+    link: item.link,
+    criado_em: item.created_date,
+    lida_em: item.read ? item.created_date : null,
+  };
+}
 
 function formatNotificacaoData(value) {
   const date = new Date(value);
@@ -38,7 +55,23 @@ export default function NotificationsBell({ buttonClassName = '' }) {
     // Realtime ja invalida esta query; o polling e so fallback (5 min para poupar Log Ingestion).
     refetchInterval: 300000,
   });
-  const notificacoes = notificacoesQuery.data || [];
+  const notificacoesLegado = notificacoesQuery.data || [];
+
+  // Canal generico/cross-app (notificacoes.notificacoes) -- usado hoje so pelo gatilho novo do
+  // checklist de Oficina. O Financeiro continua 100% no canal legado acima.
+  const generico = useNotificacoes({
+    sistema: 'servicos',
+    colaboradorId,
+    enabled: Boolean(colaboradorId),
+    onNew: (row) => {
+      if (row.titulo) toast({ title: row.titulo, description: row.mensagem || undefined });
+    },
+  });
+  const notificacoesGenerico = generico.items.map(normalizarNotificacaoGenerica);
+
+  const notificacoes = [...notificacoesLegado, ...notificacoesGenerico].sort(
+    (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+  );
   const naoLidas = notificacoes.filter((item) => !item.lida_em);
   const lidas = notificacoes.filter((item) => item.lida_em);
 
@@ -105,9 +138,17 @@ export default function NotificationsBell({ buttonClassName = '' }) {
   }, [colaboradorId, instanceId, queryClient, toast]);
 
   function handleAbrirNotificacao(notificacao) {
-    if (!notificacao.lida_em) marcarLidaMutation.mutate(notificacao.id);
+    if (!notificacao.lida_em) {
+      if (notificacao._origem === 'generico') generico.markRead(notificacao.id);
+      else marcarLidaMutation.mutate(notificacao.id);
+    }
     setOpen(false);
     if (notificacao.link) navigate(notificacao.link);
+  }
+
+  function handleMarcarTodasLidas() {
+    if (notificacoesLegado.some((item) => !item.lida_em)) marcarTodasLidasMutation.mutate();
+    if (generico.unreadItems.length > 0) generico.markAllRead();
   }
 
   if (!colaboradorId) return null;
@@ -153,7 +194,7 @@ export default function NotificationsBell({ buttonClassName = '' }) {
               {naoLidas.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => marcarTodasLidasMutation.mutate()}
+                  onClick={handleMarcarTodasLidas}
                   className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                 >
                   <CheckCheck className="h-3.5 w-3.5" />

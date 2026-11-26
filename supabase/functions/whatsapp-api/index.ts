@@ -101,13 +101,12 @@ async function criarLeadWhatsapp(
   tx: ReturnType<typeof createSql>,
   params: {
     telefoneNormalizadoConversa: string;
-    telefoneOriginal: string;
     nome: string | null;
     unidadeId: string;
     clienteIdExistente: string | null;
   },
 ): Promise<{ id: string; clienteId: string }> {
-  const { telefoneNormalizadoConversa, telefoneOriginal, nome, unidadeId, clienteIdExistente } = params;
+  const { telefoneNormalizadoConversa, nome, unidadeId, clienteIdExistente } = params;
   const candidatos = telefoneNacionalCandidatos(telefoneNormalizadoConversa);
   const telefoneNacional = candidatos[0];
   const nomeLead = (nome || '').trim() || 'Contato WhatsApp';
@@ -125,7 +124,7 @@ async function criarLeadWhatsapp(
   if (!clienteId) {
     const [novoCliente] = await tx`
       insert into public.clientes (nome, telefone, telefone_normalizado, origem_cadastro)
-      values (${nomeLead}, ${telefoneOriginal}, ${telefoneNacional}, 'crm_lead')
+      values (${nomeLead}, ${telefoneNacional}, ${telefoneNacional}, 'crm_lead')
       returning id
     `;
     clienteId = novoCliente.id;
@@ -150,7 +149,7 @@ async function criarLeadWhatsapp(
 
   const [lead] = await tx`
     insert into gestao_crm.leads (cliente_id, nome, telefone, telefone_normalizado, unidade_id, origem_id)
-    values (${clienteId}, ${nomeLead}, ${telefoneOriginal}, ${telefoneNacional}, ${unidadeId}, ${origemWhatsapp.id})
+    values (${clienteId}, ${nomeLead}, ${telefoneNacional}, ${telefoneNacional}, ${unidadeId}, ${origemWhatsapp.id})
     returning id
   `;
 
@@ -912,7 +911,6 @@ serve(async (req) => {
               const novoLead = await withTransaction(sql, (tx) =>
                 criarLeadWhatsapp(tx, {
                   telefoneNormalizadoConversa: telefoneNormalizado,
-                  telefoneOriginal: incoming.fromPhone,
                   nome: conversa.contato_nome ?? incoming.contactName ?? null,
                   unidadeId: unidades[0].unidade_id,
                   clienteIdExistente: conversa.cliente_id ?? null,
@@ -940,7 +938,6 @@ serve(async (req) => {
             const novoLead = await withTransaction(sql, (tx) =>
               criarLeadWhatsapp(tx, {
                 telefoneNormalizadoConversa: telefoneNormalizado,
-                telefoneOriginal: incoming.fromPhone,
                 nome: conversa.contato_nome ?? incoming.contactName ?? null,
                 unidadeId: escolhida.unidade_id,
                 clienteIdExistente: conversa.cliente_id ?? null,

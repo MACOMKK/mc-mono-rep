@@ -7,6 +7,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { createSql, withTransaction } from '../_shared/db.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 import { getServicosAuthContext } from '../_shared/servicos-auth.ts';
+import { notificar } from '../_shared/notificacoes.ts';
 import {
   isValidCpfCnpj,
   isValidEmail,
@@ -263,6 +264,43 @@ async function insertHistoricoChecklist(
     `insert into ${SERVICOS_SCHEMA}.historico_checklist (checklist_id, evento, autor_id, observacao) values ($1, $2, $3, $4);`,
     [checklistId, evento, autorId, observacao],
   );
+}
+
+// EM TESTE (2026-11-26): avisa so quem e admin (Camada 1) do sistema servicos, de qualquer
+// unidade -- pra validar o gatilho antes de liberar pro papel "usuario" de verdade. Quando
+// validado, trocar o "where" abaixo pra incluir de novo:
+//   left join ${SERVICOS_SCHEMA}.permissoes_modulo pm on pm.colaborador_id = c.id and pm.modulo = 'oficina'
+//   ... and (aus.nivel_acesso = 'admin' or (pm.papel = 'usuario' and c.unidade_id = $1))
+async function notificarChecklistAvaliado(row: Record<string, unknown>, autorId: string | null) {
+  const destinatarios = await sql!.unsafe(
+    `
+      select distinct c.id
+      from public.colaboradores c
+      join public.acessos_usuario_sistema aus on aus.colaborador_id = c.id
+      join public.sistemas s on s.id = aus.sistema_id
+      where s.slug = 'servicos' and s.ativo = true and aus.ativo = true
+        and aus.nivel_acesso = 'admin';
+    `,
+    [row.unidade_id],
+  );
+  if (!destinatarios.length) return;
+
+  try {
+    await notificar(sql, {
+      sistema: 'servicos',
+      destinatarios: destinatarios.map((item: { id: string }) => item.id),
+      titulo: `Checklist #${row.numero ?? ''} avaliado`,
+      link: `/oficina/checklists/${row.id}`,
+      tipo: 'checklist_avaliado',
+      referenciaTipo: 'checklist_avaliacao',
+      referenciaId: String(row.id),
+      criadoPor: autorId,
+      excluir: autorId ? [autorId] : [],
+      push: true,
+    });
+  } catch (error) {
+    console.error('notificarChecklistAvaliado failed:', error);
+  }
 }
 
 async function getAvaliacao(id: string, moduleRole: string | null, collaborator: Record<string, unknown> | null) {
@@ -679,7 +717,9 @@ Deno.serve(async (request) => {
       );
 
       if (rows[0]) {
-        await insertHistoricoChecklist(id, 'avaliado', collaborator?.id ? String(collaborator.id) : null);
+        const autorId = collaborator?.id ? String(collaborator.id) : null;
+        await insertHistoricoChecklist(id, 'avaliado', autorId);
+        await notificarChecklistAvaliado(rows[0], autorId);
       }
 
       return json({ row: rows[0] });

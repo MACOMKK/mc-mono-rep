@@ -4,6 +4,11 @@ import { cn } from '@/lib/utils';
 import { Phone, Car, Building2, CalendarClock, UserRound, AlertTriangle } from 'lucide-react';
 import { findEtapaDoLead, isLeadAtivo } from '@/lib/leadStatus';
 
+function formatSlaHoras(minutos) {
+  const horas = Math.round((Math.abs(minutos) / 60) * 10) / 10;
+  return `${Number.isInteger(horas) ? horas : horas.toFixed(1)}h`;
+}
+
 // Nivel 1 da auditoria do CRM (2026-10-20): sem memo, cada tecla digitada na busca (antes do
 // debounce sequer rodar a query) re-renderizava a arvore inteira do board -- toda coluna, todo
 // card -- porque o pai (Leads.jsx) re-renderiza a cada tecla. So funciona de fato porque
@@ -15,9 +20,9 @@ const LeadCard = memo(function LeadCard({ lead, index, onClick, semContatoAgenda
   const slaLabel = lead.sla_status === 'concluido'
     ? 'SLA ok'
     : lead.sla_status === 'atrasado'
-      ? `SLA ${lead.sla_minutos_restantes ? `${Math.abs(lead.sla_minutos_restantes)}m atrasado` : 'atrasado'}`
+      ? `SLA ${lead.sla_minutos_restantes ? `${formatSlaHoras(lead.sla_minutos_restantes)} atrasado` : 'atrasado'}`
       : lead.sla_status === 'alerta'
-        ? `SLA ${Math.max(0, lead.sla_minutos_restantes || 0)}m`
+        ? `SLA ${formatSlaHoras(Math.max(0, lead.sla_minutos_restantes || 0))}`
         : 'SLA no prazo';
   const slaStyle = lead.sla_status === 'concluido'
     ? 'border-green-200 bg-green-50 text-green-700'
@@ -97,7 +102,7 @@ const LeadCard = memo(function LeadCard({ lead, index, onClick, semContatoAgenda
               {isLeadAtivo(lead) ? (
                 <span
                   title={slaTitle}
-                  className={cn('inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider', slaStyle)}
+                  className={cn('inline-flex items-center gap-1 border px-1.5 py-0.5 text-[10px] font-bold tracking-wider', slaStyle)}
                 >
                   <CalendarClock className="h-3 w-3" />{slaLabel}
                 </span>

@@ -1110,7 +1110,14 @@ function buildListSelect(entity: EntityName) {
       select ve.*,
         (row_to_json(v)::jsonb || jsonb_build_object('cor', cv.nome))::json as veiculo,
         vr.nome as vendedor_reserva_nome,
-        cr.nome as cliente_reserva_nome
+        cr.nome as cliente_reserva_nome,
+        (
+          select count(*)::int
+          from ${CRM_SCHEMA}.veiculos_interesse vi
+          join ${CRM_SCHEMA}.leads l on l.id = vi.lead_id
+          where vi.modelo_id = v.modelo_id
+            and l.etapa_tipo = 'em_andamento'
+        ) as leads_interessados_count
       from ${CRM_SCHEMA}.veiculos_estoque ve
       join public.veiculos v on v.id = ve.veiculo_id
       left join public.cores_veiculo cv on cv.id = v.cor_id

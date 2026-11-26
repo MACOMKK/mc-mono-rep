@@ -890,7 +890,19 @@ export default function Estoque() {
                 return (
                   <TableRow key={veiculo.id}>
                     <TableCell className="text-sm text-slate-700">{modelo ? (marcaNomePorId[modelo.marca_id] || '-') : '-'}</TableCell>
-                    <TableCell className="text-sm text-slate-700">{modelo?.nome || '-'}</TableCell>
+                    <TableCell className="text-sm text-slate-700">
+                      <div className="flex items-center gap-2">
+                        <span>{modelo?.nome || '-'}</span>
+                        {veiculo.leads_interessados_count > 0 ? (
+                          <span
+                            className="inline-block whitespace-nowrap rounded-none bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-700"
+                            title="Leads ativos com este modelo como veiculo de interesse"
+                          >
+                            {veiculo.leads_interessados_count} interessado{veiculo.leads_interessados_count > 1 ? 's' : ''}
+                          </span>
+                        ) : null}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-slate-700">{versaoNomePorId[veiculo.versao_id] || '-'}</TableCell>
                     <TableCell className="text-sm text-slate-700">{veiculo.chassi}</TableCell>
                     <TableCell className="text-sm text-slate-700">{veiculo.cor || '-'}</TableCell>

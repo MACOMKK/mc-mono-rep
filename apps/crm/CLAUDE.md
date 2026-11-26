@@ -109,9 +109,9 @@ desacoplada `supabase/functions/whatsapp-api/index.ts` (nome genérico, não `cr
 para permitir desvincular do CRM no futuro). Ela não exige JWT de usuário — autentica pelo secret
 do próprio canal (verify token da Meta + assinatura HMAC), usa `SUPABASE_SERVICE_ROLE_KEY` e
 bypassa RLS na escrita (mesmo padrão de `processa-fila-email`/`enviar-termo-gmail`, não o do
-`crm-api`). Ver `supabase/functions/whatsapp-api/README.md` para configuração de secrets e status
-de deploy/teste em runtime real — isso ainda está pendente, é a única parte não validada em
-produção.
+`crm-api`). Ver `supabase/functions/whatsapp-api/README.md` para configuração de secrets.
+Modo Meta (API oficial) validado em produção (2026-11-25), recebendo e respondendo mensagens
+reais de clientes; modo Evolution API segue sem chamada real confirmada.
 
 `conversas_atendimento` vincula a `clientes`/`leads` via `telefone_normalizado`. **Formatos
 diferentes**: a conversa guarda com DDI (13 dígitos, vem do WhatsApp) e `leads`/`public.clientes`

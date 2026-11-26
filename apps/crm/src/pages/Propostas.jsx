@@ -10,7 +10,16 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
@@ -175,6 +184,26 @@ export default function Propostas() {
     const marca = modelo ? marcaNomePorId[modelo.marca_id] : '';
     return [marca, modelo?.nome, veiculo.chassi].filter(Boolean).join(' ');
   };
+
+  const veiculosAgrupados = useMemo(() => {
+    const interesse = selectedLead?.veiculo_interesse;
+    if (!interesse || (!interesse.modelo_id && !interesse.marca_id)) {
+      return { sugeridos: [], outros: veiculosDisponiveis };
+    }
+    const sugeridos = [];
+    const outros = [];
+    veiculosDisponiveis.forEach((veiculo) => {
+      const modelo = modeloPorId[veiculo.modelo_id];
+      const mesmoModelo = Boolean(interesse.modelo_id) && veiculo.modelo_id === interesse.modelo_id;
+      const mesmaMarca = !mesmoModelo && Boolean(interesse.marca_id) && modelo?.marca_id === interesse.marca_id;
+      if (mesmoModelo || mesmaMarca) {
+        sugeridos.push(veiculo);
+      } else {
+        outros.push(veiculo);
+      }
+    });
+    return { sugeridos, outros };
+  }, [veiculosDisponiveis, modeloPorId, selectedLead]);
 
   const propostasFiltradas = useMemo(() => {
     const termo = filtroBusca.trim().toLowerCase();
@@ -632,11 +661,33 @@ export default function Propostas() {
               >
                 <SelectTrigger className="h-9 rounded-none text-sm"><SelectValue placeholder="Selecione (ou descreva abaixo)" /></SelectTrigger>
                 <SelectContent className="rounded-none">
-                  {veiculosDisponiveis.map((veiculo) => (
-                    <SelectItem key={veiculo.id} value={veiculo.id}>
-                      {veiculoLabel(veiculo.id)}{veiculo.status === 'reservado' ? ' (reservado)' : ''}
-                    </SelectItem>
-                  ))}
+                  {veiculosAgrupados.sugeridos.length > 0 ? (
+                    <>
+                      <SelectGroup>
+                        <SelectLabel>Sugeridos para {selectedLead?.nome}</SelectLabel>
+                        {veiculosAgrupados.sugeridos.map((veiculo) => (
+                          <SelectItem key={veiculo.id} value={veiculo.id}>
+                            {veiculoLabel(veiculo.id)}{veiculo.status === 'reservado' ? ' (reservado)' : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                      <SelectSeparator />
+                      <SelectGroup>
+                        <SelectLabel>Outros veiculos disponiveis</SelectLabel>
+                        {veiculosAgrupados.outros.map((veiculo) => (
+                          <SelectItem key={veiculo.id} value={veiculo.id}>
+                            {veiculoLabel(veiculo.id)}{veiculo.status === 'reservado' ? ' (reservado)' : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </>
+                  ) : (
+                    veiculosAgrupados.outros.map((veiculo) => (
+                      <SelectItem key={veiculo.id} value={veiculo.id}>
+                        {veiculoLabel(veiculo.id)}{veiculo.status === 'reservado' ? ' (reservado)' : ''}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
               {veiculosDisponiveis.length === 0 ? (
