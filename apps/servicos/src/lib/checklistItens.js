@@ -54,6 +54,14 @@ export const MAX_FOTOS = 10;
 
 export const VINCULO_ASSINANTE = ['Proprietário', 'Funcionário', 'Terceiro autorizado', 'Outro'];
 
+const ORDINAIS_REVISAO = ['1ª', '2ª', '3ª', '4ª', '5ª', '6ª', '7ª', '8ª'];
+
+export const FRASES_PADRAO_OBSERVACOES = [
+  ...ORDINAIS_REVISAO.map((ordinal) => `CLIENTE SOLICITA ${ordinal} REVISÃO`),
+  'CLIENTE SOLICITA ALINHAMENTO E BALANCEAMENTO',
+  'CLIENTE SOLICITA VERIFICAR',
+];
+
 export const STATUS_DOC_SEG = { OK: 'Conforme', AS: 'Ausente', AV: 'Avariado' };
 
 export const STATUS_PNEU = {

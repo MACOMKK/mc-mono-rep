@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Camera, Lock, Trash2 } from 'lucide-react';
+import { ArrowLeft, Camera, ChevronDown, Lock, Trash2 } from 'lucide-react';
 import {
   Button,
   CarLoader,
@@ -10,6 +10,10 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   Input,
   Label,
   Select,
@@ -30,7 +34,7 @@ import AvariaMap from '@/components/oficina/AvariaMap';
 import ChecklistItensList from '@/components/oficina/ChecklistItensList';
 import FotoUploadGrid from '@/components/oficina/FotoUploadGrid';
 import AssinaturaModal from '@/components/oficina/AssinaturaModal';
-import { CATEGORIA_ITENS, MAX_FOTOS } from '@/lib/checklistItens';
+import { CATEGORIA_ITENS, CATEGORIA_LABEL, FRASES_PADRAO_OBSERVACOES, MAX_FOTOS } from '@/lib/checklistItens';
 import { toUpperText } from '@/lib/oficinaFormat';
 
 const CATEGORIA_FOTO_COMBUSTIVEL = 'Medidor de combustível';
@@ -103,7 +107,9 @@ export default function ChecklistForm() {
   const [dadosCarregados, setDadosCarregados] = useState(null);
   const [enviandoFotoCombustivel, setEnviandoFotoCombustivel] = useState(false);
   const [erroFotoCombustivel, setErroFotoCombustivel] = useState(null);
+  const [confirmacaoConclusaoAberta, setConfirmacaoConclusaoAberta] = useState(false);
   const fotoCombustivelInputRef = useRef(null);
+  const observacoesInputRef = useRef(null);
 
   useEffect(() => {
     oficinaApi.unidades.listar().then(setUnidades).catch(() => {});
@@ -407,6 +413,22 @@ export default function ChecklistForm() {
     setComunicacoes((atual) => (atual.includes(key) ? atual.filter((item) => item !== key) : [...atual, key]));
   };
 
+  const handleInserirFraseObservacao = (frase) => {
+    const textarea = observacoesInputRef.current;
+    const inicio = textarea?.selectionStart ?? observacoes.length;
+    const fim = textarea?.selectionEnd ?? observacoes.length;
+    const precisaEspaco = inicio > 0 && !/\s$/.test(observacoes.slice(0, inicio));
+    const trecho = `${precisaEspaco ? ' ' : ''}${frase}`;
+    const novoValor = `${observacoes.slice(0, inicio)}${trecho}${observacoes.slice(fim)}`;
+    setObservacoes(novoValor);
+
+    const posicaoCursor = inicio + trecho.length;
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(posicaoCursor, posicaoCursor);
+    });
+  };
+
   const handleSalvarObservacoes = () => {
     setErro(null);
     setEtapa((atual) => atual + 1);
@@ -415,6 +437,29 @@ export default function ChecklistForm() {
       .catch((error) => {
         setErro(error.message || 'Não foi possível salvar as observações automaticamente. Volte a esta etapa e clique em Avançar novamente.');
       });
+  };
+
+  // Resumo mostrado no popup de confirmação antes de concluir -- pra dar uma chance de
+  // o avaliador notar algo que esqueceu (categoria sem nenhum item marcado, nenhuma foto)
+  // antes de finalizar, já que depois de concluída a avaliação não pode mais ser editada.
+  const resumoConclusao = useMemo(
+    () =>
+      Object.entries(CATEGORIA_ITENS).map(([categoria, itensDaCategoria]) => ({
+        categoria,
+        label: CATEGORIA_LABEL[categoria] || categoria,
+        preenchidos: itensDaCategoria.filter((item) => itensPorCategoria[categoria]?.[item]).length,
+        total: itensDaCategoria.length,
+      })),
+    [itensPorCategoria],
+  );
+
+  const handleAbrirConfirmacaoConclusao = () => {
+    if (!assinaturaEntrada) {
+      setErro('Capture a assinatura do cliente na entrada antes de concluir.');
+      return;
+    }
+    setErro(null);
+    setConfirmacaoConclusaoAberta(true);
   };
 
   const handleConcluirAvaliacao = async () => {
@@ -437,6 +482,7 @@ export default function ChecklistForm() {
       navigate(`/oficina/checklists/${avaliacaoId}`);
     } catch (error) {
       setErro(error.message || 'Não foi possível concluir a avaliação.');
+      setConfirmacaoConclusaoAberta(false);
     } finally {
       setSalvando(false);
     }
@@ -725,8 +771,32 @@ export default function ChecklistForm() {
             <label className="mb-1 block text-sm font-medium" htmlFor="observacoes">
               Observações / Reclamações do cliente
             </label>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="mb-2">
+                  Frases padrão
+                  <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                onCloseAutoFocus={(event) => {
+                  // Sem isso o Radix devolve o foco pro botão "Frases padrão" ao fechar,
+                  // atropelando o foco que handleInserirFraseObservacao dá no textarea.
+                  event.preventDefault();
+                  observacoesInputRef.current?.focus();
+                }}
+              >
+                {FRASES_PADRAO_OBSERVACOES.map((frase) => (
+                  <DropdownMenuItem key={frase} onSelect={() => handleInserirFraseObservacao(frase)}>
+                    {frase}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Textarea
               id="observacoes"
+              ref={observacoesInputRef}
               rows={6}
               className="uppercase"
               value={observacoes}
@@ -829,7 +899,7 @@ export default function ChecklistForm() {
             <Button type="button" variant="outline" onClick={() => setEtapa((atual) => atual - 1)}>
               Voltar
             </Button>
-            <Button type="button" onClick={handleConcluirAvaliacao} disabled={salvando || !assinaturaEntrada}>
+            <Button type="button" onClick={handleAbrirConfirmacaoConclusao} disabled={salvando || !assinaturaEntrada}>
               {salvando ? 'Concluindo...' : 'Concluir avaliação'}
             </Button>
           </div>
@@ -849,6 +919,46 @@ export default function ChecklistForm() {
           />
         </div>
       )}
+
+      <Dialog open={confirmacaoConclusaoAberta} onOpenChange={(open) => !salvando && setConfirmacaoConclusaoAberta(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar conclusão da avaliação</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Revise o resumo antes de concluir — depois de finalizada, a avaliação não pode mais ser editada.
+          </p>
+          <AvariaMap avarias={avarias} readOnly />
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 text-sm">
+            {resumoConclusao.map(({ categoria, label, preenchidos, total }) => (
+              <div key={categoria} className="flex items-center justify-between">
+                <span>{label}</span>
+                <span className={preenchidos < total ? 'font-medium text-destructive' : 'text-muted-foreground'}>
+                  {preenchidos}/{total} itens
+                </span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between">
+              <span>Avarias registradas</span>
+              <span className="text-muted-foreground">{avarias.length}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Fotos do veículo</span>
+              <span className={fotos.length === 0 ? 'font-medium text-destructive' : 'text-muted-foreground'}>
+                {fotos.length}
+              </span>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setConfirmacaoConclusaoAberta(false)} disabled={salvando}>
+              Revisar
+            </Button>
+            <Button type="button" onClick={handleConcluirAvaliacao} disabled={salvando}>
+              {salvando ? 'Concluindo...' : 'Confirmar conclusão'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(avisoDonoDiferente)} onOpenChange={(open) => !open && setAvisoDonoDiferente(null)}>
         <DialogContent>

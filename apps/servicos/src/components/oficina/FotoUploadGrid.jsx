@@ -134,7 +134,7 @@ export default function FotoUploadGrid({ avaliacaoId, fotos = [], onFotoAdiciona
 
             {foto.avaria_id && (
               <span className="w-fit rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-                Vinculada a um amassado
+                Vinculada a uma avaria
               </span>
             )}
 

@@ -73,7 +73,7 @@ export default function AvariaMap({ avarias = [], onAdicionar, onRemover, onCapt
     if (!pontoPendente) return;
     const avariaCriada = await onAdicionar?.({ tipo, pos_x: pontoPendente.x, pos_y: pontoPendente.y });
 
-    if (tipo === 'amassado' && avariaCriada?.id) {
+    if (avariaCriada?.id) {
       setPontoPendente((atual) => (atual ? { ...atual, aguardandoFoto: true, avariaId: avariaCriada.id, erroFoto: null } : atual));
     } else {
       setPontoPendente(null);
@@ -186,7 +186,7 @@ export default function AvariaMap({ avarias = [], onAdicionar, onRemover, onCapt
             <div className="rounded-lg border bg-popover p-2 shadow-lg" onClick={(event) => event.stopPropagation()}>
               {pontoPendente.aguardandoFoto ? (
                 <div className="flex w-56 flex-col gap-2 py-1">
-                  <p className="px-1 text-sm">Amassado registrado. Anexar uma foto deste ponto?</p>
+                  <p className="px-1 text-sm">Avaria registrada. Anexar uma foto deste ponto?</p>
                   {pontoPendente.erroFoto && <p className="px-1 text-xs text-destructive">{pontoPendente.erroFoto}</p>}
                   <input
                     ref={fotoInputRef}
