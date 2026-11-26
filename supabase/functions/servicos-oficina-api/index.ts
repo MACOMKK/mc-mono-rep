@@ -266,11 +266,6 @@ async function insertHistoricoChecklist(
   );
 }
 
-// EM TESTE (2026-11-26): avisa so quem e admin (Camada 1) do sistema servicos, de qualquer
-// unidade -- pra validar o gatilho antes de liberar pro papel "usuario" de verdade. Quando
-// validado, trocar o "where" abaixo pra incluir de novo:
-//   left join ${SERVICOS_SCHEMA}.permissoes_modulo pm on pm.colaborador_id = c.id and pm.modulo = 'oficina'
-//   ... and (aus.nivel_acesso = 'admin' or (pm.papel = 'usuario' and c.unidade_id = $1))
 async function notificarChecklistAvaliado(row: Record<string, unknown>, autorId: string | null) {
   const destinatarios = await sql!.unsafe(
     `
@@ -278,18 +273,36 @@ async function notificarChecklistAvaliado(row: Record<string, unknown>, autorId:
       from public.colaboradores c
       join public.acessos_usuario_sistema aus on aus.colaborador_id = c.id
       join public.sistemas s on s.id = aus.sistema_id
+      left join ${SERVICOS_SCHEMA}.permissoes_modulo pm on pm.colaborador_id = c.id and pm.modulo = 'oficina'
       where s.slug = 'servicos' and s.ativo = true and aus.ativo = true
-        and aus.nivel_acesso = 'admin';
+        and (aus.nivel_acesso = 'admin' or (pm.papel = 'usuario' and c.unidade_id = $1));
     `,
     [row.unidade_id],
   );
   if (!destinatarios.length) return;
 
+  // Placa/cliente deixam a notificacao identificavel de cara -- sem isso e so um numero, que nao
+  // diz nada sobre qual veiculo/cliente numa lista com varios checklists avaliados no dia.
+  const [info] = await sql!.unsafe(
+    `
+      select
+        (select placa from public.veiculos where id = $1) as veiculo_placa,
+        (select nome from public.clientes where id = $2) as cliente_nome;
+    `,
+    [row.veiculo_id, row.cliente_id],
+  );
+  const detalhes = [info?.veiculo_placa ? `placa ${info.veiculo_placa}` : null, info?.cliente_nome]
+    .filter(Boolean)
+    .join(' — ');
+
   try {
     await notificar(sql, {
       sistema: 'servicos',
       destinatarios: destinatarios.map((item: { id: string }) => item.id),
-      titulo: `Checklist #${row.numero ?? ''} avaliado`,
+      titulo: 'Checklist avaliado',
+      mensagem: detalhes
+        ? `${detalhes} • checklist #${row.numero ?? ''} pronto para conferência.`
+        : `Checklist #${row.numero ?? ''} pronto para conferência.`,
       link: `/oficina/checklists/${row.id}`,
       tipo: 'checklist_avaliado',
       referenciaTipo: 'checklist_avaliacao',
