@@ -28,6 +28,7 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
   const [vinculo, setVinculo] = useState('');
   const [detalheVinculo, setDetalheVinculo] = useState('');
   const exigeDetalheVinculo = vinculo === 'Terceiro autorizado' || vinculo === 'Outro';
+  const nomeBloqueado = vinculo === 'Proprietário';
 
   useEffect(() => {
     if (!open) return;
@@ -99,8 +100,10 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
 
   const handleVinculoChange = (next) => {
     setVinculo(next);
-    if (next === 'Proprietário' && !nome.trim() && nomeCliente) {
+    if (next === 'Proprietário' && nomeCliente) {
       setNome(toUpperText(nomeCliente));
+    } else if (vinculo === 'Proprietário') {
+      setNome('');
     }
   };
 
@@ -133,6 +136,7 @@ export default function AssinaturaModal({ open, onCancel, onConfirm, titulo = 'A
               value={nome}
               onChange={(event) => setNome(toUpperText(event.target.value))}
               placeholder="Nome completo"
+              disabled={nomeBloqueado}
             />
           </div>
           <div className="flex flex-col gap-1">

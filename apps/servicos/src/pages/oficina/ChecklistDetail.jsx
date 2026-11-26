@@ -390,6 +390,13 @@ export default function ChecklistDetail() {
         </div>
       )}
 
+      {row.entrega_observacoes && (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground">Observações da entrega</p>
+          <p className="text-sm">{row.entrega_observacoes}</p>
+        </div>
+      )}
+
       {Array.isArray(row.comunicacoes) && row.comunicacoes.length > 0 && (
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground">Comunicações eletrônicas autorizadas</p>
@@ -556,6 +563,7 @@ export default function ChecklistDetail() {
           <AssinaturaModal
             open={modalAssinaturaAberto}
             titulo="Assinatura do cliente na saída"
+            nomeCliente={row.cliente_nome}
             onCancel={() => setModalAssinaturaAberto(false)}
             onConfirm={(dataUrl, { nome, vinculo, detalheVinculo }) => {
               setAssinaturaSaida(dataUrl);
