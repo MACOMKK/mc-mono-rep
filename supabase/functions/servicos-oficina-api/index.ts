@@ -281,28 +281,38 @@ async function notificarChecklistAvaliado(row: Record<string, unknown>, autorId:
   );
   if (!destinatarios.length) return;
 
-  // Placa/cliente deixam a notificacao identificavel de cara -- sem isso e so um numero, que nao
-  // diz nada sobre qual veiculo/cliente numa lista com varios checklists avaliados no dia.
+  // Modelo/placa/cliente/km deixam a notificacao identificavel de cara -- sem isso e so um numero,
+  // que nao diz nada sobre qual veiculo/cliente numa lista com varios checklists avaliados no dia.
   const [info] = await sql!.unsafe(
     `
-      select
-        (select placa from public.veiculos where id = $1) as veiculo_placa,
-        (select nome from public.clientes where id = $2) as cliente_nome;
+      select v.placa as veiculo_placa, v.km as veiculo_km, mv.nome as veiculo_modelo, cl.nome as cliente_nome
+      from public.veiculos v
+      left join public.modelos_veiculo mv on mv.id = v.modelo_id
+      left join public.clientes cl on cl.id = $2
+      where v.id = $1;
     `,
     [row.veiculo_id, row.cliente_id],
   );
-  const detalhes = [info?.veiculo_placa ? `placa ${info.veiculo_placa}` : null, info?.cliente_nome]
+  const partes = [
+    info?.veiculo_placa ? `Placa: ${info.veiculo_placa}` : null,
+    info?.cliente_nome ? `Cliente: ${info.cliente_nome}` : null,
+    info?.veiculo_km != null ? `Km: ${Number(info.veiculo_km).toLocaleString('pt-BR')} km` : null,
+  ]
     .filter(Boolean)
-    .join(' — ');
+    .join(' · ');
+  const mensagem = [
+    info?.veiculo_modelo ? `${info.veiculo_modelo} — ${partes}` : partes,
+    `checklist #${row.numero ?? ''} pronto para conferência.`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   try {
     await notificar(sql, {
       sistema: 'servicos',
       destinatarios: destinatarios.map((item: { id: string }) => item.id),
-      titulo: 'Checklist avaliado',
-      mensagem: detalhes
-        ? `${detalhes} • checklist #${row.numero ?? ''} pronto para conferência.`
-        : `Checklist #${row.numero ?? ''} pronto para conferência.`,
+      titulo: '🚗 Em avaliação',
+      mensagem,
       link: `/oficina/checklists/${row.id}`,
       tipo: 'checklist_avaliado',
       referenciaTipo: 'checklist_avaliacao',
