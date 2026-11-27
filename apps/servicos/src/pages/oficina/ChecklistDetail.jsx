@@ -105,6 +105,10 @@ export default function ChecklistDetail() {
   const [editandoOs, setEditandoOs] = useState(false);
   const [salvandoOs, setSalvandoOs] = useState(false);
   const [erroOs, setErroOs] = useState(null);
+  const [editandoObservacoes, setEditandoObservacoes] = useState(false);
+  const [observacoesEdit, setObservacoesEdit] = useState('');
+  const [salvandoObservacoes, setSalvandoObservacoes] = useState(false);
+  const [erroObservacoes, setErroObservacoes] = useState(null);
   const [excluindo, setExcluindo] = useState(false);
   const [excluirAberto, setExcluirAberto] = useState(false);
   const [erroExcluir, setErroExcluir] = useState(null);
@@ -193,6 +197,20 @@ export default function ChecklistDetail() {
       setErroOs(error.message || 'Não foi possível salvar a O.S.');
     } finally {
       setSalvandoOs(false);
+    }
+  };
+
+  const handleSalvarObservacoes = async () => {
+    setSalvandoObservacoes(true);
+    setErroObservacoes(null);
+    try {
+      const rowAtualizado = await oficinaApi.checklists.atualizar(id, { observacoes: observacoesEdit || null });
+      setRow(rowAtualizado);
+      setEditandoObservacoes(false);
+    } catch (error) {
+      setErroObservacoes(error.message || 'Não foi possível salvar as observações.');
+    } finally {
+      setSalvandoObservacoes(false);
     }
   };
 
@@ -383,10 +401,54 @@ export default function ChecklistDetail() {
         <ChecklistItensList key={categoria} categoria={categoria} valores={itensPorCategoria[categoria] || {}} readOnly />
       ))}
 
-      {row.observacoes && (
+      {(row.observacoes || (row.status !== 'finalizado' && user?.isOficinaInspetor)) && (
         <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Observações</p>
-          <p className="text-sm">{row.observacoes}</p>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            Observações
+            {row.status !== 'finalizado' && user?.isOficinaInspetor && !editandoObservacoes && (
+              <button
+                type="button"
+                onClick={() => {
+                  setObservacoesEdit(row.observacoes || '');
+                  setErroObservacoes(null);
+                  setEditandoObservacoes(true);
+                }}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Editar observações"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            )}
+          </p>
+          {editandoObservacoes ? (
+            <div className="mt-1 flex flex-col gap-2">
+              <Textarea
+                className="uppercase"
+                rows={3}
+                autoFocus
+                value={observacoesEdit}
+                onChange={(e) => setObservacoesEdit(toUpperText(e.target.value))}
+                disabled={salvandoObservacoes}
+              />
+              {erroObservacoes && <p className="text-xs text-destructive">{erroObservacoes}</p>}
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={handleSalvarObservacoes} disabled={salvandoObservacoes}>
+                  {salvandoObservacoes ? 'Salvando...' : 'Salvar'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setEditandoObservacoes(false)}
+                  disabled={salvandoObservacoes}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="whitespace-pre-wrap text-sm">{row.observacoes || '—'}</p>
+          )}
         </div>
       )}
 
